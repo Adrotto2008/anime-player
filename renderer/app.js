@@ -202,7 +202,11 @@ function homeView() {
     h('div', { class: 'featured-copy' },
       h('span', { class: 'eyebrow' }, t('library')),
       h('h2', null, featured.title),
-      h('div', { class: 'featured-meta' }, featured.year || '', featured.format ? ` · ${featured.format.replace('_', ' ')}` : '', episodeTotal(featured) ? ` · ${episodeTotal(featured)} ${t('episodes').toLowerCase()}` : ''),
+      h('div', { class: 'featured-meta' },
+        featured.score != null ? `★ ${Number(featured.score).toFixed(1)}` : '',
+        featured.year ? ` · ${featured.year}` : '',
+        featured.format ? ` · ${featured.format.replace('_', ' ')}` : '',
+        episodeTotal(featured) ? ` · ${episodeTotal(featured)} ${t('episodes').toLowerCase()}` : ''),
       featured.description ? h('p', null, featured.description) : null,
       h('button', { class: 'btn primary', onclick: () => featuredTarget ? play(featured.id, featuredTarget.id) : go({ name: 'series', id: featured.id }) }, featuredTarget && featuredTarget.progress.pos > 0 ? t('resume') : t('watch')))) : null;
   const continueCards = cont.map(({ s, e }) => {
@@ -217,15 +221,15 @@ function homeView() {
     return h('button', { class: 'resume', onclick: () => play(s.id, e.id) }, media, meta);
   });
   const continueSection = cont.length ? h('section', { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', null, t('continueWatching')), h('span', { class: 'section-count' }, `${cont.length}`)),
+    h('div', { class: 'section-head' }, h('h2', null, t('continueWatching')), h('span', { class: 'section-link' }, t('seeAll'))),
     h('div', { class: 'strip' }, continueCards)) : null;
   const librarySection = list.length ? h('section', { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', null, q || state.progressFilter !== 'all' ? t('library') : t('library')), h('span', { class: 'section-count' }, `${list.length}`)),
+    h('div', { class: 'section-head' }, h('h2', null, t('library')), h('span', { class: 'section-link' }, t('seeAll'))),
     h('div', { class: 'grid' }, list.map(posterCard))) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
       state.lib.series.length ? t('noFilterMatch') : t('emptyLibraryHint'),
       state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, t('addFirstSeries'))));
   const recentSection = !q && state.progressFilter === 'all' && recent.length > 0
-    ? h('section', { class: 'section recent-section' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity')), h('span', { class: 'section-count' }, `${recent.length}`)), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
+    ? h('section', { class: 'section recent-section' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity')), h('span', { class: 'section-link' }, t('seeAll'))), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
     : null;
   return h('div', null,
     h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library'))), h('div', { class: 'toolbar row wrap' }, search, filter, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),

@@ -4,7 +4,7 @@ const DICT = {
   en: {
     library: 'Library', stats: 'Statistics', openLink: 'Open a link', settings: 'Settings',
     mpvReady: 'mpv ready', mpvMissing: 'mpv not found: configure it',
-    stop: 'Stop', refresh: 'Refresh', continueWatching: 'Continue watching',
+    stop: 'Stop', refresh: 'Refresh', continueWatching: 'Continue watching', seeAll: 'See all →',
     filterLibrary: 'Filter library', clearSearch: 'Clear search', filterProgress: 'Filter by progress', all: 'All',
     resume: 'Resume', unwatched: 'Unwatched', withWatched: 'With watched episodes',
     import: 'Import', export: 'Export', addSeries: 'Add series', addFirstSeries: 'Add the first series',
@@ -70,7 +70,7 @@ const DICT = {
   it: {
     library: 'Libreria', stats: 'Statistiche', openLink: 'Apri un link', settings: 'Impostazioni',
     mpvReady: 'mpv pronto', mpvMissing: 'mpv non trovato: configuralo',
-    stop: 'Ferma', refresh: 'Aggiorna', continueWatching: 'Continua a guardare',
+    stop: 'Ferma', refresh: 'Aggiorna', continueWatching: 'Continua a guardare', seeAll: 'Vedi tutto →',
     filterLibrary: 'Filtra la libreria', clearSearch: 'Svuota ricerca', filterProgress: 'Filtra per progresso', all: 'Tutte',
     resume: 'Da riprendere', unwatched: 'Non viste', withWatched: 'Con episodi visti',
     import: 'Importa', export: 'Esporta', addSeries: 'Aggiungi serie', addFirstSeries: 'Aggiungi la prima serie',
