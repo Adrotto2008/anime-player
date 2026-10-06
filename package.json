@@ -1,0 +1,25 @@
+{
+  "name": "anime-player",
+  "productName": "Anime Player",
+  "version": "0.1.0",
+  "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
+  "main": "main.js",
+  "license": "MIT",
+  "scripts": {
+    "start": "electron .",
+    "test": "node test/run.js",
+    "dist": "electron-builder --win portable"
+  },
+  "devDependencies": {
+    "electron": "^33.0.0",
+    "electron-builder": "^25.0.0"
+  },
+  "build": {
+    "appId": "com.adriano.animeplayer",
+    "productName": "Anime Player",
+    "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*", "package.json"],
+    "extraResources": [{ "from": "shaders", "to": "shaders" }],
+    "win": { "target": "portable" },
+    "portable": { "artifactName": "AnimePlayer-portable.exe" }
+  }
+}
