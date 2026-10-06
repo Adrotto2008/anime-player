@@ -101,12 +101,25 @@ function render() {
   applyTheme();
   renderRail(); renderPlayer();
   const main = $('#main');
-  if (document.activeElement && main.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+  const isSearchFocused = document.activeElement && document.activeElement.classList.contains('search');
+  const searchSelStart = isSearchFocused ? document.activeElement.selectionStart : 0;
+  const searchSelEnd = isSearchFocused ? document.activeElement.selectionEnd : 0;
+
+  if (document.activeElement && main.contains(document.activeElement) && !isSearchFocused && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
+
   main.replaceChildren(
     state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
     state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
     state.view.name === 'stats' ? statsView() : homeView()
   );
+
+  if (isSearchFocused) {
+    const n = $('.search');
+    if (n) {
+      n.focus();
+      n.setSelectionRange(searchSelStart, searchSelEnd);
+    }
+  }
 }
 
 /* ---------- home ---------- */
@@ -163,7 +176,10 @@ function homeView() {
     .filter((s) => (!q || s.title.toLowerCase().includes(q)) && seriesMatches(s, state.progressFilter))
     .sort((a, b) => a.title.localeCompare(b.title));
   const cont = q || state.progressFilter !== 'all' ? [] : continueItems();
-  const search = h('input', { class: 'input search', type: 'search', placeholder: t('filterLibrary'), value: state.filter, 'aria-label': t('filterLibrary'), oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const n = $('.search'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } } });
+  const search = h('div', { class: 'search-shell' },
+    h('span', { class: 'search-icon', 'aria-hidden': 'true' }),
+    h('input', { class: 'search', type: 'search', placeholder: t('filterLibrary'), value: state.filter, 'aria-label': t('filterLibrary'), oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const n = $('.search'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } } }),
+    state.filter ? h('button', { class: 'search-clear', type: 'button', 'aria-label': t('clearSearch'), title: t('clearSearch'), onclick: () => { state.filter = ''; render(); } }, '×') : null);
   const filter = h('select', { class: 'input library-filter', 'aria-label': t('filterProgress'), value: state.progressFilter, onchange: (e) => { state.progressFilter = e.target.value; render(); } },
     h('option', { value: 'all' }, t('all')),
     h('option', { value: 'progress' }, t('resume')),
