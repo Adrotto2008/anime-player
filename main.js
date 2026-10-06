@@ -126,7 +126,7 @@ function register() {
       } catch { /* ignora errori imdb */ }
       return { id: s.id, lib: lib() };
     }
-    const m = await meta.getAnime(anilistId);
+    const m = await meta.getAnime(anilistId, { language: store.data.settings.language });
     const { streamingEpisodes, altTitle, status, ...fields } = m;
     const s = store.addSeries(fields);
     const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId, title: m.altTitle || m.title, streamingEpisodes, episodeCount: m.episodeCount });
@@ -158,7 +158,7 @@ function register() {
     let kitsuId = s.kitsuId;
     if (s.anilistId) {
       try {
-        const m = await meta.getAnime(s.anilistId);
+        const m = await meta.getAnime(s.anilistId, { language: store.data.settings.language });
         const { streamingEpisodes, altTitle, status, ...f } = m;
         fields = f;
         const { kitsuId: kid, episodes } = await meta.fetchEpisodes({

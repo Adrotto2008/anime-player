@@ -17,6 +17,23 @@ async function anilist(query, variables) {
   return j.data;
 }
 
+async function translateDescriptionToItalian(description) {
+  const source = stripHtml(description);
+  if (!source) return source;
+  const text = source.slice(0, 4500);
+  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=it&dt=t&q=${encodeURIComponent(text)}`;
+  try {
+    const r = await fetch(url, { headers: { Accept: 'application/json' } });
+    if (!r.ok) throw new Error(`Google Translate ha risposto ${r.status}`);
+    const data = await r.json();
+    const translated = Array.isArray(data[0]) ? data[0].map((part) => part && part[0]).filter(Boolean).join('') : '';
+    return translated.trim() || source;
+  } catch (err) {
+    console.warn('Traduzione descrizione non disponibile:', err.message);
+    return source;
+  }
+}
+
 const FIELDS = `id idMal title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false)
   genres averageScore episodes seasonYear format status streamingEpisodes { title thumbnail }`;
 
@@ -44,9 +61,11 @@ async function searchAnime(text) {
   return d.Page.media.map(normalize);
 }
 
-async function getAnime(id) {
+async function getAnime(id, options = {}) {
   const d = await anilist(`query($id:Int){Media(id:$id,type:ANIME){${FIELDS}}}`, { id });
-  return normalize(d.Media);
+  const anime = normalize(d.Media);
+  if (options.language === 'it' && anime.description) anime.description = await translateDescriptionToItalian(anime.description);
+  return anime;
 }
 
 async function kitsuJson(url) {

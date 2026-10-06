@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], version: '', view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false }, stats: null, ratingLoads: {} };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
 
 /* ---------- utilità ---------- */
 function h(tag, props, ...kids) {
@@ -173,8 +173,15 @@ async function importLibrary() {
 function homeView() {
   const q = state.filter.trim().toLowerCase();
   const list = state.lib.series
-    .filter((s) => (!q || s.title.toLowerCase().includes(q)) && seriesMatches(s, state.progressFilter))
-    .sort((a, b) => a.title.localeCompare(b.title));
+    .filter((s) => {
+      const haystack = [s.title, s.altTitle, ...(s.genres || [])].filter(Boolean).join(' ').toLowerCase();
+      return (!q || haystack.includes(q)) && seriesMatches(s, state.progressFilter);
+    })
+    .sort((a, b) => {
+      if (state.sort === 'recent') return (b.addedAt || 0) - (a.addedAt || 0);
+      if (state.sort === 'rating') return (Number(b.score) || 0) - (Number(a.score) || 0);
+      return a.title.localeCompare(b.title);
+    });
   const cont = q || state.progressFilter !== 'all' ? [] : continueItems();
   const featured = !q && state.progressFilter === 'all' ? (cont[0] ? cont[0].s : list[0]) : null;
   const recent = [...list].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)).slice(0, 8);
@@ -187,6 +194,10 @@ function homeView() {
     h('option', { value: 'progress' }, t('resume')),
     h('option', { value: 'unwatched' }, t('unwatched')),
     h('option', { value: 'watched' }, t('withWatched')));
+  const sort = h('select', { class: 'input library-sort', 'aria-label': t('sortBy'), value: state.sort, onchange: (e) => { state.sort = e.target.value; render(); } },
+    h('option', { value: 'title' }, t('sortTitle')),
+    h('option', { value: 'recent' }, t('sortRecent')),
+    h('option', { value: 'rating' }, t('sortRating')));
   const posterCard = (s) => {
     const seen = s.episodes.filter((e) => e.progress.watched).length;
     return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
@@ -232,7 +243,7 @@ function homeView() {
     ? h('section', { class: 'section recent-section' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity')), h('span', { class: 'section-link' }, t('seeAll'))), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
     : null;
   return h('div', null,
-    h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library'))), h('div', { class: 'toolbar row wrap' }, search, filter, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),
+    h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library'))), h('div', { class: 'toolbar row wrap' }, search, filter, sort, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),
     featuredHero, continueSection, librarySection, recentSection);
 }
 
