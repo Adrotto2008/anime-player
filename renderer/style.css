@@ -148,3 +148,52 @@ main:focus, main:focus-visible { outline: none; }
 .mono { font: 12px/1.6 Consolas, monospace; overflow-wrap: anywhere; margin-top: 4px; }
 .chip.pick { border: 1px solid var(--line); color: var(--text); font-family: Consolas, monospace; cursor: pointer; }
 .chip.pick[aria-pressed="true"] { background: var(--on); color: #06251e; border-color: var(--on); }
+
+/* Ratings Chart View (stile esempio_rating.png) */
+.ratings-chart-container { display: flex; flex-direction: column; gap: 16px; max-width: 1240px; margin: 0 auto; }
+.ratings-chart-back { align-self: flex-start; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; color: var(--lantern); background: none; border: 0; padding: 4px 0; font-size: 14px; cursor: pointer; }
+.ratings-chart-back:hover { filter: brightness(1.2); }
+.ratings-chart-layout { display: grid; grid-template-columns: 260px 1fr; gap: 32px; align-items: start; }
+.ratings-chart-sidebar { display: flex; flex-direction: column; gap: 12px; }
+.ratings-chart-poster { width: 100%; aspect-ratio: 2/3; border-radius: 8px; background: var(--panel-2) center/cover no-repeat; border: 1px solid var(--line); box-shadow: 0 10px 25px rgba(0,0,0,.5); overflow: hidden; }
+.ratings-chart-total { display: flex; align-items: center; gap: 6px; font-size: 20px; font-weight: 700; color: #fff; margin-top: 2px; }
+.ratings-chart-total .star { color: #f59e0b; font-size: 20px; }
+.ratings-chart-total .score-val { font-size: 20px; font-weight: 700; }
+.ratings-chart-total .score-src { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
+.ratings-chart-title { font-size: 24px; font-weight: 700; line-height: 1.2; color: #fff; }
+.ratings-chart-desc { font-size: 13px; line-height: 1.5; color: #a1a1aa; max-height: 280px; overflow-y: auto; white-space: pre-line; }
+
+.ratings-chart-main { display: flex; flex-direction: column; min-width: 0; }
+.ratings-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; font-size: 13px; font-weight: 500; color: #e2e8f0; }
+.legend-item { display: inline-flex; align-items: center; gap: 6px; user-select: none; }
+.legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
+
+.legend-dot.awesome { background-color: #107548; }
+.legend-dot.great { background-color: #2dc479; }
+.legend-dot.good { background-color: #eab308; }
+.legend-dot.regular { background-color: #f97316; }
+.legend-dot.bad { background-color: #ef4444; }
+.legend-dot.garbage { background-color: #8b5cf6; }
+
+.rating-tier-awesome { background-color: #107548 !important; color: #ffffff !important; }
+.rating-tier-great { background-color: #2dc479 !important; color: #062b16 !important; }
+.rating-tier-good { background-color: #eab308 !important; color: #2f2200 !important; }
+.rating-tier-regular { background-color: #f97316 !important; color: #ffffff !important; }
+.rating-tier-bad { background-color: #ef4444 !important; color: #ffffff !important; }
+.rating-tier-garbage { background-color: #8b5cf6 !important; color: #ffffff !important; }
+
+.ratings-matrix-wrapper { overflow: auto; max-height: calc(100vh - 170px); padding-bottom: 20px; }
+.ratings-matrix { border-collapse: separate; border-spacing: 5px; }
+.ratings-matrix th { padding: 4px 6px; font-size: 13px; font-weight: 600; color: var(--muted); text-align: center; min-width: 48px; }
+.ratings-matrix td.ep-label { padding: 4px 8px 4px 0; font-size: 12px; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; }
+.ratings-cell { width: 48px; height: 28px; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; line-height: 28px; cursor: default; transition: transform .1s ease, filter .1s ease; user-select: none; }
+.ratings-cell:hover:not(.empty) { transform: scale(1.12); filter: brightness(1.15); box-shadow: 0 2px 10px rgba(0,0,0,.5); z-index: 2; position: relative; }
+.ratings-cell.empty { background: transparent; width: 48px; height: 28px; }
+
+.rating-badge-btn { display: inline-flex; align-items: center; gap: 5px; background: rgba(240,180,90,.12); border: 1px solid rgba(240,180,90,.35); color: var(--lantern); padding: 3px 9px; border-radius: 6px; font-size: 13px; font-weight: 600; cursor: pointer; transition: all .15s ease; font-family: inherit; }
+.rating-badge-btn:hover { background: rgba(240,180,90,.22); border-color: var(--lantern); transform: translateY(-1px); }
+
+@media (max-width: 820px) {
+  .ratings-chart-layout { grid-template-columns: 1fr; gap: 20px; }
+  .ratings-chart-poster { max-width: 180px; }
+}

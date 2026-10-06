@@ -113,6 +113,50 @@ assert.ok(statsAfter.perSeries.some((x) => x.seriesId === s.id && x.totalEpisode
 ok('statistiche: episodi, durata, completamento e attività recente');
 assert.strictEqual(DEFAULT_SETTINGS.theme, 'default');
 
+// --- IMDb: normalizzazione titolo, riconoscimento stagione e rating chart
+const { cleanTitleForImdb, detectSeasonFromTitle, applyImdbRatingsToEpisodes } = require('../src/metadata');
+
+assert.strictEqual(cleanTitleForImdb('Attack on Titan Season 2'), 'Attack on Titan');
+assert.strictEqual(cleanTitleForImdb('Attack on Titan: The Final Season Part 2'), 'Attack on Titan');
+assert.strictEqual(cleanTitleForImdb('Demon Slayer: Kimetsu no Yaiba Entertainment District Arc'), 'Demon Slayer: Kimetsu no Yaiba');
+assert.strictEqual(cleanTitleForImdb('Jujutsu Kaisen 2nd Season'), 'Jujutsu Kaisen');
+assert.strictEqual(cleanTitleForImdb('Mob Psycho 100 III'), 'Mob Psycho 100');
+
+assert.strictEqual(detectSeasonFromTitle('Attack on Titan Season 2'), 2);
+assert.strictEqual(detectSeasonFromTitle('Attack on Titan 3rd Season'), 3);
+assert.strictEqual(detectSeasonFromTitle('Attack on Titan S04'), 4);
+assert.strictEqual(detectSeasonFromTitle('Attack on Titan'), 1);
+
+const mockChart = {
+  imdbId: 'tt2560140',
+  title: 'Attack on Titan',
+  overallRating: 9.1,
+  seasons: [
+    { season: 1, episodes: [{ number: 1, rating: 9.2 }, { number: 2, rating: 8.5 }] },
+    { season: 2, episodes: [{ number: 1, rating: 9.2 }, { number: 2, rating: 8.5 }] },
+  ],
+  maxEpisodes: 2,
+};
+
+const epsToMap = [{ number: 1, title: 'Ep 1', rating: null }, { number: 2, title: 'Ep 2', rating: null }];
+applyImdbRatingsToEpisodes(epsToMap, mockChart, 'Attack on Titan Season 2');
+assert.strictEqual(epsToMap[0].rating, 9.2);
+assert.strictEqual(epsToMap[0].ratingSource, 'IMDb');
+assert.strictEqual(epsToMap[1].rating, 8.5);
+
+store.refreshSeriesMetadata(s.id, {
+  imdbId: 'tt2560140',
+  imdbChart: mockChart,
+  score: 9.1,
+  scoreSource: 'IMDb',
+});
+const sWithImdb = store.getSeries(s.id);
+assert.strictEqual(sWithImdb.imdbId, 'tt2560140');
+assert.strictEqual(sWithImdb.score, 9.1);
+assert.strictEqual(sWithImdb.scoreSource, 'IMDb');
+assert.ok(sWithImdb.imdbChart && sWithImdb.imdbChart.seasons.length === 2);
+ok('IMDb: normalizzazione titoli, riconoscimento stagione, rating e chart');
+
 // --- mpv reale
 let mpvPath = null; try { mpvPath = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['mpv']).toString().split(/\r?\n/)[0].trim(); } catch {}
 if (!mpvPath) { console.log('  (mpv non installato: salto i test di riproduzione)'); console.log(`\n${n} test passati`); cleanup(); process.exit(0); }

@@ -25,6 +25,8 @@ const DICT = {
     resumeStatus: 'resume', noLink: 'No link', rewatch: 'Rewatch', watch: 'Watch',
     link: 'Links', markUnwatched: 'Mark unwatched', markWatched: 'Mark watched',
     delete: 'Delete', rating: 'Rating', ratingUnavailable: 'Rating unavailable',
+    ratingsChart: 'Rating chart', viewRatingsChart: 'View IMDb rating chart', backToAnime: '← Back to anime',
+    loadingRatings: 'Loading IMDb ratings…', chartUnavailable: 'Rating chart unavailable for this anime.',
     anime4kSeries: 'Anime4K for this series', activePreset: (x) => `Active: ${x}. Fast is intended for GPUs such as the GTX 1650; HQ for more powerful cards. In mpv you can change it with Ctrl+1…6.`,
     default: 'Default', off: 'Off', fast: 'Fast', hq: 'HQ', mode: 'Mode', quality: 'Quality',
     advanced: 'Advanced options', referer: 'Referer (only if the video site requires it)',
@@ -60,7 +62,7 @@ const DICT = {
     sourceUnavailable: 'Unavailable', scoreFrom: (x) => `${x}/10`, episode: (n) => `Episode ${n}`,
     hoursMinutes: (h, m) => `${h} h ${m} min`, minutes: (m) => `${m} min`,
     keyboardHint: 'Ctrl+1…6 Fast · Alt+1…6 HQ · Ctrl+0 Off · PgDown next',
-    primaryLanguage: 'Language',
+    primaryLanguage: 'Language', appVersion: 'App version',
   },
   it: {
     library: 'Libreria', stats: 'Statistiche', openLink: 'Apri un link', settings: 'Impostazioni',
@@ -86,6 +88,8 @@ const DICT = {
     resumeStatus: 'da riprendere', noLink: 'Nessun link', rewatch: 'Rivedi', watch: 'Guarda',
     link: 'Link', markUnwatched: 'Non visto', markWatched: 'Visto', delete: 'Elimina',
     rating: 'Punteggio', ratingUnavailable: 'Punteggio non disponibile',
+    ratingsChart: 'Grafico voti', viewRatingsChart: 'Visualizza grafico voti IMDb', backToAnime: '← Torna all’anime',
+    loadingRatings: 'Caricamento voti IMDb…', chartUnavailable: 'Grafico voti non disponibile per questo anime.',
     anime4kSeries: 'Anime4K per questa serie', activePreset: (x) => `Attivo: ${x}. Fast è pensato per GPU come la GTX 1650, HQ per schede più potenti. Dentro mpv puoi cambiarlo al volo con Ctrl+1…6.`,
     default: 'Predefinito', off: 'Spento', fast: 'Fast', hq: 'HQ', mode: 'Modo', quality: 'Qualità',
     advanced: 'Opzioni avanzate', referer: 'Referer (solo se il sito dei video lo richiede)',
@@ -121,7 +125,7 @@ const DICT = {
     sourceUnavailable: 'Non disponibile', scoreFrom: (x) => `${x}/10`, episode: (n) => `Episodio ${n}`,
     hoursMinutes: (h, m) => `${h} h ${m} min`, minutes: (m) => `${m} min`,
     keyboardHint: 'Ctrl+1…6 Fast · Alt+1…6 HQ · Ctrl+0 spento · PgDown prossimo',
-    primaryLanguage: 'Lingua',
+    primaryLanguage: 'Lingua', appVersion: 'Versione app',
   },
 };
 

@@ -152,8 +152,8 @@ class Store {
 
   addSeries(meta = {}) {
     const s = {
-      id: uid(), title: 'Senza titolo', anilistId: null, kitsuId: null, cover: null, banner: null,
-      description: '', genres: [], score: null, year: null, format: null, episodeCount: null,
+      id: uid(), title: 'Senza titolo', anilistId: null, kitsuId: null, imdbId: null, imdbChart: null, cover: null, banner: null,
+      description: '', genres: [], score: null, scoreSource: null, year: null, format: null, episodeCount: null,
       preset: null, referer: '', addedAt: Date.now(), lastWatchedAt: 0, episodes: [], ...meta,
     };
     if (!Array.isArray(s.episodes)) s.episodes = [];
@@ -165,7 +165,7 @@ class Store {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId'];
+    const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     this.save();
     return s;
@@ -229,7 +229,11 @@ class Store {
       const ep = this.ensureEpisode(s, m.number);
       if (m.title && !ep.title) ep.title = m.title;
       if (m.thumb && !ep.thumb) ep.thumb = m.thumb;
-      if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'Kitsu'; }
+      if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'IMDb'; }
+    }
+    if (s.imdbChart && Array.isArray(s.imdbChart.seasons) && s.imdbChart.seasons.length > 0) {
+      const { applyImdbRatingsToEpisodes } = require('./metadata');
+      applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s.title);
     }
     this.save();
   }
@@ -237,7 +241,7 @@ class Store {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId'];
+    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
     if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
       for (let n = 1; n <= s.episodeCount; n++) this.ensureEpisode(s, n);
@@ -247,7 +251,11 @@ class Store {
       const ep = this.ensureEpisode(s, m.number);
       if (m.title) ep.title = m.title;
       if (m.thumb) ep.thumb = m.thumb;
-      if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'Kitsu'; }
+      if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'IMDb'; }
+    }
+    if (s.imdbChart && Array.isArray(s.imdbChart.seasons) && s.imdbChart.seasons.length > 0) {
+      const { applyImdbRatingsToEpisodes } = require('./metadata');
+      applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s.title);
     }
     this.save();
     return s;

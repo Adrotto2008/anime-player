@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false }, stats: null, ratingLoads: {} };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false }, stats: null, ratingLoads: {} };
 
 /* ---------- utilità ---------- */
 function h(tag, props, ...kids) {
@@ -81,11 +81,11 @@ function renderPlayer() {
 /* ---------- navigazione ---------- */
 function go(view) {
   state.view = view; render(); $('#main').scrollTop = 0;
-  if (view.name === 'series') loadSeriesRatings(view.id);
+  if (view.name === 'series' || view.name === 'ratings-chart') loadSeriesRatings(view.id);
 }
 async function loadSeriesRatings(id) {
   const s = getSeries(id);
-  if (!s || !s.anilistId || state.ratingLoads[id]) return;
+  if (!s || state.ratingLoads[id]) return;
   state.ratingLoads[id] = true;
   try { state.lib = await call('series:ratings', id); state.stats = null; render(); } catch { /* stored metadata remains visible */ }
 }
@@ -94,8 +94,11 @@ function render() {
   renderRail(); renderPlayer();
   const main = $('#main');
   if (document.activeElement && main.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
-  main.replaceChildren(state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
-    state.view.name === 'stats' ? statsView() : homeView());
+  main.replaceChildren(
+    state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
+    state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
+    state.view.name === 'stats' ? statsView() : homeView()
+  );
 }
 
 /* ---------- home ---------- */
@@ -225,14 +228,28 @@ function seriesView(s) {
   const tierBtns = ['fast', 'hq'].map((tier) => h('button', { 'aria-pressed': String(!!s.preset && s.preset !== 'off' && effTier === tier), disabled: !s.preset || s.preset === 'off', onclick: () => setPreset(`${effMode}-${tier}`) }, tier === 'fast' ? t('fast') : t('hq')));
   const desc = h('div', { class: 'desc' }, s.description || t('noDescription'));
   const more = s.description && s.description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? t('showLess') : t('readMore'); } }, t('readMore')) : null;
-  const meta = [s.year, s.format && s.format.replace('_', ' '), s.score != null ? `★ ${Number(s.score).toFixed(1)}/10${s.scoreSource ? ` (${s.scoreSource})` : ''}` : `★ ${t('ratingUnavailable')}`, s.episodeCount ? `${s.episodeCount} ${t('episodes').toLowerCase()}` : null].filter(Boolean).join('  ·  ');
+  const metaParts = [
+    s.year,
+    s.format && s.format.replace('_', ' '),
+    s.episodeCount ? `${s.episodeCount} ${t('episodes').toLowerCase()}` : null,
+  ].filter(Boolean);
+  const ratingBtn = h('button', {
+    class: 'rating-badge-btn',
+    title: t('viewRatingsChart'),
+    onclick: () => go({ name: 'ratings-chart', id: s.id }),
+  }, s.score != null ? `★ ${Number(s.score).toFixed(1)}/10${s.scoreSource ? ` (${s.scoreSource})` : ''}` : `★ ${t('ratingUnavailable')}`);
+  const metaRow = h('div', { class: 'row wrap', style: { alignItems: 'center', gap: '8px', margin: '4px 0' } },
+    ratingBtn,
+    metaParts.length ? h('span', { class: 'muted' }, ' · ' + metaParts.join('  ·  ')) : null,
+  );
   const actions = h('div', { class: 'row wrap', style: { marginTop: '14px' } },
     h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, t('addLinks')),
+    h('button', { class: 'btn', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, '★ ' + t('ratingsChart')),
     s.anilistId ? h('button', { class: 'btn', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, t('updateInfo')) : null,
     h('button', { class: 'btn danger', onclick: () => { if (confirm(t('confirmDelete', s.title))) mutate('series:delete', s.id).then(() => go({ name: 'home' })); } }, t('deleteSeries')));
   const heroBody = h('div', { class: 'body' },
     h('div', { class: 'cover', style: bg(s.cover) }),
-    h('div', null, h('h1', null, s.title), h('div', { class: 'muted' }, meta),
+    h('div', null, h('h1', null, s.title), metaRow,
       h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g))),
       desc, more, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
@@ -251,6 +268,110 @@ function seriesView(s) {
     : h('div', { class: 'empty' }, h('h2', null, t('noEpisodeYet')), t('addLinksHint'),
       h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, t('addLinks'))));
   return h('div', null, hero, a4k, h('section', null, h('h2', { style: { marginBottom: '12px' } }, t('episodes')), episodeContent));
+}
+
+function getRatingTier(score) {
+  const n = Number(score);
+  if (!Number.isFinite(n) || n < 0) return null;
+  if (n >= 9.0) return 'awesome';
+  if (n >= 8.0) return 'great';
+  if (n >= 7.0) return 'good';
+  if (n >= 6.0) return 'regular';
+  if (n >= 5.0) return 'bad';
+  return 'garbage';
+}
+
+function ratingsChartView(s) {
+  const chart = s.imdbChart;
+  const back = h('button', { class: 'ratings-chart-back', onclick: () => go({ name: 'series', id: s.id }) }, t('backToAnime'));
+
+  const totalScoreVal = s.score != null
+    ? Number(s.score).toFixed(1)
+    : (chart && chart.overallRating != null ? Number(chart.overallRating).toFixed(1) : null);
+
+  const sidebar = h('aside', { class: 'ratings-chart-sidebar' },
+    h('div', { class: 'ratings-chart-poster', style: bg(s.cover) }),
+    h('div', { class: 'ratings-chart-total' },
+      h('span', { class: 'star' }, '★'),
+      h('span', { class: 'score-val' }, totalScoreVal != null ? totalScoreVal : t('unavailable')),
+      s.scoreSource ? h('span', { class: 'score-src' }, `(${s.scoreSource})`) : null,
+    ),
+    h('h1', { class: 'ratings-chart-title' }, (chart && chart.title) || s.title),
+    h('div', { class: 'ratings-chart-desc' }, s.description || t('noDescription')),
+  );
+
+  let mainContent;
+  if (!chart || !Array.isArray(chart.seasons) || !chart.seasons.length) {
+    mainContent = h('div', { class: 'empty' },
+      h('h2', null, state.ratingLoads[s.id] ? t('loadingRatings') : t('chartUnavailable')),
+      h('p', { class: 'muted' }, state.ratingLoads[s.id] ? t('calculateStats') : ''),
+      h('button', {
+        class: 'btn primary',
+        onclick: async () => {
+          delete state.ratingLoads[s.id];
+          await loadSeriesRatings(s.id);
+        },
+      }, t('refresh')),
+    );
+  } else {
+    // Legenda corrispondente a esempio_rating.png
+    const TIERS = [
+      { id: 'awesome', label: 'Awesome' },
+      { id: 'great', label: 'Great' },
+      { id: 'good', label: 'Good' },
+      { id: 'regular', label: 'Regular' },
+      { id: 'bad', label: 'Bad' },
+      { id: 'garbage', label: 'Garbage' },
+    ];
+    const legend = h('div', { class: 'ratings-legend' },
+      TIERS.map((tier) => h('div', { class: 'legend-item' },
+        h('span', { class: `legend-dot ${tier.id}` }),
+        h('span', null, tier.label),
+      )),
+    );
+
+    const seasons = chart.seasons.filter((sn) => Number.isInteger(sn.season) && sn.season > 0);
+    const maxEps = chart.maxEpisodes || Math.max(...seasons.map((sn) => sn.episodes.length), 0);
+
+    const headerRow = h('tr', null,
+      h('th', null),
+      ...seasons.map((sn) => h('th', null, `S${sn.season}`)),
+    );
+
+    const bodyRows = [];
+    for (let epNum = 1; epNum <= maxEps; epNum++) {
+      const cells = [
+        h('td', { class: 'ep-label' }, `E${epNum}`),
+      ];
+      for (const sn of seasons) {
+        const ep = sn.episodes.find((e) => e.number === epNum);
+        if (ep && ep.rating != null) {
+          const tier = getRatingTier(ep.rating);
+          const cell = h('td', null,
+            h('div', {
+              class: `ratings-cell rating-tier-${tier}`,
+              title: `S${sn.season} E${ep.number}: ${ep.title || t('episode', ep.number)} · ${ep.rating.toFixed(1)} ★ (${tier})`,
+            }, ep.rating.toFixed(1)),
+          );
+          cells.push(cell);
+        } else {
+          cells.push(h('td', null, h('div', { class: 'ratings-cell empty' })));
+        }
+      }
+      bodyRows.push(h('tr', null, ...cells));
+    }
+
+    const table = h('table', { class: 'ratings-matrix' },
+      h('thead', null, headerRow),
+      h('tbody', null, ...bodyRows),
+    );
+
+    const matrixWrapper = h('div', { class: 'ratings-matrix-wrapper' }, table);
+    mainContent = h('div', { class: 'ratings-chart-main' }, legend, matrixWrapper);
+  }
+
+  const layout = h('div', { class: 'ratings-chart-layout' }, sidebar, mainContent);
+  return h('div', { class: 'ratings-chart-container' }, back, layout);
 }
 
 function episodeRow(s, e) {
@@ -406,6 +527,7 @@ function openSettings() {
       field(t('defaultAnime4K'), preset),
       field(t('interfaceTheme'), theme),
       field(t('primaryLanguage'), language),
+      h('div', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`),
       h('label', { class: 'row', style: { marginBottom: '14px' } }, auto, t('autoplay')),
       h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang)),
       field(t('userAgent'), ua), field(t('extraArgs'), extra),
@@ -444,6 +566,7 @@ function openSetup() {
   api.on('player:error', (m) => toast(m, 'error'));
   state.lib = await api.invoke('lib:get');
   state.presets = await api.invoke('presets:list');
+  state.version = await api.invoke('app:version');
   state.player = await api.invoke('player:state');
   render();
   if (!state.lib.settings.onboardingComplete) openSetup();

@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player is a Windows Electron library for anime links. It stores the
+Anime Player **v0.2.0** is a Windows Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -9,9 +9,12 @@ episodes and it does not scrape streaming sites.
 
 - AniList search and series metadata: poster, banner, description, genres,
   year, format, episode count, and AniList score when available.
-- Kitsu episode titles, thumbnails, and episode ratings when Kitsu exposes an
-  `averageRating`/`ratingAverage` value. Missing episode ratings are shown as
-  unavailable; no values are invented.
+- IMDb overall anime score and episode-by-episode ratings across all seasons.
+- Visual IMDb episode rating chart/heatmap in the series view (styled after
+  Series Graph tier charts: Awesome, Great, Good, Regular, Bad, Garbage),
+  recognizing the overall anime franchise across seasons.
+- Kitsu episode titles and thumbnails. Missing ratings fallback gracefully; no
+  values are invented.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
 - Automatic episode-number detection, patterns (`{ep}` and `{ep:02}`),
@@ -56,7 +59,7 @@ npm run dist
 This keeps both Windows targets:
 
 - `dist\AnimePlayer-portable.exe`: one executable, no installation required.
-- `dist\AnimePlayer-Setup-<version>.exe`: NSIS installer with Desktop and
+- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.2.0.exe`): NSIS installer with Desktop and
   Start Menu shortcuts, selectable installation directory, and per-user
   installation by default.
 
@@ -76,9 +79,9 @@ The installed/portable application does not need Node.js, `npm install`, or
 
 Opening an AniList-linked series refreshes its online metadata and ratings in
 the background. The refresh preserves user-entered links, playback progress,
-watched state, and local episode entries. AniList supplies the series score;
-Kitsu supplies episode ratings only when the episode response contains a
-rating field. API failures leave the last stored values in place.
+watched state, and local episode entries. AniList supplies base metadata, while
+IMDb supplies the overall series score, per-episode ratings across all seasons,
+and the rating matrix chart. API failures leave the last stored values in place.
 
 ## Anime4K
 
@@ -88,9 +91,9 @@ A+A HQ, but it can be changed globally, per series, or while mpv is playing.
 
 ## Data and privacy
 
-The app stores library data locally as JSON. It contacts AniList and Kitsu
-only for the metadata and ratings described above. Video links are entered by
-the user; the app does not include a downloader or scraper.
+The app stores library data locally as JSON. It contacts AniList, Kitsu, and
+IMDb only for the metadata and ratings described above. Video links are entered
+by the user; the app does not include a downloader or scraper.
 
 ## Tests and validation
 
@@ -109,7 +112,7 @@ git diff --check
 
 Anime4K shaders are from [bloc97/Anime4K](https://github.com/bloc97/Anime4K)
 and remain under their MIT license in `shaders\LICENSE-Anime4K.txt`.
-Metadata and ratings are obtained from [AniList](https://anilist.co/) and
-[Kitsu](https://kitsu.io/).
+Metadata and ratings are obtained from [AniList](https://anilist.co/),
+[Kitsu](https://kitsu.io/), and [IMDb](https://www.imdb.com/).
 
 This is a vibe-coding project developed collaboratively with multiple AIs.

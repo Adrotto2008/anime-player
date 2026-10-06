@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",

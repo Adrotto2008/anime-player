@@ -56,6 +56,7 @@ function register() {
   const h = (ch, fn) => ipcMain.handle(ch, async (_e, ...a) => fn(...a));
 
   h('lib:get', () => lib());
+  h('app:version', () => app.getVersion());
   h('library:export', async () => {
     const r = await dialog.showSaveDialog(win, {
       title: 'Esporta libreria',
@@ -113,7 +114,18 @@ function register() {
   h('series:search', (text) => meta.searchAnime(text));
 
   h('series:create', async ({ anilistId, title }) => {
-    if (!anilistId) { const s = store.addSeries({ title: String(title || '').trim() || 'Senza titolo' }); return { id: s.id, lib: lib() }; }
+    if (!anilistId) {
+      const s = store.addSeries({ title: String(title || '').trim() || 'Senza titolo' });
+      try {
+        const imdb = await meta.fetchImdbData({ title: s.title });
+        if (imdb) {
+          const patch = { imdbId: imdb.imdbId, imdbChart: imdb };
+          if (imdb.overallRating != null) { patch.score = imdb.overallRating; patch.scoreSource = 'IMDb'; }
+          store.refreshSeriesMetadata(s.id, patch);
+        }
+      } catch { /* ignora errori imdb */ }
+      return { id: s.id, lib: lib() };
+    }
     const m = await meta.getAnime(anilistId);
     const { streamingEpisodes, altTitle, status, ...fields } = m;
     const s = store.addSeries(fields);
@@ -124,32 +136,64 @@ function register() {
       for (let n = 1; n <= m.episodeCount; n++) store.ensureEpisode(seriesObj, n);
     }
     store.mergeEpisodeMeta(s.id, episodes);
+    try {
+      const imdb = await meta.fetchImdbData({ title: s.title || m.title, altTitle: m.altTitle });
+      if (imdb) {
+        const patch = { imdbId: imdb.imdbId, imdbChart: imdb };
+        if (imdb.overallRating != null) { patch.score = imdb.overallRating; patch.scoreSource = 'IMDb'; }
+        store.refreshSeriesMetadata(s.id, patch);
+      }
+    } catch { /* ignora errori imdb */ }
     return { id: s.id, lib: lib() };
   });
 
   h('series:update', (id, patch) => { store.updateSeries(id, patch); return lib(); });
   h('series:delete', async (id) => { if (player.cur && player.cur.series && player.cur.series.id === id) await player.stop(); store.deleteSeries(id); return lib(); });
 
-  h('series:refresh', async (id) => {
+  const syncSeriesRatings = async (id) => {
     const s = store.getSeries(id);
-    if (!s || !s.anilistId) throw new Error('Questa serie non è collegata ad AniList.');
-    const m = await meta.getAnime(s.anilistId);
-    const { streamingEpisodes, altTitle, status, ...fields } = m;
-    const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes });
-    store.refreshSeriesMetadata(id, { ...fields, kitsuId }, episodes);
+    if (!s) return lib();
+    let fields = {};
+    let kitsuEpisodes = [];
+    let kitsuId = s.kitsuId;
+    if (s.anilistId) {
+      try {
+        const m = await meta.getAnime(s.anilistId);
+        const { streamingEpisodes, altTitle, status, ...f } = m;
+        fields = f;
+        const { kitsuId: kid, episodes } = await meta.fetchEpisodes({
+          anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes,
+        });
+        kitsuId = kid;
+        kitsuEpisodes = episodes;
+      } catch (err) {
+        console.warn('AniList/Kitsu error:', err.message);
+      }
+    }
+    fields.kitsuId = kitsuId;
+
+    try {
+      const searchTitle = (fields.title || s.title);
+      const searchAlt = (fields.altTitle || s.altTitle);
+      const imdb = await meta.fetchImdbData({ imdbId: s.imdbId, title: searchTitle, altTitle: searchAlt });
+      if (imdb) {
+        fields.imdbId = imdb.imdbId;
+        fields.imdbChart = imdb;
+        if (imdb.overallRating != null) {
+          fields.score = imdb.overallRating;
+          fields.scoreSource = 'IMDb';
+        }
+      }
+    } catch (err) {
+      console.warn('IMDb error:', err.message);
+    }
+
+    store.refreshSeriesMetadata(id, fields, kitsuEpisodes);
     return lib();
-  });
-  h('series:ratings', async (id) => {
-    const s = store.getSeries(id);
-    if (!s || !s.anilistId) return lib();
-    const m = await meta.getAnime(s.anilistId);
-    const { streamingEpisodes, altTitle, status, ...fields } = m;
-    const { kitsuId, episodes } = await meta.fetchEpisodes({
-      anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes,
-    });
-    store.refreshSeriesMetadata(id, { ...fields, kitsuId }, episodes);
-    return lib();
-  });
+  };
+
+  h('series:refresh', (id) => syncSeriesRatings(id));
+  h('series:ratings', (id) => syncSeriesRatings(id));
 
   const checkItems = (items) => {
     const bad = items.find((i) => !isValidSource(i.url));
