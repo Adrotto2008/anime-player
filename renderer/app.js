@@ -1,3 +1,4 @@
+(() => {
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
@@ -447,4 +448,5 @@ function openSetup() {
   render();
   if (!state.lib.settings.onboardingComplete) openSetup();
   else if (!state.lib.settings.mpvPath) toast(t('configureMpv'), 'error');
+})();
 })();
