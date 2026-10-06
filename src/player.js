@@ -32,7 +32,7 @@ class PlayerManager {
     if (!series || !ep) throw new Error('Episodio non trovato');
     if (!ep.sources.length) throw new Error('Questo episodio non ha ancora link.');
     const title = `${series.title} — Ep. ${ep.number}${ep.title ? ' · ' + ep.title : ''}`;
-    const resume = !ep.progress.watched && ep.progress.pos > 10 ? Math.max(0, ep.progress.pos - 3) : 0;
+    const resume = !ep.progress.watched && ep.progress.pos > 0 ? Math.max(0, ep.progress.pos) : 0;
     this.store.setProgress(seriesId, episodeId, {}); // aggiorna "ultima visione"
     return this._launch({ series, ep, url: ep.sources[opts.sourceIndex || 0].url, sourceIndex: opts.sourceIndex || 0, title, start: resume, referer: series.referer, presetId: this.presetFor(series) });
   }
@@ -50,15 +50,21 @@ class PlayerManager {
     const pipe = pipePath();
     const args = A4K.buildArgs({ settings, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, inputConf: this.inputConf, pipe, shaderDir: this.paths.shaderDir });
     const session = new MpvSession({ mpvPath: settings.mpvPath, args, pipe });
-    this.cur = { ...c, session, pos: 0, dur: 0, lastSave: 0, nav: null, stopping: false };
+    this.cur = { ...c, session, pos: c.start || 0, dur: 0, lastSave: 0, saveTimer: null, nav: null, stopping: false };
     const cur = this.cur;
 
+    const flushProgress = () => {
+      if (!cur.ep || cur.ep.progress.watched) return;
+      clearTimeout(cur.saveTimer);
+      cur.saveTimer = null;
+      this.store.setProgress(cur.series.id, cur.ep.id, { pos: Math.max(0, cur.pos), duration: Math.max(0, cur.dur), watched: false });
+      cur.lastSave = Date.now();
+    };
     session.on('time', (t) => {
       cur.pos = t;
-      if (cur.ep && Date.now() - cur.lastSave > 5000) {
-        cur.lastSave = Date.now();
-        this.store.setProgress(cur.series.id, cur.ep.id, { pos: t, duration: cur.dur });
-        this.notify('lib:changed', this.store.snapshot());
+      if (cur.ep && !cur.ep.progress.watched) {
+        clearTimeout(cur.saveTimer);
+        cur.saveTimer = setTimeout(flushProgress, 750);
       }
     });
     session.on('duration', (d) => { cur.dur = d; });
@@ -76,9 +82,11 @@ class PlayerManager {
     if (this.cur !== cur) return; // già sostituita da un'altra sessione
     this.cur = null;
     if (cur.ep) {
+      clearTimeout(cur.saveTimer);
       const { pos, dur } = cur;
       const watched = eof || (dur > 0 && pos / dur >= 0.92);
-      this.store.setProgress(cur.series.id, cur.ep.id, watched ? { watched: true, pos: 0, duration: dur } : { pos: pos > 10 ? pos : 0, duration: dur });
+      if (cur.ep.progress.watched) this.store.setProgress(cur.series.id, cur.ep.id, { watched: true, pos: 0, duration: dur });
+      else this.store.setProgress(cur.series.id, cur.ep.id, watched ? { watched: true, pos: 0, duration: dur } : { watched: false, pos: Math.max(0, pos), duration: Math.max(0, dur) });
       this.store.save(true);
     }
     this._emitState();
@@ -108,6 +116,30 @@ class PlayerManager {
     const p = A4K.resolvePreset(presetId);
     this.cur.session.setShaders(A4K.shaderList(presetId, this.paths.shaderDir), p.label);
     this._emitState();
+  }
+
+  skipIntro() {
+    if (!this.cur || !this.cur.series || !this.cur.series.introDuration) return false;
+    this.cur.session.seekAbsolute(this.cur.series.introDuration);
+    return true;
+  }
+
+  seekRelative(seconds) {
+    if (!this.cur) return false;
+    this.cur.session.seekRelative(seconds);
+    return true;
+  }
+
+  seekAbsolute(seconds) {
+    if (!this.cur) return false;
+    this.cur.session.seekAbsolute(seconds);
+    return true;
+  }
+
+  skipEnding() {
+    if (!this.cur || !this.cur.series || !this.cur.series.outroDuration || !this.cur.dur) return false;
+    this.cur.session.seekAbsolute(Math.max(0, this.cur.dur - this.cur.series.outroDuration));
+    return true;
   }
 
   async stop() {

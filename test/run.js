@@ -80,6 +80,9 @@ assert.strictEqual(refreshed.episodes[1].title, 'Due aggiornato');
 assert.strictEqual(refreshed.episodes[1].thumb, 'https://img.example/2-new.jpg');
 assert.strictEqual(refreshed.episodes[1].rating, 9.1, 'online episode rating is merged');
 assert.strictEqual(refreshed.episodes[3].title, 'Quattro');
+store.updateSeries(s.id, { introDuration: -4, outroDuration: 86 });
+assert.strictEqual(store.getSeries(s.id).introDuration, 0, 'opening duration is clamped to zero');
+assert.strictEqual(store.getSeries(s.id).outroDuration, 86);
 ok('refresh metadati: link e progressi preservati, episodi aggiunti');
 const seasonLimited = new Store(path.join(tmp, 'season-limited.json'));
 const limited = seasonLimited.addSeries({ title: 'Re:Zero', episodeCount: 25 });
@@ -121,6 +124,18 @@ assert.ok(statsAfter.latestActivity.some((x) => x.seriesId === s.id));
 assert.ok(statsAfter.perSeries.some((x) => x.seriesId === s.id && x.totalEpisodes === 4 && x.watchedEpisodes === 1 && x.completion === 25));
 ok('statistiche: episodi, durata, completamento e attività recente');
 assert.strictEqual(DEFAULT_SETTINGS.theme, 'default');
+
+const resumePm = new PlayerManager({ store, paths: { shaderDir, userData: tmp }, notify: () => {} });
+const resumeEp = store.getSeries(s.id).episodes[1];
+resumeEp.progress = { ...resumeEp.progress, watched: false, pos: 0, duration: 120 };
+const resumeCur = {
+  series: store.getSeries(s.id), ep: resumeEp, pos: 4, dur: 120, sourceIndex: 0,
+  session: { }, stopping: true, nav: null,
+};
+resumePm.cur = resumeCur;
+resumePm._onExit(resumeCur, { eof: false, error: null });
+assert.strictEqual(store.getEpisode(s.id, resumeEp.id).progress.pos, 4, 'short stopped sessions retain exact resume position');
+ok('resume: posizione breve salvata all’uscita senza arrotondamento a zero');
 
 // --- IMDb: normalizzazione titolo, riconoscimento stagione e rating chart
 const { cleanTitleForImdb, detectSeasonFromTitle, applyImdbRatingsToEpisodes } = require('../src/metadata');

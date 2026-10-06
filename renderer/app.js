@@ -73,8 +73,16 @@ function renderPlayer() {
   const p = state.player; const el = $('#nowplaying');
   el.hidden = !p.playing;
   if (!p.playing) return;
+  const s = p.seriesId && getSeries(p.seriesId);
+  const skipIntro = s && Number(s.introDuration) > 0
+    ? h('button', { class: 'btn sm', onclick: () => call('player:skipIntro') }, t('skipIntro'))
+    : null;
+  const skipEnding = s && Number(s.outroDuration) > 0
+    ? h('button', { class: 'btn sm', onclick: () => call('player:skipEnding') }, t('skipEnding'))
+    : null;
   el.replaceChildren(h('span', { class: 'dot' }), h('div', { class: 't' }, h('b', null, p.title), h('span', { class: 'muted' }, `  ·  Anime4K ${p.preset}`)),
     h('span', { class: 'muted small' }, t('keyboardHint')),
+    skipIntro, skipEnding,
     h('button', { class: 'btn sm', onclick: () => call('player:stop') }, t('stop')));
 }
 
@@ -116,6 +124,15 @@ function continueItems() {
   return out.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
 }
 const pct = (e) => (e.progress.duration > 0 && e.progress.pos > 0 ? Math.min(100, (e.progress.pos / e.progress.duration) * 100) : 0);
+const episodeTotal = (s) => Array.isArray(s.episodes) ? s.episodes.length : 0;
+function resumeTarget(s) {
+  const episodes = (s.episodes || []).filter((e) => e.sources && e.sources.length);
+  const inProgress = episodes
+    .filter((e) => !e.progress.watched && e.progress.pos > 0)
+    .sort((a, b) => (b.progress.updatedAt || 0) - (a.progress.updatedAt || 0))[0];
+  if (inProgress) return inProgress;
+  return episodes.find((e) => !e.progress.watched) || null;
+}
 function seriesMatches(s, filter) {
   if (filter === 'all') return true;
   const episodes = s.episodes.filter((e) => e.sources.length);
@@ -163,7 +180,7 @@ function homeView() {
       return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
         h('div', { class: 'cover', style: bg(s.cover) }, s.cover ? null : s.title.slice(0, 1).toUpperCase()),
         h('div', { class: 't' }, s.title),
-        h('div', { class: 'muted small' }, s.episodes.length ? t('watchedOf', seen, s.episodes.length) : t('noEpisodes')));
+        h('div', { class: 'muted small' }, episodeTotal(s) ? t('watchedOf', seen, episodeTotal(s)) : t('noEpisodes')));
     })) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
       state.lib.series.length ? t('noFilterMatch') : t('emptyLibraryHint'),
       state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, t('addFirstSeries')))));
@@ -228,10 +245,11 @@ function seriesView(s) {
   const tierBtns = ['fast', 'hq'].map((tier) => h('button', { 'aria-pressed': String(!!s.preset && s.preset !== 'off' && effTier === tier), disabled: !s.preset || s.preset === 'off', onclick: () => setPreset(`${effMode}-${tier}`) }, tier === 'fast' ? t('fast') : t('hq')));
   const desc = h('div', { class: 'desc' }, s.description || t('noDescription'));
   const more = s.description && s.description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? t('showLess') : t('readMore'); } }, t('readMore')) : null;
+  const target = resumeTarget(s);
   const metaParts = [
     s.year,
     s.format && s.format.replace('_', ' '),
-    s.episodeCount ? `${s.episodeCount} ${t('episodes').toLowerCase()}` : null,
+    episodeTotal(s) ? `${episodeTotal(s)} ${t('episodes').toLowerCase()}` : null,
   ].filter(Boolean);
   const ratingBtn = h('button', {
     class: 'rating-badge-btn',
@@ -252,10 +270,21 @@ function seriesView(s) {
     h('div', null, h('h1', null, s.title), metaRow,
       h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g))),
       desc, more, actions));
+  const resumeAction = target
+    ? h('aside', { class: 'hero-resume' },
+      h('div', { class: 'muted small' }, target.progress.pos > 0 && !target.progress.watched ? t('resumeStatus') : t('nextEpisode')),
+      h('strong', null, t('episode', target.number)),
+      target.title ? h('div', { class: 'muted small' }, target.title) : null,
+      h('button', { class: 'btn primary', onclick: () => play(s.id, target.id) }, target.progress.pos > 0 && !target.progress.watched ? t('resume') : t('watch')))
+    : null;
+  heroBody.append(resumeAction);
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
     h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, t('backLibrary')), heroBody);
   const advanced = h('details', { class: 'adv' }, h('summary', null, t('advanced')),
-    field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })));
+    field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })),
+    h('div', { class: 'two' },
+      field(t('introDuration'), h('input', { class: 'input', type: 'number', min: '0', step: '1', value: Number(s.introDuration) || 0, onchange: (e) => mutate('series:update', s.id, { introDuration: Math.max(0, Number(e.target.value) || 0) }) })),
+      field(t('outroDuration'), h('input', { class: 'input', type: 'number', min: '0', step: '1', value: Number(s.outroDuration) || 0, onchange: (e) => mutate('series:update', s.id, { outroDuration: Math.max(0, Number(e.target.value) || 0) }) }))));
   const a4k = h('section', { class: 'a4k' },
     h('h3', null, t('anime4kSeries')),
     h('div', { class: 'muted small', style: { marginBottom: '10px' } }, t('activePreset', presetLabel(eff))),
@@ -376,8 +405,9 @@ function ratingsChartView(s) {
 
 function episodeRow(s, e) {
   const has = e.sources.length > 0; const p = e.progress; const resume = !p.watched && p.pos > 10;
-  const thumb = h('div', { class: 'th', style: bg(e.thumb || s.banner || s.cover) },
-    e.thumb ? null : h('span', { class: 'num' }, String(e.number)),
+  const image = e.thumb || s.banner || s.cover;
+  const thumb = h('div', { class: 'th' + (image ? '' : ' fallback'), style: bg(image), title: e.thumb ? '' : t('noThumbnail') },
+    e.thumb ? null : h('span', { class: 'num' }, image ? String(e.number) : t('noThumbnail')),
     pct(e) && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
   const info = h('div', null,
     h('div', { class: 'name' }, `${e.number}. ${e.title || t('episode', e.number)}`),
@@ -422,7 +452,7 @@ function openAddSeries() {
 function openAddLinks(s) {
   openDialog(t('addLinksTitle', s.title), (close) => {
     const fill = (pattern, n) => pattern.replace(/\{ep(?::(\d+))?\}/g, (_, w) => (w ? String(n).padStart(Number(w), '0') : String(n)));
-    const defTo = String(s.episodeCount || s.episodes.length || 12);
+    const defTo = String(episodeTotal(s) || 12);
     const range = () => { const from = h('input', { class: 'input', type: 'number', min: '0', value: '1' }); const to = h('input', { class: 'input', type: 'number', min: '0', value: defTo }); return { from, to, box: h('div', { class: 'two' }, field(t('fromEpisode'), from), field(t('toEpisode'), to)) }; };
     let tab = 'link';
 
@@ -524,6 +554,7 @@ function openSettings() {
       field(t('mpvPath'), h('div', { class: 'row' }, mpv,
         h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
         h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, t('browse')))),
+      h('div', { class: 'muted small setup-note' }, t('mpvExternalNote')),
       field(t('defaultAnime4K'), preset),
       field(t('interfaceTheme'), theme),
       field(t('primaryLanguage'), language),
@@ -543,7 +574,7 @@ function openSetup() {
     preset.value = state.lib.settings.defaultPreset || 'aa-hq';
     const language = h('select', { class: 'input', value: state.lib.settings.language || 'en' },
       h('option', { value: 'en' }, 'English'), h('option', { value: 'it' }, 'Italiano'));
-    const message = h('div', { class: 'muted small' }, t('setupMessage'));
+    const message = h('div', { class: 'muted small setup-note' }, t('setupMessage'));
     const save = async () => {
       try {
         const lib = await call('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, language: language.value, onboardingComplete: true });
@@ -554,6 +585,7 @@ function openSetup() {
     return [message, field(t('mpvPath'), h('div', { class: 'row' }, mpv,
       h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
       h('button', { class: 'btn', onclick: async () => { const lib = await call('mpv:browse'); state.lib = lib; mpv.value = lib.settings.mpvPath || ''; } }, t('browse')))),
+      h('div', { class: 'muted small setup-note' }, t('mpvExternalNote')),
       field(t('defaultAnime4K'), preset), field(t('primaryLanguage'), language),
       h('div', { class: 'foot' }, h('button', { class: 'btn primary', onclick: save }, t('completeSetup')))];
   }, { locked: true });

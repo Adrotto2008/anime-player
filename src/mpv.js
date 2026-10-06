@@ -80,6 +80,16 @@ class MpvSession extends EventEmitter {
     this.send(['show-text', `Anime4K: ${label}`, 2000]);
   }
 
+  seekRelative(seconds) {
+    const value = Number(seconds);
+    if (Number.isFinite(value) && value !== 0) this.send(['seek', value, 'relative']);
+  }
+
+  seekAbsolute(seconds) {
+    const value = Number(seconds);
+    if (Number.isFinite(value) && value >= 0) this.send(['seek', value, 'absolute']);
+  }
+
   quit() {
     this.send(['quit']);
     setTimeout(() => { if (!this.closed && this.proc) this.proc.kill(); }, 1500);

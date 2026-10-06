@@ -221,6 +221,10 @@ function register() {
   });
   h('player:stop', () => player.stop());
   h('player:preset', (id) => player.setPreset(id));
+  h('player:seekRelative', (seconds) => player.seekRelative(seconds));
+  h('player:seekAbsolute', (seconds) => player.seekAbsolute(seconds));
+  h('player:skipIntro', () => player.skipIntro());
+  h('player:skipEnding', () => player.skipEnding());
   h('stats:get', () => store.statistics());
 }
 

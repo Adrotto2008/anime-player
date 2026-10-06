@@ -17,6 +17,11 @@ const DEFAULT_SETTINGS = {
   extraArgs: '',
 };
 
+const nonNegativeSeconds = (value) => {
+  const n = Number(value);
+  return Number.isFinite(n) && n >= 0 ? n : 0;
+};
+
 const uid = () => crypto.randomUUID();
 
 function validateLibraryData(input) {
@@ -70,6 +75,8 @@ function validateLibraryData(input) {
       ...rawSeries,
       title: rawSeries.title.trim() || 'Senza titolo',
       episodes,
+      introDuration: nonNegativeSeconds(rawSeries.introDuration),
+      outroDuration: nonNegativeSeconds(rawSeries.outroDuration),
       genres: Array.isArray(rawSeries.genres) ? rawSeries.genres : [],
       lastWatchedAt,
     };
@@ -97,6 +104,10 @@ class Store {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
+      this.data.series.forEach((s) => {
+        s.introDuration = nonNegativeSeconds(s.introDuration);
+        s.outroDuration = nonNegativeSeconds(s.outroDuration);
+      });
       this.data.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
       if (!['default', 'compact'].includes(this.data.settings.theme)) this.data.settings.theme = DEFAULT_SETTINGS.theme;
       if (raw.settings && raw.settings.language == null) this.data.settings.language = 'it';
@@ -157,6 +168,8 @@ class Store {
       preset: null, referer: '', addedAt: Date.now(), lastWatchedAt: 0, episodes: [], ...meta,
     };
     if (!Array.isArray(s.episodes)) s.episodes = [];
+    s.introDuration = nonNegativeSeconds(s.introDuration);
+    s.outroDuration = nonNegativeSeconds(s.outroDuration);
     this.data.series.push(s);
     this.save();
     return s;
@@ -165,8 +178,10 @@ class Store {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart'];
+    const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
+    s.introDuration = nonNegativeSeconds(s.introDuration);
+    s.outroDuration = nonNegativeSeconds(s.outroDuration);
     this.save();
     return s;
   }
@@ -241,14 +256,21 @@ class Store {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart'];
+    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
+    s.introDuration = nonNegativeSeconds(s.introDuration);
+    s.outroDuration = nonNegativeSeconds(s.outroDuration);
+    const retainEpisode = (ep) => ep.sources.length > 0 || ep.progress.pos > 0 || ep.progress.duration > 0 || ep.progress.watched || ep.progress.updatedAt > 0;
     if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
       for (let n = 1; n <= s.episodeCount; n++) this.ensureEpisode(s, n);
-      s.episodes = s.episodes.filter((ep) => ep.number <= s.episodeCount || ep.sources.length || ep.progress.pos > 0 || ep.progress.watched);
+      s.episodes = s.episodes.filter((ep) => ep.number <= s.episodeCount || retainEpisode(ep));
     }
     for (const m of list) {
       if (!Number.isInteger(m.number) || m.number < 0) continue;
+      if (s.episodeCount > 0 && m.number > s.episodeCount) {
+        const existing = s.episodes.find((e) => e.number === m.number);
+        if (!existing || !retainEpisode(existing)) continue;
+      }
       const ep = this.ensureEpisode(s, m.number);
       if (m.title) ep.title = m.title;
       if (m.thumb) ep.thumb = m.thumb;
@@ -257,6 +279,9 @@ class Store {
     if (s.imdbChart && Array.isArray(s.imdbChart.seasons) && s.imdbChart.seasons.length > 0) {
       const { applyImdbRatingsToEpisodes } = require('./metadata');
       applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s.title);
+    }
+    if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
+      s.episodes = s.episodes.filter((ep) => ep.number <= s.episodeCount || retainEpisode(ep));
     }
     this.save();
     return s;
@@ -270,7 +295,7 @@ class Store {
     let episodesTotal = 0;
     const perSeries = [];
     for (const s of this.data.series) {
-      const totalEpisodes = Number.isInteger(s.episodeCount) && s.episodeCount > 0 ? s.episodeCount : s.episodes.length;
+      const totalEpisodes = s.episodes.length;
       const watched = s.episodes.filter((e) => e.progress.watched);
       const seriesWatchTime = s.episodes.reduce((sum, e) => {
         if (e.progress.watched && e.progress.duration > 0) return sum + e.progress.duration;
