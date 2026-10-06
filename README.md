@@ -1,92 +1,115 @@
 # Anime Player
 
-Libreria di anime **a link**, stile Jellyfin ma senza scaricare nulla: poster, trame e titoli degli episodi arrivano da AniList e Kitsu, i video vengono riprodotti da **mpv** con gli shader **Anime4K** già attivi.
+Anime Player is a Windows Electron library for anime links. It stores the
+links you provide, displays metadata from AniList and Kitsu, and opens videos
+with the external **mpv** player and **Anime4K** shaders. It does not download
+episodes and it does not scrape streaming sites.
 
-## Requisiti
-- Windows 10/11 con una GPU recente (preset predefinito *Mode A+A HQ*)
-- [Node.js](https://nodejs.org) 20 o più recente (solo per compilare)
-- [mpv](https://mpv.io/installation/) installato (es. `winget install mpv` oppure `scoop install mpv`)
+## Features
 
-## Avvio
-Per usarla in sviluppo:
-```
+- AniList search and series metadata: poster, banner, description, genres,
+  year, format, episode count, and AniList score when available.
+- Kitsu episode titles, thumbnails, and episode ratings when Kitsu exposes an
+  `averageRating`/`ratingAverage` value. Missing episode ratings are shown as
+  unavailable; no values are invented.
+- Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
+- Multiple fallback links per episode.
+- Automatic episode-number detection, patterns (`{ep}` and `{ep:02}`),
+  newline lists, and `.m3u`/`.m3u8` import.
+- Saved playback progress, watched state, resume cards, autoplay, and
+  per-series Anime4K presets.
+- Statistics with general totals and per-series details: watched/total
+  episodes, completion percentage, calculated watch time, last activity,
+  genres, year, format, and score.
+- JSON library export/import with validation.
+- Responsive default and compact themes.
+- English and Italian UI translations, selectable at runtime and persisted in
+  the library. New installations default to English. Existing libraries
+  created before language support are migrated to Italian rather than having
+  their current experience silently changed.
+
+## Requirements
+
+- Windows 10/11.
+- mpv installed and available as `mpv.exe` (for example:
+  `winget install mpv` or `scoop install mpv`).
+- Node.js 20+ only when running from source or building installers.
+
+## Development install
+
+```powershell
 npm install
 npm start
 ```
-Al primo avvio compare una configurazione obbligatoria: scegli il file `mpv.exe`
-e il preset Anime4K predefinito. Il percorso viene verificato prima di
-proseguire. Le librerie già esistenti vengono migrate senza perdere dati; dopo
-la configurazione puoi cambiare entrambi i valori in *Impostazioni*.
 
-Per l'uso normale non servono Node.js, `npm install` o `npm start`. `npm run dist`
-produce nella cartella `dist/` sia `AnimePlayer-portable.exe` sia
-`AnimePlayer-Setup-<version>.exe`. L'installer NSIS crea i collegamenti Desktop
-e Start Menu, supporta la disinstallazione e, per impostazione predefinita,
-installa per l'utente corrente. È possibile scegliere una directory diversa
-durante l'installazione; il target portatile resta disponibile per chi non
-vuole installare l'app.
+The first-run setup asks for the mpv executable and the default Anime4K
+preset. The selected language can be changed later in **Settings**.
 
-## Interfaccia e temi
+## Installed versus portable builds
 
-L'interfaccia si adatta anche a finestre compatte (fino a 720×480). In
-*Impostazioni → Tema dell'interfaccia* puoi scegliere **Predefinito** oppure
-**Compatto / minimale**; la scelta viene salvata nella libreria e applicata
-globalmente.
+Run:
 
-## Come si usa
-1. **Aggiungi serie** → cerchi il titolo, l'app scarica poster, trama ed elenco episodi.
-2. Nella pagina della serie, **Aggiungi link**:
-   - *Da un link* (consigliato): incolli il link di **un** episodio e l'app trova da sola il numero dell'episodio (ignora il nome del server, l'estensione, `1080p`, `x264`, la stagione `S02`…), poi crea tutti gli altri nell'intervallo scelto. Se nel link ci sono più numeri puoi scegliere quello giusto, o scrivere tu il numero dell'episodio.
-   - *Pattern*: `https://sito/anime/ep{ep:02}.mp4`, dall'episodio 1 al 12 → crea 12 episodi (`{ep}` senza zeri, `{ep:02}` con zeri).
-   - *Elenco*: un link per riga, oppure importa una playlist `.m3u`.
-   - Un episodio può avere più link: se il primo non parte, l'app prova il successivo.
-3. **Guarda / Riprendi**. Il progresso si salva da solo, alla fine parte l'episodio successivo.
-4. **Apri un link** (barra laterale) riproduce al volo un link qualsiasi con Anime4K.
+```powershell
+npm run dist
+```
 
-Nella home trovi **Continua a guardare**, con il progresso dell'ultimo episodio
-e un pulsante rapido per riprenderlo (oppure per passare all'episodio
-successivo). La ricerca filtra i titoli della libreria; il menu accanto alla
-ricerca permette di mostrare tutte le serie, quelle da riprendere, quelle con
-episodi non visti o quelle con episodi già visti.
+This keeps both Windows targets:
 
-Nella pagina di una serie **Aggiorna info** ricarica da AniList/Kitsu poster,
-banner, descrizione, generi, punteggio, anno, formato, conteggio episodi,
-titoli e miniature. L'operazione aggiunge gli episodi nuovi senza eliminare o
-modificare i link, i progressi o gli episodi già presenti.
+- `dist\AnimePlayer-portable.exe`: one executable, no installation required.
+- `dist\AnimePlayer-Setup-<version>.exe`: NSIS installer with Desktop and
+  Start Menu shortcuts, selectable installation directory, and per-user
+  installation by default.
 
-La voce **Statistiche** mostra episodi visti, tempo guardato calcolato dai dati
-di durata/progresso, serie completate e attività recente.
+The installed/portable application does not need Node.js, `npm install`, or
+`npm start`. The library is stored separately in
+`%APPDATA%\Anime Player\library.json`; uninstalling does not delete it.
 
-I pulsanti **Esporta** e **Importa** usano i dialoghi di Windows per salvare o
-caricare un file JSON della libreria, inclusi link, progressi, impostazioni e
-metadati. Durante l'importazione il file viene controllato: JSON non valido,
-strutture incomplete o link non validi vengono rifiutati con un messaggio
-esplicito e la libreria attuale resta invariata.
+## Usage
 
-mpv apre link diretti (mp4, mkv…), flussi HLS (.m3u8) e, con [yt-dlp](https://github.com/yt-dlp/yt-dlp) nel PATH, anche le pagine dei siti che yt-dlp supporta. Se il sito richiede un referer, impostalo in *Opzioni avanzate* della serie.
+1. Choose **Add series** and search AniList, or add a title manually.
+2. Open the series and add episode links using a detected link, a pattern, a
+   list, or a playlist.
+3. Select **Watch** or **Resume**. Progress is saved from mpv playback.
+4. Open **Statistics** for totals, recent activity, and per-anime details.
+5. Open **Settings** to configure mpv, language, theme, autoplay, audio and
+   subtitle preferences, or extra mpv arguments.
 
-Gli episodi senza anteprima online mostrano l'immagine della serie con il numero sopra.
+Opening an AniList-linked series refreshes its online metadata and ratings in
+the background. The refresh preserves user-entered links, playback progress,
+watched state, and local episode entries. AniList supplies the series score;
+Kitsu supplies episode ratings only when the episode response contains a
+rating field. API failures leave the last stored values in place.
 
 ## Anime4K
-Dodici preset ufficiali (Mode A, B, C, A+A, B+B, C+A, ciascuno Fast o HQ) più "Spento", scelti per serie o come predefinito. Le catene di shader sono quelle della documentazione di Anime4K v4.0.1. Il preset predefinito è **Mode A+A HQ**; puoi cambiarlo nelle impostazioni o durante la riproduzione.
 
-Tasti dentro mpv:
+The app bundles the Anime4K v4.0.1 shader files and supports the official
+Mode A, B, C, A+A, B+B, and C+A Fast/HQ chains plus Off. The default is Mode
+A+A HQ, but it can be changed globally, per series, or while mpv is playing.
 
-| Tasto | Azione |
-|---|---|
-| Ctrl+1…6 | Anime4K Fast (A, B, C, A+A, B+B, C+A) |
-| Alt+1…6 | Anime4K HQ |
-| Ctrl+0 | Anime4K spento |
-| PgGiù / `>` | episodio successivo |
-| PgSu / `<` | episodio precedente |
+## Data and privacy
 
-Se cambi preset dalla pagina della serie mentre guardi, si applica subito.
+The app stores library data locally as JSON. It contacts AniList and Kitsu
+only for the metadata and ratings described above. Video links are entered by
+the user; the app does not include a downloader or scraper.
 
-## Dati
-Libreria e impostazioni stanno in `%APPDATA%\Anime Player\library.json`. L'app non include scraper: i link li inserisci tu.
+## Tests and validation
 
-## Test
-`npm test` prova pattern, preset, libreria e, se mpv è installato, la riproduzione reale (IPC, autoplay, link rotti).
+```powershell
+npm test
+node --check main.js
+node --check preload.js
+node --check renderer\app.js
+node --check renderer\i18n.js
+git diff --check
+```
 
-## Crediti
-Shader [Anime4K](https://github.com/bloc97/Anime4K) di bloc97 (licenza MIT, in `shaders/LICENSE-Anime4K.txt`). Metadati da AniList e Kitsu.
+`npm run dist` builds both the portable executable and the NSIS installer.
+
+## Credits
+
+Anime4K shaders are from [bloc97/Anime4K](https://github.com/bloc97/Anime4K)
+and remain under their MIT license in `shaders\LICENSE-Anime4K.txt`.
+Metadata and ratings are obtained from [AniList](https://anilist.co/) and
+[Kitsu](https://kitsu.io/).
+
+This is a vibe-coding project developed collaboratively with multiple AIs.

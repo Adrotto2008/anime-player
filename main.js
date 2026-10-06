@@ -93,6 +93,7 @@ function register() {
     const next = { ...store.data.settings, ...(patch || {}) };
     if (!A4K.PRESETS[next.defaultPreset]) throw new Error('Preset Anime4K non valido.');
     if (!['default', 'compact'].includes(next.theme)) throw new Error('Tema non valido.');
+    if (!['en', 'it'].includes(next.language)) throw new Error('Lingua non valida.');
     let mpvIsFile = false;
     try { mpvIsFile = Boolean(next.mpvPath && fs.statSync(next.mpvPath).isFile()); } catch { /* percorso non valido */ }
     if (patch && patch.onboardingComplete === true && !mpvIsFile) {
@@ -135,6 +136,17 @@ function register() {
     const m = await meta.getAnime(s.anilistId);
     const { streamingEpisodes, altTitle, status, ...fields } = m;
     const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes });
+    store.refreshSeriesMetadata(id, { ...fields, kitsuId }, episodes);
+    return lib();
+  });
+  h('series:ratings', async (id) => {
+    const s = store.getSeries(id);
+    if (!s || !s.anilistId) return lib();
+    const m = await meta.getAnime(s.anilistId);
+    const { streamingEpisodes, altTitle, status, ...fields } = m;
+    const { kitsuId, episodes } = await meta.fetchEpisodes({
+      anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes,
+    });
     store.refreshSeriesMetadata(id, { ...fields, kitsuId }, episodes);
     return lib();
   });

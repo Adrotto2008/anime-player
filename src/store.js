@@ -8,6 +8,7 @@ const DEFAULT_SETTINGS = {
   mpvPath: '',
   defaultPreset: 'aa-hq',
   theme: 'default',
+  language: 'en',
   onboardingComplete: false,
   autoplayNext: true,
   alang: 'jpn,ja,eng,en',
@@ -74,6 +75,8 @@ function validateLibraryData(input) {
     };
   });
   const settings = { ...DEFAULT_SETTINGS, ...(input.settings || {}) };
+  if (input.settings && input.settings.language == null) settings.language = 'it';
+  if (!['en', 'it'].includes(settings.language)) settings.language = DEFAULT_SETTINGS.language;
   if (!['default', 'compact'].includes(settings.theme)) settings.theme = DEFAULT_SETTINGS.theme;
   if (!settings.defaultPreset || settings.defaultPreset === 'a-fast') settings.defaultPreset = DEFAULT_SETTINGS.defaultPreset;
   if (!input.settings || input.settings.onboardingComplete == null) {
@@ -96,6 +99,8 @@ class Store {
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
       this.data.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
       if (!['default', 'compact'].includes(this.data.settings.theme)) this.data.settings.theme = DEFAULT_SETTINGS.theme;
+      if (raw.settings && raw.settings.language == null) this.data.settings.language = 'it';
+      if (!['en', 'it'].includes(this.data.settings.language)) this.data.settings.language = DEFAULT_SETTINGS.language;
       if (!this.data.settings.defaultPreset || this.data.settings.defaultPreset === 'a-fast') this.data.settings.defaultPreset = DEFAULT_SETTINGS.defaultPreset;
       // Librerie create prima dell'onboarding: se erano già configurate,
       // non devono essere bloccate dalla nuova procedura di primo avvio.
@@ -160,7 +165,7 @@ class Store {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId'];
+    const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     this.save();
     return s;
@@ -171,7 +176,7 @@ class Store {
   ensureEpisode(s, number) {
     let ep = s.episodes.find((e) => e.number === number);
     if (!ep) {
-      ep = { id: uid(), number, title: '', thumb: null, sources: [], progress: { pos: 0, duration: 0, watched: false, updatedAt: 0 } };
+      ep = { id: uid(), number, title: '', thumb: null, rating: null, ratingSource: null, sources: [], progress: { pos: 0, duration: 0, watched: false, updatedAt: 0 } };
       s.episodes.push(ep);
       s.episodes.sort((a, b) => a.number - b.number);
     }
@@ -224,6 +229,7 @@ class Store {
       const ep = this.ensureEpisode(s, m.number);
       if (m.title && !ep.title) ep.title = m.title;
       if (m.thumb && !ep.thumb) ep.thumb = m.thumb;
+      if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'Kitsu'; }
     }
     this.save();
   }
@@ -231,7 +237,7 @@ class Store {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId'];
+    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
     if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
       for (let n = 1; n <= s.episodeCount; n++) this.ensureEpisode(s, n);
@@ -241,6 +247,7 @@ class Store {
       const ep = this.ensureEpisode(s, m.number);
       if (m.title) ep.title = m.title;
       if (m.thumb) ep.thumb = m.thumb;
+      if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'Kitsu'; }
     }
     this.save();
     return s;
@@ -251,23 +258,54 @@ class Store {
     let watchedEpisodes = 0;
     let watchTime = 0;
     let completedSeries = 0;
+    let episodesTotal = 0;
+    const perSeries = [];
     for (const s of this.data.series) {
-      const playable = s.episodes.filter((e) => e.sources.length);
-      const watched = playable.filter((e) => e.progress.watched);
+      const totalEpisodes = Number.isInteger(s.episodeCount) && s.episodeCount > 0 ? s.episodeCount : s.episodes.length;
+      const watched = s.episodes.filter((e) => e.progress.watched);
+      const seriesWatchTime = s.episodes.reduce((sum, e) => {
+        if (e.progress.watched && e.progress.duration > 0) return sum + e.progress.duration;
+        return sum + (!e.progress.watched && e.progress.pos > 0 ? e.progress.pos : 0);
+      }, 0);
+      const lastActivity = Math.max(s.lastWatchedAt || 0, ...s.episodes.map((e) => e.progress.updatedAt || 0));
+      episodesTotal += totalEpisodes;
       watchedEpisodes += watched.length;
+      watchTime += seriesWatchTime;
       for (const e of s.episodes) {
-        if (e.progress.watched && e.progress.duration > 0) watchTime += e.progress.duration;
-        else if (!e.progress.watched && e.progress.pos > 0) watchTime += e.progress.pos;
         if (e.progress.updatedAt) activity.push({
           seriesId: s.id, seriesTitle: s.title, episodeId: e.id, episodeNumber: e.number,
           title: e.title || `Episodio ${e.number}`, watched: e.progress.watched,
           updatedAt: e.progress.updatedAt,
         });
       }
-      if (playable.length > 0 && watched.length === playable.length) completedSeries++;
+      if (totalEpisodes > 0 && watched.length >= totalEpisodes) completedSeries++;
+      perSeries.push({
+        seriesId: s.id,
+        title: s.title,
+        cover: s.cover || null,
+        watchedEpisodes: watched.length,
+        totalEpisodes,
+        completion: totalEpisodes ? Math.min(100, (watched.length / totalEpisodes) * 100) : 0,
+        watchTime: seriesWatchTime,
+        lastActivity,
+        genres: Array.isArray(s.genres) ? s.genres : [],
+        year: s.year || null,
+        format: s.format || null,
+        score: Number.isFinite(Number(s.score)) ? Number(s.score) : null,
+      });
     }
     activity.sort((a, b) => b.updatedAt - a.updatedAt);
-    return { watchedEpisodes, watchTime, completedSeries, latestActivity: activity.slice(0, 12) };
+    perSeries.sort((a, b) => (b.lastActivity - a.lastActivity) || a.title.localeCompare(b.title));
+    return {
+      seriesCount: this.data.series.length,
+      episodesTotal,
+      watchedEpisodes,
+      watchTime,
+      completedSeries,
+      inProgressSeries: perSeries.filter((s) => s.watchedEpisodes > 0 && s.watchedEpisodes < s.totalEpisodes).length,
+      latestActivity: activity.slice(0, 12),
+      perSeries,
+    };
   }
 }
 

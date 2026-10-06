@@ -3,6 +3,11 @@ const ANILIST = 'https://graphql.anilist.co';
 const KITSU = 'https://kitsu.io/api/edge';
 
 const stripHtml = (s) => String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
+const normalizeRating = (value) => {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n < 0) return null;
+  return n > 10 ? n / 10 : n;
+};
 
 async function anilist(query, variables) {
   const r = await fetch(ANILIST, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query, variables }) });
@@ -25,6 +30,7 @@ function normalize(m) {
     description: stripHtml(m.description),
     genres: m.genres || [],
     score: m.averageScore ? m.averageScore / 10 : null,
+    scoreSource: m.averageScore ? 'AniList' : null,
     year: m.seasonYear || null,
     format: m.format || null,
     status: m.status || null,
@@ -59,7 +65,7 @@ async function kitsuIdFor(anilistId, title) {
   return j.data && j.data[0] ? j.data[0].id : null;
 }
 
-// Ritorna [{number, title, thumb}]; se Kitsu non basta usa gli streamingEpisodes di AniList.
+// Ritorna [{number, title, thumb, rating}]; se Kitsu non basta usa gli streamingEpisodes di AniList.
 async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes }) {
   const out = new Map();
   let kid = kitsuId;
@@ -70,7 +76,14 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes }) {
       for (const e of j.data) {
         const a = e.attributes;
         if (!a.number) continue;
-        out.set(a.number, { number: a.number, title: a.canonicalTitle || (a.titles && (a.titles.en_us || a.titles.en_jp)) || '', thumb: a.thumbnail && (a.thumbnail.original || a.thumbnail.large) || null });
+        const rating = normalizeRating(a.averageRating != null ? a.averageRating : a.ratingAverage);
+        out.set(a.number, {
+          number: a.number,
+          title: a.canonicalTitle || (a.titles && (a.titles.en_us || a.titles.en_jp)) || '',
+          thumb: a.thumbnail && (a.thumbnail.original || a.thumbnail.large) || null,
+          rating,
+          ratingSource: rating == null ? null : 'Kitsu',
+        });
       }
       if (!j.links || !j.links.next) break;
     }
@@ -78,7 +91,7 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes }) {
   for (const s of streamingEpisodes || []) {
     const m = /^Episode\s+(\d+)\s*[-–:]\s*(.*)$/i.exec(s.title || '');
     if (!m) continue;
-    const n = Number(m[1]); const cur = out.get(n) || { number: n, title: '', thumb: null };
+    const n = Number(m[1]); const cur = out.get(n) || { number: n, title: '', thumb: null, rating: null, ratingSource: null };
     if (!cur.title) cur.title = m[2]; if (!cur.thumb) cur.thumb = s.thumbnail || null;
     out.set(n, cur);
   }

@@ -125,6 +125,11 @@ details.adv .field { margin: 10px 0 0; max-width: 460px; }
 .activity:hover { border-color: var(--lantern); }
 .activity b, .activity .muted { display: block; }
 .activity-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--on); }
+.stats-series-list { display: grid; gap: 8px; }
+.stats-series { display: grid; grid-template-columns: 58px 1fr; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 9px; }
+.stats-series-cover { width: 58px; aspect-ratio: 2/3; border-radius: 5px; background: var(--panel-2) center/cover no-repeat; }
+.stats-series h3 { margin-bottom: 3px; }
+.rating-line { color: var(--lantern); }
 
 #toasts { position: fixed; right: 20px; top: 20px; display: grid; gap: 8px; z-index: 20; }
 .toast { background: var(--panel-2); border: 1px solid var(--line); border-left: 4px solid var(--on); border-radius: 8px; padding: 10px 14px; max-width: 380px; box-shadow: 0 8px 24px rgba(0,0,0,.4); }

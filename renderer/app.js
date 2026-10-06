@@ -1,6 +1,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
-const state = { lib: { series: [], settings: {} }, presets: [], view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false }, stats: null };
+const { setLanguage, t } = window.i18n;
+const state = { lib: { series: [], settings: {} }, presets: [], view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false }, stats: null, ratingLoads: {} };
 
 /* ---------- utilità ---------- */
 function h(tag, props, ...kids) {
@@ -27,6 +28,7 @@ function toast(msg, kind) {
 }
 function applyTheme() {
   document.documentElement.dataset.theme = state.lib.settings.theme || 'default';
+  setLanguage(state.lib.settings.language || 'en');
 }
 async function call(ch, ...args) {
   try { return await api.invoke(ch, ...args); } catch (e) { toast(cleanErr(e), 'error'); throw e; }
@@ -58,12 +60,12 @@ function renderRail() {
   const v = state.view.name; const hasMpv = !!state.lib.settings.mpvPath;
   $('#rail').replaceChildren(
     h('div', { class: 'brand' }, 'Anime Player', h('small', null, 'mpv + Anime4K')),
-    h('button', { class: 'nav', 'aria-current': v === 'home' || v === 'series' ? 'page' : null, onclick: () => go({ name: 'home' }) }, 'Libreria'),
-    h('button', { class: 'nav', 'aria-current': v === 'stats' ? 'page' : null, onclick: () => go({ name: 'stats' }) }, 'Statistiche'),
-    h('button', { class: 'nav', onclick: openLinkDialog }, 'Apri un link'),
-    h('button', { class: 'nav', onclick: openSettings }, 'Impostazioni'),
+    h('button', { class: 'nav', 'aria-current': v === 'home' || v === 'series' ? 'page' : null, onclick: () => go({ name: 'home' }) }, t('library')),
+    h('button', { class: 'nav', 'aria-current': v === 'stats' ? 'page' : null, onclick: () => go({ name: 'stats' }) }, t('stats')),
+    h('button', { class: 'nav', onclick: openLinkDialog }, t('openLink')),
+    h('button', { class: 'nav', onclick: openSettings }, t('settings')),
     h('div', { class: 'spacer' }),
-    h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings }, hasMpv ? 'mpv pronto' : 'mpv non trovato: configuralo'),
+    h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings }, hasMpv ? t('mpvReady') : t('mpvMissing')),
   );
 }
 function renderPlayer() {
@@ -71,12 +73,21 @@ function renderPlayer() {
   el.hidden = !p.playing;
   if (!p.playing) return;
   el.replaceChildren(h('span', { class: 'dot' }), h('div', { class: 't' }, h('b', null, p.title), h('span', { class: 'muted' }, `  ·  Anime4K ${p.preset}`)),
-    h('span', { class: 'muted small' }, 'Ctrl+1…6 Fast · Alt+1…6 HQ · Ctrl+0 spento · PgDown prossimo'),
-    h('button', { class: 'btn sm', onclick: () => call('player:stop') }, 'Ferma'));
+    h('span', { class: 'muted small' }, t('keyboardHint')),
+    h('button', { class: 'btn sm', onclick: () => call('player:stop') }, t('stop')));
 }
 
 /* ---------- navigazione ---------- */
-function go(view) { state.view = view; render(); $('#main').scrollTop = 0; }
+function go(view) {
+  state.view = view; render(); $('#main').scrollTop = 0;
+  if (view.name === 'series') loadSeriesRatings(view.id);
+}
+async function loadSeriesRatings(id) {
+  const s = getSeries(id);
+  if (!s || !s.anilistId || state.ratingLoads[id]) return;
+  state.ratingLoads[id] = true;
+  try { state.lib = await call('series:ratings', id); state.stats = null; render(); } catch { /* stored metadata remains visible */ }
+}
 function render() {
   applyTheme();
   renderRail(); renderPlayer();
@@ -113,7 +124,7 @@ function seriesMatches(s, filter) {
 
 async function exportLibrary() {
   const result = await call('library:export');
-  if (!result.canceled) toast('Libreria esportata.');
+  if (!result.canceled) toast(t('export') + '.');
 }
 async function importLibrary() {
   const result = await call('library:import');
@@ -122,7 +133,7 @@ async function importLibrary() {
   state.filter = '';
   state.progressFilter = 'all';
   render();
-  toast('Libreria importata.');
+  toast(t('import') + '.');
 }
 
 function homeView() {
@@ -131,55 +142,69 @@ function homeView() {
     .filter((s) => (!q || s.title.toLowerCase().includes(q)) && seriesMatches(s, state.progressFilter))
     .sort((a, b) => a.title.localeCompare(b.title));
   const cont = q || state.progressFilter !== 'all' ? [] : continueItems();
-  const search = h('input', { class: 'input search', type: 'search', placeholder: 'Filtra la libreria', value: state.filter, 'aria-label': 'Filtra la libreria', oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const n = $('.search'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } } });
-  const filter = h('select', { class: 'input library-filter', 'aria-label': 'Filtra per progresso', value: state.progressFilter, onchange: (e) => { state.progressFilter = e.target.value; render(); } },
-    h('option', { value: 'all' }, 'Tutte'),
-    h('option', { value: 'progress' }, 'Da riprendere'),
-    h('option', { value: 'unwatched' }, 'Non viste'),
-    h('option', { value: 'watched' }, 'Con episodi visti'));
+  const search = h('input', { class: 'input search', type: 'search', placeholder: t('filterLibrary'), value: state.filter, 'aria-label': t('filterLibrary'), oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const n = $('.search'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } } });
+  const filter = h('select', { class: 'input library-filter', 'aria-label': t('filterProgress'), value: state.progressFilter, onchange: (e) => { state.progressFilter = e.target.value; render(); } },
+    h('option', { value: 'all' }, t('all')),
+    h('option', { value: 'progress' }, t('resume')),
+    h('option', { value: 'unwatched' }, t('unwatched')),
+    h('option', { value: 'watched' }, t('withWatched')));
   return h('div', null,
-    h('div', { class: 'head' }, h('h1', null, 'Libreria'), h('div', { class: 'row wrap' }, search, filter, h('button', { class: 'btn', onclick: importLibrary }, 'Importa'), h('button', { class: 'btn', onclick: exportLibrary }, 'Esporta'), h('button', { class: 'btn primary', onclick: openAddSeries }, 'Aggiungi serie'))),
-    cont.length ? h('section', { class: 'section' }, h('h2', null, 'Continua a guardare'),
+    h('div', { class: 'head' }, h('h1', null, t('library')), h('div', { class: 'row wrap' }, search, filter, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),
+    cont.length ? h('section', { class: 'section' }, h('h2', null, t('continueWatching')),
       h('div', { class: 'strip' }, cont.map(({ s, e }) => h('button', { class: 'resume', onclick: () => play(s.id, e.id) },
         h('div', { class: 'pic', style: bg(e.thumb || s.banner || s.cover) }, pct(e) ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null),
-        h('div', { class: 'meta' }, h('b', null, s.title), h('span', { class: 'muted small' }, `Episodio ${e.number}${e.title ? ' · ' + e.title : ''}`)))))) : null,
+        h('div', { class: 'meta' }, h('b', null, s.title), h('span', { class: 'muted small' }, `${t('episode', e.number)}${e.title ? ' · ' + e.title : ''}`)))))) : null,
     list.length ? h('div', { class: 'grid' }, list.map((s) => {
       const seen = s.episodes.filter((e) => e.progress.watched).length;
       return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
         h('div', { class: 'cover', style: bg(s.cover) }, s.cover ? null : s.title.slice(0, 1).toUpperCase()),
         h('div', { class: 't' }, s.title),
-        h('div', { class: 'muted small' }, s.episodes.length ? `${seen} di ${s.episodes.length} visti` : 'Nessun episodio'));
-    })) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? 'Nessun risultato' : 'La libreria è vuota'),
-      state.lib.series.length ? 'Nessuna serie corrisponde al filtro.' : 'Cerca un anime per scaricare poster e titoli degli episodi, poi incolla i link delle puntate.',
-      state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, 'Aggiungi la prima serie'))));
+        h('div', { class: 'muted small' }, s.episodes.length ? t('watchedOf', seen, s.episodes.length) : t('noEpisodes')));
+    })) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
+      state.lib.series.length ? t('noFilterMatch') : t('emptyLibraryHint'),
+      state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, t('addFirstSeries')))));
 }
 
 function formatDuration(seconds) {
   const total = Math.max(0, Math.round(Number(seconds) || 0));
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
-  return hours ? `${hours} h ${minutes} min` : `${minutes} min`;
+  return hours ? t('hoursMinutes', hours, minutes) : t('minutes', minutes);
 }
 
 function statsView() {
   if (!state.stats) {
     api.invoke('stats:get').then((stats) => { state.stats = stats; render(); }).catch(() => {});
-    return h('div', { class: 'empty' }, 'Calcolo statistiche…');
+    return h('div', { class: 'empty' }, t('calculateStats'));
   }
   const st = state.stats;
   const activity = st.latestActivity || [];
+  const renderSeriesStat = (item) => {
+    const details = `${t('genres')}: ${item.genres.length ? item.genres.join(', ') : t('unavailable')} · ${t('year')}: ${item.year || t('unavailable')} · ${t('format')}: ${item.format || t('unavailable')} · ${t('score')}: ${item.score == null ? t('unavailable') : t('scoreFrom', item.score.toFixed(1))}`;
+    return h('article', { class: 'stats-series' },
+      h('div', { class: 'stats-series-cover', style: bg(item.cover) }),
+      h('div', null, h('h3', null, item.title),
+        h('div', { class: 'muted small' }, `${t('watchedOf', item.watchedEpisodes, item.totalEpisodes)} · ${t('completion')}: ${Math.round(item.completion)}% · ${formatDuration(item.watchTime)}`),
+        h('div', { class: 'muted small' }, `${t('lastActivity')}: ${item.lastActivity ? new Date(item.lastActivity).toLocaleDateString() : t('unavailable')}`),
+        h('div', { class: 'muted small' }, details)));
+  };
+  const perSeries = (st.perSeries || []).length ? h('div', { class: 'stats-series-list' }, st.perSeries.map(renderSeriesStat)) : h('div', { class: 'empty' }, t('noResults'));
   return h('div', null,
-    h('div', { class: 'head' }, h('h1', null, 'Statistiche'),
-      h('button', { class: 'btn', onclick: async () => { state.stats = await call('stats:get'); render(); } }, 'Aggiorna')),
+    h('div', { class: 'head' }, h('h1', null, t('stats')),
+      h('button', { class: 'btn', onclick: async () => { state.stats = await call('stats:get'); render(); } }, t('refresh'))),
     h('div', { class: 'stats-grid' },
-      h('div', { class: 'stat-card' }, h('b', null, String(st.watchedEpisodes)), h('span', { class: 'muted' }, 'Episodi visti')),
-      h('div', { class: 'stat-card' }, h('b', null, formatDuration(st.watchTime)), h('span', { class: 'muted' }, 'Tempo guardato')),
-      h('div', { class: 'stat-card' }, h('b', null, String(st.completedSeries)), h('span', { class: 'muted' }, 'Serie completate'))),
-    h('section', { class: 'section stats-activity' }, h('h2', null, 'Attività recente'),
+      h('div', { class: 'stat-card' }, h('b', null, String(st.watchedEpisodes)), h('span', { class: 'muted' }, t('watchedEpisodes'))),
+      h('div', { class: 'stat-card' }, h('b', null, formatDuration(st.watchTime)), h('span', { class: 'muted' }, t('watchTime'))),
+      h('div', { class: 'stat-card' }, h('b', null, String(st.completedSeries)), h('span', { class: 'muted' }, t('completedSeries'))),
+      h('div', { class: 'stat-card' }, h('b', null, String(st.seriesCount || 0)), h('span', { class: 'muted' }, t('totalSeries'))),
+      h('div', { class: 'stat-card' }, h('b', null, String(st.episodesTotal || 0)), h('span', { class: 'muted' }, t('totalEpisodes'))),
+      h('div', { class: 'stat-card' }, h('b', null, String(st.inProgressSeries || 0)), h('span', { class: 'muted' }, t('inProgress')))),
+    h('section', { class: 'section stats-activity' }, h('h2', null, t('recentActivity')),
       activity.length ? h('div', { class: 'activity-list' }, activity.map((item) => h('button', { class: 'activity', onclick: () => go({ name: 'series', id: item.seriesId }) },
-        h('span', { class: 'activity-dot' }), h('span', null, h('b', null, item.seriesTitle), h('span', { class: 'muted small' }, `Episodio ${item.episodeNumber} · ${item.title}`)),
+        h('span', { class: 'activity-dot' }), h('span', null, h('b', null, item.seriesTitle), h('span', { class: 'muted small' }, `${t('episode', item.episodeNumber)} · ${item.title}`)),
         h('time', { class: 'muted small' }, new Date(item.updatedAt).toLocaleDateString())))) :
-        h('div', { class: 'empty' }, 'Non ci sono ancora episodi guardati.')));
+        h('div', { class: 'empty' }, t('noActivity'))),
+    h('section', { class: 'section stats-activity' }, h('h2', null, t('perAnime')), perSeries));
 }
 
 /* ---------- serie ---------- */
@@ -192,86 +217,95 @@ function seriesView(s) {
     if (state.player.playing && state.player.seriesId === s.id) call('player:preset', value || defaultPreset());
   };
   const modeBtns = [
-    h('button', { 'aria-pressed': String(!s.preset), onclick: () => setPreset(null) }, 'Predefinito'),
-    h('button', { 'aria-pressed': String(s.preset === 'off'), onclick: () => setPreset('off') }, 'Spento'),
+    h('button', { 'aria-pressed': String(!s.preset), onclick: () => setPreset(null) }, t('default')),
+    h('button', { 'aria-pressed': String(s.preset === 'off'), onclick: () => setPreset('off') }, t('off')),
     ...MODES.map(([id, label]) => h('button', { 'aria-pressed': String(!!s.preset && effMode === id), onclick: () => setPreset(`${id}-${s.preset ? effTier : 'fast'}`) }, label)),
   ];
-  const tierBtns = ['fast', 'hq'].map((t) => h('button', { 'aria-pressed': String(!!s.preset && s.preset !== 'off' && effTier === t), disabled: !s.preset || s.preset === 'off', onclick: () => setPreset(`${effMode}-${t}`) }, t === 'fast' ? 'Fast' : 'HQ'));
-
-  const desc = h('div', { class: 'desc' }, s.description || 'Nessuna descrizione.');
-  const more = s.description && s.description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? 'Mostra meno' : 'Leggi tutto'; } }, 'Leggi tutto') : null;
-  const meta = [s.year, s.format && s.format.replace('_', ' '), s.score ? `★ ${s.score.toFixed(1)}` : null, s.episodeCount ? `${s.episodeCount} episodi` : null].filter(Boolean).join('  ·  ');
-
-  return h('div', null,
-    h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
-      h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, '← Libreria'),
-      h('div', { class: 'body' }, h('div', { class: 'cover', style: bg(s.cover) }),
-        h('div', null, h('h1', null, s.title), h('div', { class: 'muted' }, meta),
-          h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g))), desc, more,
-          h('div', { class: 'row wrap', style: { marginTop: '14px' } },
-            h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, 'Aggiungi link'),
-            s.anilistId ? h('button', { class: 'btn', onclick: async () => { toast('Aggiorno le informazioni…'); await mutate('series:refresh', s.id); toast('Informazioni aggiornate'); } }, 'Aggiorna info') : null,
-            h('button', { class: 'btn danger', onclick: () => { if (confirm(`Eliminare "${s.title}" dalla libreria? I link e i progressi andranno persi.`)) mutate('series:delete', s.id).then(() => go({ name: 'home' })); } }, 'Elimina serie'))))),
-    h('section', { class: 'a4k' }, h('h3', null, 'Anime4K per questa serie'),
-      h('div', { class: 'muted small', style: { marginBottom: '10px' } }, `Attivo: ${presetLabel(eff)}. Fast è pensato per GPU come la GTX 1650, HQ per schede più potenti. Dentro mpv puoi cambiarlo al volo con Ctrl+1…6.`),
-      h('div', { class: 'row wrap' }, h('div', { class: 'seg', role: 'group', 'aria-label': 'Modo' }, modeBtns), h('div', { class: 'seg', role: 'group', 'aria-label': 'Qualità' }, tierBtns)),
-      h('details', { class: 'adv' }, h('summary', null, 'Opzioni avanzate'),
-        field('Referer (solo se il sito dei video lo richiede)', h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })))),
-    h('section', null, h('h2', { style: { marginBottom: '12px' } }, 'Episodi'),
-      s.episodes.length ? h('div', { class: 'eps' }, s.episodes.map((e) => episodeRow(s, e))) :
-        h('div', { class: 'empty' }, h('h2', null, 'Ancora nessun episodio'), 'Aggiungi i link: un pattern come ep{ep}.mp4 crea tutti gli episodi in un colpo solo.', h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, 'Aggiungi link')))));
+  const tierBtns = ['fast', 'hq'].map((tier) => h('button', { 'aria-pressed': String(!!s.preset && s.preset !== 'off' && effTier === tier), disabled: !s.preset || s.preset === 'off', onclick: () => setPreset(`${effMode}-${tier}`) }, tier === 'fast' ? t('fast') : t('hq')));
+  const desc = h('div', { class: 'desc' }, s.description || t('noDescription'));
+  const more = s.description && s.description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? t('showLess') : t('readMore'); } }, t('readMore')) : null;
+  const meta = [s.year, s.format && s.format.replace('_', ' '), s.score != null ? `★ ${Number(s.score).toFixed(1)}/10${s.scoreSource ? ` (${s.scoreSource})` : ''}` : `★ ${t('ratingUnavailable')}`, s.episodeCount ? `${s.episodeCount} ${t('episodes').toLowerCase()}` : null].filter(Boolean).join('  ·  ');
+  const actions = h('div', { class: 'row wrap', style: { marginTop: '14px' } },
+    h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, t('addLinks')),
+    s.anilistId ? h('button', { class: 'btn', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, t('updateInfo')) : null,
+    h('button', { class: 'btn danger', onclick: () => { if (confirm(t('confirmDelete', s.title))) mutate('series:delete', s.id).then(() => go({ name: 'home' })); } }, t('deleteSeries')));
+  const heroBody = h('div', { class: 'body' },
+    h('div', { class: 'cover', style: bg(s.cover) }),
+    h('div', null, h('h1', null, s.title), h('div', { class: 'muted' }, meta),
+      h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g))),
+      desc, more, actions));
+  const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
+    h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, t('backLibrary')), heroBody);
+  const advanced = h('details', { class: 'adv' }, h('summary', null, t('advanced')),
+    field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })));
+  const a4k = h('section', { class: 'a4k' },
+    h('h3', null, t('anime4kSeries')),
+    h('div', { class: 'muted small', style: { marginBottom: '10px' } }, t('activePreset', presetLabel(eff))),
+    h('div', { class: 'row wrap' },
+      h('div', { class: 'seg', role: 'group', 'aria-label': t('mode') }, modeBtns),
+      h('div', { class: 'seg', role: 'group', 'aria-label': t('quality') }, tierBtns)),
+    advanced);
+  const episodeContent = s.episodes.length
+    ? h('div', { class: 'eps' }, s.episodes.map((e) => episodeRow(s, e)))
+    : h('div', { class: 'empty' }, h('h2', null, t('noEpisodeYet')), t('addLinksHint'),
+      h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, t('addLinks'))));
+  return h('div', null, hero, a4k, h('section', null, h('h2', { style: { marginBottom: '12px' } }, t('episodes')), episodeContent));
 }
 
 function episodeRow(s, e) {
   const has = e.sources.length > 0; const p = e.progress; const resume = !p.watched && p.pos > 10;
-  return h('div', { class: 'ep' + (p.watched ? ' done' : '') },
-    h('div', { class: 'th', style: bg(e.thumb || s.banner || s.cover) }, e.thumb ? null : h('span', { class: 'num' }, String(e.number)), pct(e) && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null),
-    h('div', null, h('div', { class: 'name' }, `${e.number}. ${e.title || 'Episodio ' + e.number}`),
-      h('div', { class: 'muted small' }, has ? `${e.sources.length} ${e.sources.length === 1 ? 'sorgente' : 'sorgenti'}${p.watched ? ' · visto' : resume ? ' · da riprendere' : ''}` : 'Nessun link')),
-    h('div', { class: 'acts' },
-      h('button', { class: 'btn sm' + (has ? ' primary' : ''), disabled: !has, onclick: () => play(s.id, e.id) }, p.watched ? 'Rivedi' : resume ? 'Riprendi' : 'Guarda'),
-      h('button', { class: 'btn sm', onclick: () => openEditLinks(s, e) }, 'Link'),
-      h('button', { class: 'btn sm', onclick: () => mutate('episodes:mark', s.id, e.id, !p.watched) }, p.watched ? 'Non visto' : 'Visto'),
-      h('button', { class: 'btn sm danger', onclick: () => mutate('episodes:delete', s.id, e.id) }, 'Elimina')));
+  const thumb = h('div', { class: 'th', style: bg(e.thumb || s.banner || s.cover) },
+    e.thumb ? null : h('span', { class: 'num' }, String(e.number)),
+    pct(e) && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
+  const info = h('div', null,
+    h('div', { class: 'name' }, `${e.number}. ${e.title || t('episode', e.number)}`),
+    h('div', { class: 'muted small' }, `${has ? t('sources', e.sources.length) : t('noLink')}${p.watched ? ' · ' + t('watched') : resume ? ' · ' + t('resumeStatus') : ''}`),
+    h('div', { class: 'muted small rating-line' }, e.rating == null ? t('ratingUnavailable') : `${t('rating')}: ${Number(e.rating).toFixed(1)}/10${e.ratingSource ? ` (${e.ratingSource})` : ''}`));
+  const acts = h('div', { class: 'acts' },
+    h('button', { class: 'btn sm' + (has ? ' primary' : ''), disabled: !has, onclick: () => play(s.id, e.id) }, p.watched ? t('rewatch') : resume ? t('resume') : t('watch')),
+    h('button', { class: 'btn sm', onclick: () => openEditLinks(s, e) }, t('link')),
+    h('button', { class: 'btn sm', onclick: () => mutate('episodes:mark', s.id, e.id, !p.watched) }, p.watched ? t('markUnwatched') : t('markWatched')),
+    h('button', { class: 'btn sm danger', onclick: () => mutate('episodes:delete', s.id, e.id) }, t('delete')));
+  return h('div', { class: 'ep' + (p.watched ? ' done' : '') }, thumb, info, acts);
 }
 
 async function play(sid, eid) { try { await call('player:play', sid, eid); } catch { /* toast già mostrato */ } }
 
 /* ---------- dialoghi ---------- */
 function openAddSeries() {
-  openDialog('Aggiungi una serie', (close) => {
-    const q = h('input', { class: 'input', placeholder: 'Titolo dell\'anime (es. Frieren)', 'aria-label': 'Titolo' });
+  openDialog(t('addSeriesTitle'), (close) => {
+    const q = h('input', { class: 'input', placeholder: t('animeTitlePlaceholder'), 'aria-label': t('animeTitlePlaceholder') });
     const results = h('div', { class: 'results' });
     const add = async (payload, btn) => {
-      btn.disabled = true; btn.textContent = 'Aggiungo…';
-      try { const r = await call('series:create', payload); state.lib = r.lib; close(); go({ name: 'series', id: r.id }); } catch { btn.disabled = false; btn.textContent = 'Aggiungi'; }
+      btn.disabled = true; btn.textContent = t('adding');
+      try { const r = await call('series:create', payload); state.lib = r.lib; close(); go({ name: 'series', id: r.id }); } catch { btn.disabled = false; btn.textContent = t('add'); }
     };
     const search = async () => {
       const text = q.value.trim(); if (!text) return;
-      results.replaceChildren(h('div', { class: 'muted' }, 'Cerco…'));
+      results.replaceChildren(h('div', { class: 'muted' }, t('searching')));
       try {
         const list = await call('series:search', text);
         results.replaceChildren(...(list.length ? list.map((m) => {
-          const btn = h('button', { class: 'btn sm primary' }, 'Aggiungi'); btn.onclick = () => add({ anilistId: m.anilistId }, btn);
+          const btn = h('button', { class: 'btn sm primary' }, t('add')); btn.onclick = () => add({ anilistId: m.anilistId }, btn);
           return h('div', { class: 'res' }, h('div', { class: 'c', style: bg(m.cover) }), h('div', null, h('b', null, m.title), h('div', { class: 'muted small' }, [m.year, m.format && m.format.replace('_', ' '), m.episodeCount ? m.episodeCount + ' ep.' : null].filter(Boolean).join(' · '))), btn);
-        }) : [h('div', { class: 'muted' }, 'Nessun risultato.')]));
+        }) : [h('div', { class: 'muted' }, t('noSearchResults'))]));
       } catch { results.replaceChildren(); }
     };
     q.addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
-    const manual = h('button', { class: 'link', onclick: async () => { const t = q.value.trim(); if (!t) { toast('Scrivi prima un titolo.', 'error'); return; } const r = await call('series:create', { title: t }); state.lib = r.lib; close(); go({ name: 'series', id: r.id }); } }, 'Aggiungi senza ricerca, solo con questo titolo');
-    return [h('div', { class: 'row' }, q, h('button', { class: 'btn primary', onclick: search }, 'Cerca')), results, h('div', { style: { marginTop: '14px' } }, manual), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, 'Chiudi'))];
+    const manual = h('button', { class: 'link', onclick: async () => { const title = q.value.trim(); if (!title) { toast(t('writeTitleFirst'), 'error'); return; } const r = await call('series:create', { title }); state.lib = r.lib; close(); go({ name: 'series', id: r.id }); } }, t('addWithoutSearch'));
+    return [h('div', { class: 'row' }, q, h('button', { class: 'btn primary', onclick: search }, t('search'))), results, h('div', { style: { marginTop: '14px' } }, manual), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')))];
   });
 }
 
 function openAddLinks(s) {
-  openDialog(`Aggiungi link a "${s.title}"`, (close) => {
+  openDialog(t('addLinksTitle', s.title), (close) => {
     const fill = (pattern, n) => pattern.replace(/\{ep(?::(\d+))?\}/g, (_, w) => (w ? String(n).padStart(Number(w), '0') : String(n)));
     const defTo = String(s.episodeCount || s.episodes.length || 12);
-    const range = () => { const from = h('input', { class: 'input', type: 'number', min: '0', value: '1' }); const to = h('input', { class: 'input', type: 'number', min: '0', value: defTo }); return { from, to, box: h('div', { class: 'two' }, field('Dall\'episodio', from), field('All\'episodio', to)) }; };
+    const range = () => { const from = h('input', { class: 'input', type: 'number', min: '0', value: '1' }); const to = h('input', { class: 'input', type: 'number', min: '0', value: defTo }); return { from, to, box: h('div', { class: 'two' }, field(t('fromEpisode'), from), field(t('toEpisode'), to)) }; };
     let tab = 'link';
 
     /* --- scheda 1: da un link (riconosce da solo il numero) --- */
-    const sample = h('input', { class: 'input', placeholder: 'Incolla il link di UN episodio (va bene anche il primo)' });
+    const sample = h('input', { class: 'input', placeholder: t('oneEpisodeLink') });
     const num = h('input', { class: 'input', type: 'number', min: '0' });
     const r1 = range();
     const chips = h('div', { class: 'chips' });
@@ -280,14 +314,14 @@ function openAddLinks(s) {
     const paint = () => {
       chips.replaceChildren(); info.replaceChildren();
       if (!sample.value.trim()) return;
-      if (!det) { info.textContent = 'Non trovo nessun numero in questo link: usa la scheda "Pattern" e scrivi {ep} dove cambia l\'episodio.'; return; }
+      if (!det) { info.textContent = t('noNumber'); return; }
       const c = det.candidates[chosen]; const url = sample.value.trim();
       if (det.candidates.length > 1) {
-        chips.append(h('span', { class: 'muted small' }, 'Più numeri nel link, scegli quello dell\'episodio:'));
+        chips.append(h('span', { class: 'muted small' }, t('multipleNumbers')));
         det.candidates.forEach((k, i) => chips.append(h('button', { class: 'chip pick', 'aria-pressed': String(i === chosen), onclick: () => { chosen = i; num.value = k.number; paint(); } }, `…${url.slice(Math.max(0, k.index - 6), k.index)}[${k.text}]${url.slice(k.index + k.text.length, k.index + k.text.length + 6)}…`)));
       }
       const a = Number(r1.from.value); const z = Number(r1.to.value);
-      info.append(h('div', null, 'Il numero dell\'episodio è ', h('b', null, c.text), c.width ? ` (scritto a ${c.width} cifre)` : ''), h('div', null, 'Primo: ', fill(c.pattern, a)), h('div', null, 'Ultimo: ', fill(c.pattern, z)));
+      info.append(h('div', null, t('episodeNumberIs') + ' ', h('b', null, c.text), c.width ? ` (${c.width})` : ''), h('div', null, `${t('first')}: `, fill(c.pattern, a)), h('div', null, `${t('last')}: `, fill(c.pattern, z)));
     };
     const analyse = async (hint) => {
       const url = sample.value.trim();
@@ -298,101 +332,107 @@ function openAddLinks(s) {
     sample.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => analyse(undefined), 250); });
     num.addEventListener('input', () => { clearTimeout(timer); timer = setTimeout(() => analyse(num.value === '' ? undefined : Number(num.value)), 250); });
     [r1.from, r1.to].forEach((i) => i.addEventListener('input', paint));
-    const lBox = h('div', null, field('Link di un episodio', sample), field('Questo link è l\'episodio numero (lo correggo io se sbaglio a leggerlo)', num), r1.box, chips, info);
+    const lBox = h('div', null, field(t('linkEpisode'), sample), field(t('episodeNumber'), num), r1.box, chips, info);
 
     /* --- scheda 2: pattern scritto a mano --- */
-    const pattern = h('input', { class: 'input', placeholder: 'https://sito.example/anime/ep{ep:02}.mp4' });
+    const pattern = h('input', { class: 'input', placeholder: 'https://site.example/anime/ep{ep:02}.mp4' });
     const r2 = range();
-    const pBox = h('div', { hidden: true }, field('Pattern del link — usa {ep} oppure {ep:02} per lo zero iniziale', pattern), r2.box);
+    const pBox = h('div', { hidden: true }, field(t('linkPattern'), pattern), r2.box);
 
     /* --- scheda 3: elenco --- */
-    const list = h('textarea', { class: 'input', placeholder: 'Un link per riga, nell\'ordine degli episodi' });
+    const list = h('textarea', { class: 'input', placeholder: t('linksList') });
     const start = h('input', { class: 'input', type: 'number', min: '0', value: '1' });
-    const eBox = h('div', { hidden: true }, field('Link', list), field('Il primo link è l\'episodio numero', start),
-      h('button', { class: 'btn sm', onclick: async () => { await mutate('episodes:addM3U', s.id, { start: Number(start.value) }); close(); } }, 'Importa una playlist .m3u / .m3u8'));
+    const eBox = h('div', { hidden: true }, field(t('link'), list), field(t('firstLinkEpisode'), start),
+      h('button', { class: 'btn sm', onclick: async () => { await mutate('episodes:addM3U', s.id, { start: Number(start.value) }); close(); } }, t('importPlaylist')));
 
     const boxes = { link: lBox, pattern: pBox, list: eBox };
     const tabs = h('div', { class: 'seg', style: { marginBottom: '14px' } },
-      ...[['link', 'Da un link'], ['pattern', 'Pattern'], ['list', 'Elenco']].map(([id, label]) => h('button', { 'aria-pressed': String(id === tab), onclick: (e) => { tab = id; for (const [k, b] of Object.entries(boxes)) b.hidden = k !== id; [...e.target.parentNode.children].forEach((b) => b.setAttribute('aria-pressed', String(b === e.target))); } }, label)));
+      ...[['link', t('tabLink')], ['pattern', t('tabPattern')], ['list', t('tabList')]].map(([id, label]) => h('button', { 'aria-pressed': String(id === tab), onclick: (e) => { tab = id; for (const [k, b] of Object.entries(boxes)) b.hidden = k !== id; [...e.target.parentNode.children].forEach((b) => b.setAttribute('aria-pressed', String(b === e.target))); } }, label)));
     const ok = h('button', { class: 'btn primary', onclick: async () => {
       try {
         if (tab === 'link') {
-          if (!det) { toast('Incolla prima il link di un episodio.', 'error'); return; }
+          if (!det) { toast(t('pasteLink'), 'error'); return; }
           await mutate('episodes:addPattern', s.id, { pattern: det.candidates[chosen].pattern, from: r1.from.value, to: r1.to.value });
         } else if (tab === 'pattern') await mutate('episodes:addPattern', s.id, { pattern: pattern.value, from: r2.from.value, to: r2.to.value });
         else await mutate('episodes:addList', s.id, { text: list.value, start: Number(start.value) });
-        toast('Link aggiunti'); close();
+        toast(t('linksAdded')); close();
       } catch { /* toast già mostrato */ }
-    } }, 'Aggiungi');
-    return [tabs, lBox, pBox, eBox, h('div', { class: 'muted small', style: { marginTop: '10px' } }, 'mpv apre direttamente file video e playlist HLS (.m3u8); per i siti supportati da yt-dlp basta il link della pagina.'), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, 'Annulla'), ok)];
+    } }, t('add'));
+    return [tabs, lBox, pBox, eBox, h('div', { class: 'muted small', style: { marginTop: '10px' } }, t('playerHint')), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')), ok)];
   });
 }
 
 function openEditLinks(s, e) {
-  openDialog(`Episodio ${e.number} — link`, (close) => {
+  openDialog(t('editEpisodeLinks', e.number), (close) => {
     const ta = h('textarea', { class: 'input', value: e.sources.map((x) => x.url).join('\n') });
-    return [h('div', { class: 'muted small', style: { marginBottom: '8px' } }, 'Un link per riga. Se il primo non funziona, l\'app prova il successivo.'), ta,
-      h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, 'Annulla'),
-        h('button', { class: 'btn primary', onclick: async () => { try { await mutate('episodes:setSources', s.id, e.id, ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)); close(); } catch { /* toast */ } } }, 'Salva'))];
+    return [h('div', { class: 'muted small', style: { marginBottom: '8px' } }, t('oneLinkLine')), ta,
+      h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')),
+        h('button', { class: 'btn primary', onclick: async () => { try { await mutate('episodes:setSources', s.id, e.id, ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)); close(); } catch { /* toast */ } } }, t('save')))];
   });
 }
 
 function openLinkDialog() {
-  openDialog('Apri un link', (close) => {
-    const url = h('input', { class: 'input', placeholder: 'https://… oppure percorso di un file' });
-    const sel = h('select', { class: 'input' }, h('option', { value: '' }, `Predefinito (${presetLabel(defaultPreset())})`), ...state.presets.map((p) => h('option', { value: p.id }, p.label)));
+  openDialog(t('openLinkTitle'), (close) => {
+    const url = h('input', { class: 'input', placeholder: t('urlPlaceholder') });
+    const sel = h('select', { class: 'input' }, h('option', { value: '' }, `${t('default')} (${presetLabel(defaultPreset())})`), ...state.presets.map((p) => h('option', { value: p.id }, p.label)));
     const go_ = async () => { try { await call('player:playUrl', url.value, sel.value || null); close(); } catch { /* toast */ } };
     url.addEventListener('keydown', (e) => { if (e.key === 'Enter') go_(); });
-    return [field('Link del video', url), field('Anime4K', sel), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, 'Annulla'), h('button', { class: 'btn primary', onclick: go_ }, 'Guarda'))];
+    return [field(t('videoLink'), url), field(t('anime4k'), sel), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')), h('button', { class: 'btn primary', onclick: go_ }, t('play')))];
   });
 }
 
 function openSettings() {
   const st = state.lib.settings;
-  openDialog('Impostazioni', (close) => {
-    const mpv = h('input', { class: 'input', value: st.mpvPath || '', placeholder: 'C:\\Programmi\\mpv\\mpv.exe' });
+  openDialog(t('settingsTitle'), (close) => {
+    const mpv = h('input', { class: 'input', value: st.mpvPath || '', placeholder: t('mpvPlaceholder') });
     const preset = h('select', { class: 'input', value: st.defaultPreset }, state.presets.map((p) => h('option', { value: p.id }, p.label)));
     preset.value = st.defaultPreset || 'aa-hq';
     const theme = h('select', { class: 'input', value: st.theme || 'default' },
-      h('option', { value: 'default' }, 'Predefinito'),
-      h('option', { value: 'compact' }, 'Compatto / minimale'));
+      h('option', { value: 'default' }, t('default')),
+      h('option', { value: 'compact' }, t('compact')));
+    const language = h('select', { class: 'input', value: st.language || 'en' },
+      h('option', { value: 'en' }, 'English'),
+      h('option', { value: 'it' }, 'Italiano'));
     const auto = h('input', { type: 'checkbox' }); auto.checked = !!st.autoplayNext;
     const alang = h('input', { class: 'input', value: st.alang || '' });
     const slang = h('input', { class: 'input', value: st.slang || '' });
-    const ua = h('input', { class: 'input', value: st.userAgent || '', placeholder: 'Lascia vuoto per l\'impostazione di mpv' });
+    const ua = h('input', { class: 'input', value: st.userAgent || '', placeholder: t('userAgentPlaceholder') });
     const extra = h('input', { class: 'input', value: st.extraArgs || '', placeholder: 'es. --fullscreen --volume=70' });
     return [
-      field('Percorso di mpv', h('div', { class: 'row' }, mpv,
-        h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast('mpv trovato'); } else toast('mpv non trovato: scegli il file a mano.', 'error'); } }, 'Cerca'),
-        h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, 'Sfoglia'))),
-      field('Anime4K predefinito', preset),
-      field('Tema dell’interfaccia', theme),
-      h('label', { class: 'row', style: { marginBottom: '14px' } }, auto, 'Passa all\'episodio successivo alla fine'),
-      h('div', { class: 'two' }, field('Lingue audio (in ordine)', alang), field('Lingue sottotitoli (in ordine)', slang)),
-      field('User agent', ua), field('Argomenti extra per mpv', extra),
-      h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, 'Annulla'),
-        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, autoplayNext: auto.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast('Impostazioni salvate'); close(); } }, 'Salva'))];
+      field(t('mpvPath'), h('div', { class: 'row' }, mpv,
+        h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
+        h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, t('browse')))),
+      field(t('defaultAnime4K'), preset),
+      field(t('interfaceTheme'), theme),
+      field(t('primaryLanguage'), language),
+      h('label', { class: 'row', style: { marginBottom: '14px' } }, auto, t('autoplay')),
+      h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang)),
+      field(t('userAgent'), ua), field(t('extraArgs'), extra),
+      h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')),
+        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
   });
 }
 
 function openSetup() {
-  openDialog('Configura Anime Player', (close) => {
-    const mpv = h('input', { class: 'input', value: state.lib.settings.mpvPath || '', placeholder: 'C:\\Programmi\\mpv\\mpv.exe' });
+  openDialog(t('setupTitle'), (close) => {
+    const mpv = h('input', { class: 'input', value: state.lib.settings.mpvPath || '', placeholder: t('mpvPlaceholder') });
     const preset = h('select', { class: 'input', value: state.lib.settings.defaultPreset || 'aa-hq' }, state.presets.map((p) => h('option', { value: p.id }, p.label)));
     preset.value = state.lib.settings.defaultPreset || 'aa-hq';
-    const message = h('div', { class: 'muted small' }, 'Prima di usare la libreria indica il file mpv.exe e il preset Anime4K predefinito.');
+    const language = h('select', { class: 'input', value: state.lib.settings.language || 'en' },
+      h('option', { value: 'en' }, 'English'), h('option', { value: 'it' }, 'Italiano'));
+    const message = h('div', { class: 'muted small' }, t('setupMessage'));
     const save = async () => {
       try {
-        const lib = await call('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, onboardingComplete: true });
-        state.lib = lib; close(); render(); toast('Configurazione completata');
+        const lib = await call('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, language: language.value, onboardingComplete: true });
+        state.lib = lib; close(); render(); toast(t('setupDone'));
       } catch { /* messaggio già mostrato */ }
     };
     mpv.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
-    return [message, field('Percorso di mpv.exe', h('div', { class: 'row' }, mpv,
-      h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; } else toast('mpv non trovato.', 'error'); } }, 'Cerca'),
-      h('button', { class: 'btn', onclick: async () => { const lib = await call('mpv:browse'); state.lib = lib; mpv.value = lib.settings.mpvPath || ''; } }, 'Sfoglia'))),
-      field('Preset Anime4K predefinito', preset),
-      h('div', { class: 'foot' }, h('button', { class: 'btn primary', onclick: save }, 'Completa configurazione'))];
+    return [message, field(t('mpvPath'), h('div', { class: 'row' }, mpv,
+      h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
+      h('button', { class: 'btn', onclick: async () => { const lib = await call('mpv:browse'); state.lib = lib; mpv.value = lib.settings.mpvPath || ''; } }, t('browse')))),
+      field(t('defaultAnime4K'), preset), field(t('primaryLanguage'), language),
+      h('div', { class: 'foot' }, h('button', { class: 'btn primary', onclick: save }, t('completeSetup')))];
   }, { locked: true });
 }
 
@@ -406,5 +446,5 @@ function openSetup() {
   state.player = await api.invoke('player:state');
   render();
   if (!state.lib.settings.onboardingComplete) openSetup();
-  else if (!state.lib.settings.mpvPath) toast('mpv non trovato: apri Impostazioni e indica dove si trova mpv.exe.', 'error');
+  else if (!state.lib.settings.mpvPath) toast(t('configureMpv'), 'error');
 })();
