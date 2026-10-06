@@ -176,6 +176,8 @@ function homeView() {
     .filter((s) => (!q || s.title.toLowerCase().includes(q)) && seriesMatches(s, state.progressFilter))
     .sort((a, b) => a.title.localeCompare(b.title));
   const cont = q || state.progressFilter !== 'all' ? [] : continueItems();
+  const featured = !q && state.progressFilter === 'all' ? (cont[0] ? cont[0].s : list[0]) : null;
+  const recent = [...list].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)).slice(0, 8);
   const search = h('div', { class: 'search-shell' },
     h('span', { class: 'search-icon', 'aria-hidden': 'true' }),
     h('input', { class: 'search', type: 'search', placeholder: t('filterLibrary'), value: state.filter, 'aria-label': t('filterLibrary'), oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const n = $('.search'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } } }),
@@ -185,21 +187,49 @@ function homeView() {
     h('option', { value: 'progress' }, t('resume')),
     h('option', { value: 'unwatched' }, t('unwatched')),
     h('option', { value: 'watched' }, t('withWatched')));
-  return h('div', null,
-    h('div', { class: 'head' }, h('h1', null, t('library')), h('div', { class: 'row wrap' }, search, filter, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),
-    cont.length ? h('section', { class: 'section' }, h('h2', null, t('continueWatching')),
-      h('div', { class: 'strip' }, cont.map(({ s, e }) => h('button', { class: 'resume', onclick: () => play(s.id, e.id) },
-        h('div', { class: 'pic', style: bg(e.thumb || s.banner || s.cover) }, pct(e) ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null),
-        h('div', { class: 'meta' }, h('b', null, s.title), h('span', { class: 'muted small' }, `${t('episode', e.number)}${e.title ? ' · ' + e.title : ''}`)))))) : null,
-    list.length ? h('div', { class: 'grid' }, list.map((s) => {
-      const seen = s.episodes.filter((e) => e.progress.watched).length;
-      return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
-        h('div', { class: 'cover', style: bg(s.cover) }, s.cover ? null : s.title.slice(0, 1).toUpperCase()),
-        h('div', { class: 't' }, s.title),
-        h('div', { class: 'muted small' }, episodeTotal(s) ? t('watchedOf', seen, episodeTotal(s)) : t('noEpisodes')));
-    })) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
+  const posterCard = (s) => {
+    const seen = s.episodes.filter((e) => e.progress.watched).length;
+    return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
+      h('div', { class: 'cover', style: bg(s.cover) },
+        s.cover ? null : s.title.slice(0, 1).toUpperCase(),
+        h('span', { class: 'poster-play', 'aria-hidden': 'true' }, '▶'),
+        episodeTotal(s) ? h('span', { class: 'poster-badge' }, `${episodeTotal(s)} EP`) : null),
+      h('div', { class: 't' }, s.title),
+      h('div', { class: 'muted small' }, episodeTotal(s) ? t('watchedOf', seen, episodeTotal(s)) : t('noEpisodes')));
+  };
+  const featuredTarget = featured && resumeTarget(featured);
+  const featuredHero = featured ? h('section', { class: 'home-featured', style: { '--bg': featured.banner || featured.cover ? `url("${featured.banner || featured.cover}")` : 'none' } },
+    h('div', { class: 'featured-copy' },
+      h('span', { class: 'eyebrow' }, t('library')),
+      h('h2', null, featured.title),
+      h('div', { class: 'featured-meta' }, featured.year || '', featured.format ? ` · ${featured.format.replace('_', ' ')}` : '', episodeTotal(featured) ? ` · ${episodeTotal(featured)} ${t('episodes').toLowerCase()}` : ''),
+      featured.description ? h('p', null, featured.description) : null,
+      h('button', { class: 'btn primary', onclick: () => featuredTarget ? play(featured.id, featuredTarget.id) : go({ name: 'series', id: featured.id }) }, featuredTarget && featuredTarget.progress.pos > 0 ? t('resume') : t('watch')))) : null;
+  const continueCards = cont.map(({ s, e }) => {
+    const media = h('div', { class: 'pic', style: bg(e.thumb || s.banner || s.cover) },
+      h('span', { class: 'resume-play', 'aria-hidden': 'true' }, '▶'),
+      h('span', { class: 'resume-badge' }, `EP ${e.number}`),
+      pct(e) ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
+    const meta = h('div', { class: 'meta' },
+      h('b', null, s.title),
+      h('span', { class: 'muted small' }, `${t('episode', e.number)}${e.title ? ' · ' + e.title : ''}`),
+      pct(e) ? h('span', { class: 'progress-label' }, `${Math.round(pct(e))}%`) : null);
+    return h('button', { class: 'resume', onclick: () => play(s.id, e.id) }, media, meta);
+  });
+  const continueSection = cont.length ? h('section', { class: 'section' },
+    h('div', { class: 'section-head' }, h('h2', null, t('continueWatching')), h('span', { class: 'section-count' }, `${cont.length}`)),
+    h('div', { class: 'strip' }, continueCards)) : null;
+  const librarySection = list.length ? h('section', { class: 'section' },
+    h('div', { class: 'section-head' }, h('h2', null, q || state.progressFilter !== 'all' ? t('library') : t('library')), h('span', { class: 'section-count' }, `${list.length}`)),
+    h('div', { class: 'grid' }, list.map(posterCard))) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
       state.lib.series.length ? t('noFilterMatch') : t('emptyLibraryHint'),
-      state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, t('addFirstSeries')))));
+      state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, t('addFirstSeries'))));
+  const recentSection = !q && state.progressFilter === 'all' && recent.length > 0
+    ? h('section', { class: 'section recent-section' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity')), h('span', { class: 'section-count' }, `${recent.length}`)), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
+    : null;
+  return h('div', null,
+    h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library'))), h('div', { class: 'toolbar row wrap' }, search, filter, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),
+    featuredHero, continueSection, librarySection, recentSection);
 }
 
 function formatDuration(seconds) {
