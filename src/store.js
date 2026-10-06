@@ -2,7 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
-const { hostLabel } = require('./patterns');
+const { hostLabel, isValidSource } = require('./patterns');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -15,6 +15,64 @@ const DEFAULT_SETTINGS = {
 };
 
 const uid = () => crypto.randomUUID();
+
+function validateLibraryData(input) {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Il file non contiene una libreria valida.');
+  if (!Array.isArray(input.series)) throw new Error('La libreria importata non contiene un elenco di serie.');
+  if (input.settings != null && (typeof input.settings !== 'object' || Array.isArray(input.settings))) {
+    throw new Error('Le impostazioni della libreria importata non sono valide.');
+  }
+
+  const ids = new Set();
+  const series = input.series.map((rawSeries) => {
+    if (!rawSeries || typeof rawSeries !== 'object' || typeof rawSeries.id !== 'string' || !rawSeries.id || typeof rawSeries.title !== 'string' || !Array.isArray(rawSeries.episodes)) {
+      throw new Error('Una serie importata non ha una struttura valida.');
+    }
+    if (ids.has(rawSeries.id)) throw new Error(`Serie duplicata nella libreria importata: ${rawSeries.id}`);
+    ids.add(rawSeries.id);
+
+    const episodeIds = new Set();
+    const episodes = rawSeries.episodes.map((rawEpisode) => {
+      if (!rawEpisode || typeof rawEpisode !== 'object' || typeof rawEpisode.id !== 'string' || !rawEpisode.id || !Number.isInteger(rawEpisode.number) || rawEpisode.number < 0 || !Array.isArray(rawEpisode.sources)) {
+        throw new Error(`Episodio non valido nella serie "${rawSeries.title}".`);
+      }
+      if (episodeIds.has(rawEpisode.id)) throw new Error(`Episodio duplicato nella serie "${rawSeries.title}".`);
+      episodeIds.add(rawEpisode.id);
+      const sources = rawEpisode.sources.map((source) => {
+        if (!source || typeof source.url !== 'string' || !isValidSource(source.url)) {
+          throw new Error(`Link non valido nella serie "${rawSeries.title}", episodio ${rawEpisode.number}.`);
+        }
+        return { url: source.url, label: typeof source.label === 'string' && source.label ? source.label : hostLabel(source.url) };
+      });
+      const p = rawEpisode.progress || {};
+      if (typeof p.watched !== 'boolean' || !Number.isFinite(Number(p.pos || 0)) || !Number.isFinite(Number(p.duration || 0)) || !Number.isFinite(Number(p.updatedAt || 0))) {
+        throw new Error(`Progresso non valido nella serie "${rawSeries.title}", episodio ${rawEpisode.number}.`);
+      }
+      return {
+        ...rawEpisode,
+        title: typeof rawEpisode.title === 'string' ? rawEpisode.title : '',
+        thumb: rawEpisode.thumb || null,
+        sources,
+        progress: {
+          pos: Math.max(0, Number(p.pos || 0)),
+          duration: Math.max(0, Number(p.duration || 0)),
+          watched: p.watched,
+          updatedAt: Number(p.updatedAt || 0),
+        },
+      };
+    });
+    const lastWatchedAt = Number(rawSeries.lastWatchedAt || 0);
+    if (!Number.isFinite(lastWatchedAt)) throw new Error(`Data di visione non valida nella serie "${rawSeries.title}".`);
+    return {
+      ...rawSeries,
+      title: rawSeries.title.trim() || 'Senza titolo',
+      episodes,
+      genres: Array.isArray(rawSeries.genres) ? rawSeries.genres : [],
+      lastWatchedAt,
+    };
+  });
+  return { settings: { ...DEFAULT_SETTINGS, ...(input.settings || {}) }, series };
+}
 
 class Store {
   constructor(file) {
@@ -33,7 +91,7 @@ class Store {
     } catch { /* primo avvio o file rovinato: si parte da zero */ }
   }
 
-  save(now = false) {
+  save(now = false, throwOnError = false) {
     clearTimeout(this._timer);
     const write = () => {
       try {
@@ -41,12 +99,26 @@ class Store {
         const tmp = this.file + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(this.data, null, 1));
         fs.renameSync(tmp, this.file);
-      } catch (e) { console.error('Salvataggio libreria fallito:', e.message); }
+        return true;
+      } catch (e) {
+        console.error('Salvataggio libreria fallito:', e.message);
+        if (throwOnError) throw new Error(`Impossibile salvare la libreria: ${e.message}`);
+        return false;
+      }
     };
-    if (now) write(); else this._timer = setTimeout(write, 400);
+    if (now) return write();
+    this._timer = setTimeout(write, 400);
+    return true;
   }
 
   snapshot() { return JSON.parse(JSON.stringify(this.data)); }
+  importData(input) {
+    const next = validateLibraryData(input);
+    const previous = this.data;
+    this.data = next;
+    try { this.save(true, true); } catch (e) { this.data = previous; throw e; }
+    return this.snapshot();
+  }
 
   getSeries(id) { return this.data.series.find((s) => s.id === id); }
   getEpisode(sid, eid) { const s = this.getSeries(sid); return s && s.episodes.find((e) => e.id === eid); }
@@ -137,4 +209,4 @@ class Store {
   }
 }
 
-module.exports = { Store, DEFAULT_SETTINGS };
+module.exports = { Store, DEFAULT_SETTINGS, validateLibraryData };

@@ -1,6 +1,6 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
-const state = { lib: { series: [], settings: {} }, presets: [], view: { name: 'home' }, filter: '', player: { playing: false } };
+const state = { lib: { series: [], settings: {} }, presets: [], view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false } };
 
 /* ---------- utilità ---------- */
 function h(tag, props, ...kids) {
@@ -84,25 +84,55 @@ function render() {
 function continueItems() {
   const out = [];
   for (const s of state.lib.series) {
-    let last = null;
-    for (const e of s.episodes) if (e.progress.updatedAt && (!last || e.progress.updatedAt > last.progress.updatedAt)) last = e;
-    if (!last) continue;
-    let target = null;
-    if (!last.progress.watched && last.sources.length) target = last;
-    else target = s.episodes.slice(s.episodes.indexOf(last) + 1).find((e) => e.sources.length && !e.progress.watched);
-    if (target) out.push({ s, e: target });
+    const activity = s.episodes.filter((e) => e.progress.updatedAt).sort((a, b) => b.progress.updatedAt - a.progress.updatedAt);
+    const inProgress = activity.find((e) => e.sources.length && !e.progress.watched && e.progress.pos > 0);
+    const last = activity[0];
+    const target = inProgress || (last && last.progress.watched
+      ? s.episodes.slice(s.episodes.indexOf(last) + 1).find((e) => e.sources.length && !e.progress.watched)
+      : last && last.sources.length && !last.progress.watched ? last : null);
+    if (target) out.push({ s, e: target, updatedAt: target.progress.updatedAt || s.lastWatchedAt || 0 });
   }
-  return out.sort((a, b) => b.s.lastWatchedAt - a.s.lastWatchedAt).slice(0, 8);
+  return out.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
 }
 const pct = (e) => (e.progress.duration > 0 && e.progress.pos > 0 ? Math.min(100, (e.progress.pos / e.progress.duration) * 100) : 0);
+function seriesMatches(s, filter) {
+  if (filter === 'all') return true;
+  const episodes = s.episodes.filter((e) => e.sources.length);
+  const watched = episodes.filter((e) => e.progress.watched);
+  if (filter === 'watched') return watched.length > 0;
+  if (filter === 'unwatched') return episodes.some((e) => !e.progress.watched);
+  if (filter === 'progress') return episodes.some((e) => !e.progress.watched && e.progress.pos > 0);
+  return true;
+}
+
+async function exportLibrary() {
+  const result = await call('library:export');
+  if (!result.canceled) toast('Libreria esportata.');
+}
+async function importLibrary() {
+  const result = await call('library:import');
+  if (result.canceled) return;
+  state.lib = result.lib;
+  state.filter = '';
+  state.progressFilter = 'all';
+  render();
+  toast('Libreria importata.');
+}
 
 function homeView() {
   const q = state.filter.trim().toLowerCase();
-  const list = state.lib.series.filter((s) => !q || s.title.toLowerCase().includes(q)).sort((a, b) => a.title.localeCompare(b.title));
-  const cont = q ? [] : continueItems();
+  const list = state.lib.series
+    .filter((s) => (!q || s.title.toLowerCase().includes(q)) && seriesMatches(s, state.progressFilter))
+    .sort((a, b) => a.title.localeCompare(b.title));
+  const cont = q || state.progressFilter !== 'all' ? [] : continueItems();
   const search = h('input', { class: 'input search', type: 'search', placeholder: 'Filtra la libreria', value: state.filter, 'aria-label': 'Filtra la libreria', oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const n = $('.search'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } } });
+  const filter = h('select', { class: 'input library-filter', 'aria-label': 'Filtra per progresso', value: state.progressFilter, onchange: (e) => { state.progressFilter = e.target.value; render(); } },
+    h('option', { value: 'all' }, 'Tutte'),
+    h('option', { value: 'progress' }, 'Da riprendere'),
+    h('option', { value: 'unwatched' }, 'Non viste'),
+    h('option', { value: 'watched' }, 'Con episodi visti'));
   return h('div', null,
-    h('div', { class: 'head' }, h('h1', null, 'Libreria'), h('div', { class: 'row' }, search, h('button', { class: 'btn primary', onclick: openAddSeries }, 'Aggiungi serie'))),
+    h('div', { class: 'head' }, h('h1', null, 'Libreria'), h('div', { class: 'row wrap' }, search, filter, h('button', { class: 'btn', onclick: importLibrary }, 'Importa'), h('button', { class: 'btn', onclick: exportLibrary }, 'Esporta'), h('button', { class: 'btn primary', onclick: openAddSeries }, 'Aggiungi serie'))),
     cont.length ? h('section', { class: 'section' }, h('h2', null, 'Continua a guardare'),
       h('div', { class: 'strip' }, cont.map(({ s, e }) => h('button', { class: 'resume', onclick: () => play(s.id, e.id) },
         h('div', { class: 'pic', style: bg(e.thumb || s.banner || s.cover) }, pct(e) ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null),

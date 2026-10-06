@@ -28,6 +28,18 @@ Per rigenerare l'eseguibile portatile dopo modifiche al progetto: `npm run dist`
 3. **Guarda / Riprendi**. Il progresso si salva da solo, alla fine parte l'episodio successivo.
 4. **Apri un link** (barra laterale) riproduce al volo un link qualsiasi con Anime4K.
 
+Nella home trovi **Continua a guardare**, con il progresso dell'ultimo episodio
+e un pulsante rapido per riprenderlo (oppure per passare all'episodio
+successivo). La ricerca filtra i titoli della libreria; il menu accanto alla
+ricerca permette di mostrare tutte le serie, quelle da riprendere, quelle con
+episodi non visti o quelle con episodi già visti.
+
+I pulsanti **Esporta** e **Importa** usano i dialoghi di Windows per salvare o
+caricare un file JSON della libreria, inclusi link, progressi, impostazioni e
+metadati. Durante l'importazione il file viene controllato: JSON non valido,
+strutture incomplete o link non validi vengono rifiutati con un messaggio
+esplicito e la libreria attuale resta invariata.
+
 mpv apre link diretti (mp4, mkv…), flussi HLS (.m3u8) e, con [yt-dlp](https://github.com/yt-dlp/yt-dlp) nel PATH, anche le pagine dei siti che yt-dlp supporta. Se il sito richiede un referer, impostalo in *Opzioni avanzate* della serie.
 
 Gli episodi senza anteprima online mostrano l'immagine della serie con il numero sopra.

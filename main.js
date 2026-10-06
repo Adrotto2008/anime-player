@@ -2,7 +2,7 @@ const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron')
 const path = require('path');
 const fs = require('fs');
 const { execFile } = require('child_process');
-const { Store } = require('./src/store');
+const { Store, validateLibraryData } = require('./src/store');
 const { PlayerManager } = require('./src/player');
 const A4K = require('./src/anime4k');
 const meta = require('./src/metadata');
@@ -56,6 +56,37 @@ function register() {
   const h = (ch, fn) => ipcMain.handle(ch, async (_e, ...a) => fn(...a));
 
   h('lib:get', () => lib());
+  h('library:export', async () => {
+    const r = await dialog.showSaveDialog(win, {
+      title: 'Esporta libreria',
+      defaultPath: 'anime-player-library.json',
+      filters: [{ name: 'Libreria Anime Player', extensions: ['json'] }],
+    });
+    if (r.canceled || !r.filePath) return { canceled: true };
+    try {
+      fs.writeFileSync(r.filePath, JSON.stringify(lib(), null, 2), 'utf8');
+      return { canceled: false, filePath: r.filePath };
+    } catch (e) {
+      throw new Error(`Esportazione fallita: ${e.message}`);
+    }
+  });
+  h('library:import', async () => {
+    const r = await dialog.showOpenDialog(win, {
+      title: 'Importa libreria',
+      properties: ['openFile'],
+      filters: [{ name: 'Libreria Anime Player', extensions: ['json'] }],
+    });
+    if (r.canceled || !r.filePaths[0]) return { canceled: true };
+    try {
+      const imported = JSON.parse(fs.readFileSync(r.filePaths[0], 'utf8'));
+      const checked = validateLibraryData(imported);
+      await player.stop();
+      const importedLib = store.importData(checked);
+      return { canceled: false, filePath: r.filePaths[0], lib: importedLib };
+    } catch (e) {
+      throw new Error(`Importazione fallita: ${e.message}`);
+    }
+  });
   h('presets:list', () => A4K.listPresets());
   h('player:state', () => player.state());
   h('settings:set', (patch) => { store.setSettings(patch); return lib(); });

@@ -61,7 +61,14 @@ store.mergeEpisodeMeta(s.id, [{ number: 2, title: 'Due', thumb: 'http://t/2.jpg'
 assert.strictEqual(store.getSeries(s.id).episodes[1].title, 'Due');
 store.save(true);
 assert.strictEqual(new Store(path.join(tmp, 'library.json')).data.series[0].episodes.length, 3);
+const exported = store.snapshot();
+const importedStore = new Store(path.join(tmp, 'imported.json'));
+importedStore.importData(exported);
+assert.strictEqual(importedStore.getSeries(s.id).episodes.length, 3);
+assert.throws(() => importedStore.importData({ series: [{ id: 'bad', title: 'Rotta', episodes: [{ id: 'ep', number: 1, sources: [{ url: 'non-un-link' }], progress: { watched: false, pos: 0, duration: 0 } }] }] }), /Link non valido/);
+assert.strictEqual(importedStore.data.series.length, 1, 'un import non valido non deve sostituire la libreria');
 ok('libreria: salvataggio, duplicati, metadati');
+ok('libreria: export/import e validazione');
 
 // --- mpv reale
 let mpvPath = null; try { mpvPath = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['mpv']).toString().split(/\r?\n/)[0].trim(); } catch {}
