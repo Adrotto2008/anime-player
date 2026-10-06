@@ -1,6 +1,6 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
-const state = { lib: { series: [], settings: {} }, presets: [], view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false } };
+const state = { lib: { series: [], settings: {} }, presets: [], view: { name: 'home' }, filter: '', progressFilter: 'all', player: { playing: false }, stats: null };
 
 /* ---------- utilità ---------- */
 function h(tag, props, ...kids) {
@@ -25,24 +25,27 @@ function toast(msg, kind) {
   $('#toasts').append(t);
   setTimeout(() => t.remove(), kind === 'error' ? 7000 : 3500);
 }
+function applyTheme() {
+  document.documentElement.dataset.theme = state.lib.settings.theme || 'default';
+}
 async function call(ch, ...args) {
   try { return await api.invoke(ch, ...args); } catch (e) { toast(cleanErr(e), 'error'); throw e; }
 }
-async function mutate(ch, ...args) { const lib = await call(ch, ...args); if (lib && lib.series) { state.lib = lib; render(); } return lib; }
+async function mutate(ch, ...args) { const lib = await call(ch, ...args); if (lib && lib.series) { state.lib = lib; state.stats = null; render(); } return lib; }
 
 const getSeries = (id) => state.lib.series.find((s) => s.id === id);
 const presetLabel = (id) => (state.presets.find((p) => p.id === id) || {}).label || id;
 const defaultPreset = () => state.lib.settings.defaultPreset || 'aa-hq';
 
 /* ---------- dialog ---------- */
-function openDialog(title, bodyBuilder) {
+function openDialog(title, bodyBuilder, options = {}) {
   const root = $('#dialog-root');
   const close = () => { scrim.remove(); };
-  const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (e.target === scrim) close(); } });
+  const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (!options.locked && e.target === scrim) close(); } });
   const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-label': title }, h('h2', null, title));
   dlg.append(...[].concat(bodyBuilder(close)));
   scrim.append(dlg);
-  scrim.addEventListener('keydown', (e) => { if (e.key === 'Escape') close(); });
+  scrim.addEventListener('keydown', (e) => { if (!options.locked && e.key === 'Escape') close(); });
   root.append(scrim);
   const first = dlg.querySelector('input, textarea, select');
   if (first) first.focus();
@@ -56,6 +59,7 @@ function renderRail() {
   $('#rail').replaceChildren(
     h('div', { class: 'brand' }, 'Anime Player', h('small', null, 'mpv + Anime4K')),
     h('button', { class: 'nav', 'aria-current': v === 'home' || v === 'series' ? 'page' : null, onclick: () => go({ name: 'home' }) }, 'Libreria'),
+    h('button', { class: 'nav', 'aria-current': v === 'stats' ? 'page' : null, onclick: () => go({ name: 'stats' }) }, 'Statistiche'),
     h('button', { class: 'nav', onclick: openLinkDialog }, 'Apri un link'),
     h('button', { class: 'nav', onclick: openSettings }, 'Impostazioni'),
     h('div', { class: 'spacer' }),
@@ -74,10 +78,12 @@ function renderPlayer() {
 /* ---------- navigazione ---------- */
 function go(view) { state.view = view; render(); $('#main').scrollTop = 0; }
 function render() {
+  applyTheme();
   renderRail(); renderPlayer();
   const main = $('#main');
   if (document.activeElement && main.contains(document.activeElement) && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
-  main.replaceChildren(state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) : homeView());
+  main.replaceChildren(state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
+    state.view.name === 'stats' ? statsView() : homeView());
 }
 
 /* ---------- home ---------- */
@@ -146,6 +152,34 @@ function homeView() {
     })) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? 'Nessun risultato' : 'La libreria è vuota'),
       state.lib.series.length ? 'Nessuna serie corrisponde al filtro.' : 'Cerca un anime per scaricare poster e titoli degli episodi, poi incolla i link delle puntate.',
       state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, 'Aggiungi la prima serie'))));
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  return hours ? `${hours} h ${minutes} min` : `${minutes} min`;
+}
+
+function statsView() {
+  if (!state.stats) {
+    api.invoke('stats:get').then((stats) => { state.stats = stats; render(); }).catch(() => {});
+    return h('div', { class: 'empty' }, 'Calcolo statistiche…');
+  }
+  const st = state.stats;
+  const activity = st.latestActivity || [];
+  return h('div', null,
+    h('div', { class: 'head' }, h('h1', null, 'Statistiche'),
+      h('button', { class: 'btn', onclick: async () => { state.stats = await call('stats:get'); render(); } }, 'Aggiorna')),
+    h('div', { class: 'stats-grid' },
+      h('div', { class: 'stat-card' }, h('b', null, String(st.watchedEpisodes)), h('span', { class: 'muted' }, 'Episodi visti')),
+      h('div', { class: 'stat-card' }, h('b', null, formatDuration(st.watchTime)), h('span', { class: 'muted' }, 'Tempo guardato')),
+      h('div', { class: 'stat-card' }, h('b', null, String(st.completedSeries)), h('span', { class: 'muted' }, 'Serie completate'))),
+    h('section', { class: 'section stats-activity' }, h('h2', null, 'Attività recente'),
+      activity.length ? h('div', { class: 'activity-list' }, activity.map((item) => h('button', { class: 'activity', onclick: () => go({ name: 'series', id: item.seriesId }) },
+        h('span', { class: 'activity-dot' }), h('span', null, h('b', null, item.seriesTitle), h('span', { class: 'muted small' }, `Episodio ${item.episodeNumber} · ${item.title}`)),
+        h('time', { class: 'muted small' }, new Date(item.updatedAt).toLocaleDateString())))) :
+        h('div', { class: 'empty' }, 'Non ci sono ancora episodi guardati.')));
 }
 
 /* ---------- serie ---------- */
@@ -319,6 +353,9 @@ function openSettings() {
     const mpv = h('input', { class: 'input', value: st.mpvPath || '', placeholder: 'C:\\Programmi\\mpv\\mpv.exe' });
     const preset = h('select', { class: 'input', value: st.defaultPreset }, state.presets.map((p) => h('option', { value: p.id }, p.label)));
     preset.value = st.defaultPreset || 'aa-hq';
+    const theme = h('select', { class: 'input', value: st.theme || 'default' },
+      h('option', { value: 'default' }, 'Predefinito'),
+      h('option', { value: 'compact' }, 'Compatto / minimale'));
     const auto = h('input', { type: 'checkbox' }); auto.checked = !!st.autoplayNext;
     const alang = h('input', { class: 'input', value: st.alang || '' });
     const slang = h('input', { class: 'input', value: st.slang || '' });
@@ -329,22 +366,45 @@ function openSettings() {
         h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast('mpv trovato'); } else toast('mpv non trovato: scegli il file a mano.', 'error'); } }, 'Cerca'),
         h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, 'Sfoglia'))),
       field('Anime4K predefinito', preset),
+      field('Tema dell’interfaccia', theme),
       h('label', { class: 'row', style: { marginBottom: '14px' } }, auto, 'Passa all\'episodio successivo alla fine'),
       h('div', { class: 'two' }, field('Lingue audio (in ordine)', alang), field('Lingue sottotitoli (in ordine)', slang)),
       field('User agent', ua), field('Argomenti extra per mpv', extra),
       h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, 'Annulla'),
-        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, autoplayNext: auto.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast('Impostazioni salvate'); close(); } }, 'Salva'))];
+        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, autoplayNext: auto.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast('Impostazioni salvate'); close(); } }, 'Salva'))];
   });
+}
+
+function openSetup() {
+  openDialog('Configura Anime Player', (close) => {
+    const mpv = h('input', { class: 'input', value: state.lib.settings.mpvPath || '', placeholder: 'C:\\Programmi\\mpv\\mpv.exe' });
+    const preset = h('select', { class: 'input', value: state.lib.settings.defaultPreset || 'aa-hq' }, state.presets.map((p) => h('option', { value: p.id }, p.label)));
+    preset.value = state.lib.settings.defaultPreset || 'aa-hq';
+    const message = h('div', { class: 'muted small' }, 'Prima di usare la libreria indica il file mpv.exe e il preset Anime4K predefinito.');
+    const save = async () => {
+      try {
+        const lib = await call('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, onboardingComplete: true });
+        state.lib = lib; close(); render(); toast('Configurazione completata');
+      } catch { /* messaggio già mostrato */ }
+    };
+    mpv.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
+    return [message, field('Percorso di mpv.exe', h('div', { class: 'row' }, mpv,
+      h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; } else toast('mpv non trovato.', 'error'); } }, 'Cerca'),
+      h('button', { class: 'btn', onclick: async () => { const lib = await call('mpv:browse'); state.lib = lib; mpv.value = lib.settings.mpvPath || ''; } }, 'Sfoglia'))),
+      field('Preset Anime4K predefinito', preset),
+      h('div', { class: 'foot' }, h('button', { class: 'btn primary', onclick: save }, 'Completa configurazione'))];
+  }, { locked: true });
 }
 
 /* ---------- avvio ---------- */
 (async function init() {
-  api.on('lib:changed', (lib) => { state.lib = lib; render(); });
+  api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null; render(); });
   api.on('player:state', (p) => { state.player = p; renderPlayer(); });
   api.on('player:error', (m) => toast(m, 'error'));
   state.lib = await api.invoke('lib:get');
   state.presets = await api.invoke('presets:list');
   state.player = await api.invoke('player:state');
   render();
-  if (!state.lib.settings.mpvPath) toast('mpv non trovato: apri Impostazioni e indica dove si trova mpv.exe.', 'error');
+  if (!state.lib.settings.onboardingComplete) openSetup();
+  else if (!state.lib.settings.mpvPath) toast('mpv non trovato: apri Impostazioni e indica dove si trova mpv.exe.', 'error');
 })();

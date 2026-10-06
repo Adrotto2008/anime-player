@@ -7,6 +7,8 @@ const { hostLabel, isValidSource } = require('./patterns');
 const DEFAULT_SETTINGS = {
   mpvPath: '',
   defaultPreset: 'aa-hq',
+  theme: 'default',
+  onboardingComplete: false,
   autoplayNext: true,
   alang: 'jpn,ja,eng,en',
   slang: 'ita,it,eng,en',
@@ -71,7 +73,13 @@ function validateLibraryData(input) {
       lastWatchedAt,
     };
   });
-  return { settings: { ...DEFAULT_SETTINGS, ...(input.settings || {}) }, series };
+  const settings = { ...DEFAULT_SETTINGS, ...(input.settings || {}) };
+  if (!['default', 'compact'].includes(settings.theme)) settings.theme = DEFAULT_SETTINGS.theme;
+  if (!settings.defaultPreset || settings.defaultPreset === 'a-fast') settings.defaultPreset = DEFAULT_SETTINGS.defaultPreset;
+  if (!input.settings || input.settings.onboardingComplete == null) {
+    try { settings.onboardingComplete = Boolean(settings.mpvPath && fs.statSync(settings.mpvPath).isFile()); } catch { /* onboarding richiesto */ }
+  }
+  return { settings, series };
 }
 
 class Store {
@@ -87,7 +95,15 @@ class Store {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
       this.data.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
-      if (this.data.settings.defaultPreset === 'a-fast') this.data.settings.defaultPreset = DEFAULT_SETTINGS.defaultPreset;
+      if (!['default', 'compact'].includes(this.data.settings.theme)) this.data.settings.theme = DEFAULT_SETTINGS.theme;
+      if (!this.data.settings.defaultPreset || this.data.settings.defaultPreset === 'a-fast') this.data.settings.defaultPreset = DEFAULT_SETTINGS.defaultPreset;
+      // Librerie create prima dell'onboarding: se erano già configurate,
+      // non devono essere bloccate dalla nuova procedura di primo avvio.
+      if (!raw.settings || raw.settings.onboardingComplete == null) {
+        let configured = false;
+        try { configured = this.data.series.length > 0 && fs.statSync(this.data.settings.mpvPath).isFile(); } catch { /* onboarding richiesto */ }
+        this.data.settings.onboardingComplete = Boolean(configured);
+      }
     } catch { /* primo avvio o file rovinato: si parte da zero */ }
   }
 
@@ -124,6 +140,10 @@ class Store {
   getEpisode(sid, eid) { const s = this.getSeries(sid); return s && s.episodes.find((e) => e.id === eid); }
 
   setSettings(patch) { Object.assign(this.data.settings, patch); this.save(); }
+
+  needsOnboarding() {
+    return !this.data.settings.onboardingComplete;
+  }
 
   addSeries(meta = {}) {
     const s = {
@@ -206,6 +226,48 @@ class Store {
       if (m.thumb && !ep.thumb) ep.thumb = m.thumb;
     }
     this.save();
+  }
+
+  refreshSeriesMetadata(sid, fields, list = []) {
+    const s = this.getSeries(sid);
+    if (!s) throw new Error('Serie non trovata');
+    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'year', 'format', 'episodeCount', 'kitsuId', 'anilistId'];
+    for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
+    if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
+      for (let n = 1; n <= s.episodeCount; n++) this.ensureEpisode(s, n);
+    }
+    for (const m of list) {
+      if (!Number.isInteger(m.number) || m.number < 0) continue;
+      const ep = this.ensureEpisode(s, m.number);
+      if (m.title) ep.title = m.title;
+      if (m.thumb) ep.thumb = m.thumb;
+    }
+    this.save();
+    return s;
+  }
+
+  statistics() {
+    const activity = [];
+    let watchedEpisodes = 0;
+    let watchTime = 0;
+    let completedSeries = 0;
+    for (const s of this.data.series) {
+      const playable = s.episodes.filter((e) => e.sources.length);
+      const watched = playable.filter((e) => e.progress.watched);
+      watchedEpisodes += watched.length;
+      for (const e of s.episodes) {
+        if (e.progress.watched && e.progress.duration > 0) watchTime += e.progress.duration;
+        else if (!e.progress.watched && e.progress.pos > 0) watchTime += e.progress.pos;
+        if (e.progress.updatedAt) activity.push({
+          seriesId: s.id, seriesTitle: s.title, episodeId: e.id, episodeNumber: e.number,
+          title: e.title || `Episodio ${e.number}`, watched: e.progress.watched,
+          updatedAt: e.progress.updatedAt,
+        });
+      }
+      if (playable.length > 0 && watched.length === playable.length) completedSeries++;
+    }
+    activity.sort((a, b) => b.updatedAt - a.updatedAt);
+    return { watchedEpisodes, watchTime, completedSeries, latestActivity: activity.slice(0, 12) };
   }
 }
 

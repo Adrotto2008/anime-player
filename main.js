@@ -34,7 +34,7 @@ function detectMpv() {
 
 function createWindow() {
   win = new BrowserWindow({
-    width: 1320, height: 840, minWidth: 900, minHeight: 600, backgroundColor: '#17141f', title: 'Anime Player',
+    width: 1180, height: 760, minWidth: 720, minHeight: 480, backgroundColor: '#17141f', title: 'Anime Player',
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   Menu.setApplicationMenu(null);
@@ -89,7 +89,18 @@ function register() {
   });
   h('presets:list', () => A4K.listPresets());
   h('player:state', () => player.state());
-  h('settings:set', (patch) => { store.setSettings(patch); return lib(); });
+  h('settings:set', (patch) => {
+    const next = { ...store.data.settings, ...(patch || {}) };
+    if (!A4K.PRESETS[next.defaultPreset]) throw new Error('Preset Anime4K non valido.');
+    if (!['default', 'compact'].includes(next.theme)) throw new Error('Tema non valido.');
+    let mpvIsFile = false;
+    try { mpvIsFile = Boolean(next.mpvPath && fs.statSync(next.mpvPath).isFile()); } catch { /* percorso non valido */ }
+    if (patch && patch.onboardingComplete === true && !mpvIsFile) {
+      throw new Error('Scegli un file mpv.exe valido.');
+    }
+    store.setSettings(patch || {});
+    return lib();
+  });
   h('mpv:detect', async () => { const p = await detectMpv(); if (p) store.setSettings({ mpvPath: p }); return { path: p, lib: lib() }; });
   h('mpv:browse', async () => {
     const r = await dialog.showOpenDialog(win, { title: 'Scegli mpv.exe', properties: ['openFile'], filters: process.platform === 'win32' ? [{ name: 'mpv', extensions: ['exe'] }] : [] });
@@ -123,10 +134,8 @@ function register() {
     if (!s || !s.anilistId) throw new Error('Questa serie non è collegata ad AniList.');
     const m = await meta.getAnime(s.anilistId);
     const { streamingEpisodes, altTitle, status, ...fields } = m;
-    store.updateSeries(id, { ...fields, title: s.title });
     const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes });
-    store.updateSeries(id, { kitsuId });
-    store.mergeEpisodeMeta(id, episodes);
+    store.refreshSeriesMetadata(id, { ...fields, kitsuId }, episodes);
     return lib();
   });
 
@@ -156,6 +165,7 @@ function register() {
   });
   h('player:stop', () => player.stop());
   h('player:preset', (id) => player.setPreset(id));
+  h('stats:get', () => store.statistics());
 }
 
 app.whenReady().then(async () => {

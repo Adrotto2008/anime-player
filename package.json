@@ -8,7 +8,7 @@
   "scripts": {
     "start": "electron .",
     "test": "node test/run.js",
-    "dist": "electron-builder --win portable"
+    "dist": "electron-builder --win"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -19,7 +19,17 @@
     "productName": "Anime Player",
     "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*", "package.json"],
     "extraResources": [{ "from": "shaders", "to": "shaders" }],
-    "win": { "target": "portable" },
-    "portable": { "artifactName": "AnimePlayer-portable.exe" }
+    "win": { "target": ["portable", "nsis"] },
+    "portable": { "artifactName": "AnimePlayer-portable.exe" },
+    "nsis": {
+      "artifactName": "AnimePlayer-Setup-${version}.exe",
+      "oneClick": false,
+      "perMachine": false,
+      "allowToChangeInstallationDirectory": true,
+      "createDesktopShortcut": true,
+      "createStartMenuShortcut": true,
+      "shortcutName": "Anime Player",
+      "deleteAppDataOnUninstall": false
+    }
   }
 }

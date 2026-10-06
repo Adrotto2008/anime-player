@@ -1,12 +1,11 @@
 // Test senza interfaccia: pattern, preset Anime4K, libreria e — se mpv è installato — riproduzione reale via IPC.
 const assert = require('assert');
 const fs = require('fs');
-const os = require('os');
 const path = require('path');
 const { execFileSync } = require('child_process');
 const P = require('../src/patterns');
 const A = require('../src/anime4k');
-const { Store } = require('../src/store');
+const { Store, DEFAULT_SETTINGS } = require('../src/store');
 const { PlayerManager } = require('../src/player');
 const { MpvSession, pipePath } = require('../src/mpv');
 
@@ -52,27 +51,63 @@ assert.ok(conf.includes('CTRL+1 ') && conf.includes('ALT+6 ') && conf.includes('
 ok('preset Anime4K, catene, input.conf');
 
 // --- libreria
-const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ap-'));
+const tmp = path.join(__dirname, '.test-data');
+fs.rmSync(tmp, { recursive: true, force: true });
+fs.mkdirSync(tmp, { recursive: true });
+const cleanup = () => fs.rmSync(tmp, { recursive: true, force: true });
+process.on('exit', cleanup);
 const store = new Store(path.join(tmp, 'library.json'));
+assert.strictEqual(store.needsOnboarding(), true);
 const s = store.addSeries({ title: 'Prova' });
 assert.strictEqual(store.addSources(s.id, P.expandPattern('http://x/{ep}.mp4', 1, 3)), 3);
 assert.strictEqual(store.addSources(s.id, P.expandPattern('http://x/{ep}.mp4', 1, 3)), 0, 'nessun duplicato');
 store.mergeEpisodeMeta(s.id, [{ number: 2, title: 'Due', thumb: 'http://t/2.jpg' }]);
 assert.strictEqual(store.getSeries(s.id).episodes[1].title, 'Due');
+store.setSources(s.id, store.getSeries(s.id).episodes[1].id, ['https://keep.example/episode-2.mp4']);
+store.setProgress(s.id, store.getSeries(s.id).episodes[1].id, { pos: 42, duration: 120, watched: false });
+store.refreshSeriesMetadata(s.id, {
+  title: 'Titolo aggiornato', cover: 'https://img.example/new.jpg', episodeCount: 4,
+}, [{ number: 2, title: 'Due aggiornato', thumb: 'https://img.example/2-new.jpg' }, { number: 4, title: 'Quattro', thumb: 'https://img.example/4.jpg' }]);
+const refreshed = store.getSeries(s.id);
+assert.strictEqual(refreshed.title, 'Titolo aggiornato');
+assert.strictEqual(refreshed.episodes.length, 4);
+assert.deepStrictEqual(refreshed.episodes[1].sources.map((x) => x.url), ['https://keep.example/episode-2.mp4']);
+assert.strictEqual(refreshed.episodes[1].progress.pos, 42);
+assert.strictEqual(refreshed.episodes[1].progress.duration, 120);
+assert.strictEqual(refreshed.episodes[1].title, 'Due aggiornato');
+assert.strictEqual(refreshed.episodes[1].thumb, 'https://img.example/2-new.jpg');
+assert.strictEqual(refreshed.episodes[3].title, 'Quattro');
+ok('refresh metadati: link e progressi preservati, episodi aggiunti');
+store.setSettings({ onboardingComplete: true, theme: 'compact' });
 store.save(true);
-assert.strictEqual(new Store(path.join(tmp, 'library.json')).data.series[0].episodes.length, 3);
+const reloaded = new Store(path.join(tmp, 'library.json'));
+assert.strictEqual(reloaded.data.series[0].episodes.length, 4);
+assert.strictEqual(reloaded.data.settings.theme, 'compact');
+assert.strictEqual(reloaded.needsOnboarding(), false);
 const exported = store.snapshot();
 const importedStore = new Store(path.join(tmp, 'imported.json'));
 importedStore.importData(exported);
-assert.strictEqual(importedStore.getSeries(s.id).episodes.length, 3);
+assert.strictEqual(importedStore.getSeries(s.id).episodes.length, 4);
 assert.throws(() => importedStore.importData({ series: [{ id: 'bad', title: 'Rotta', episodes: [{ id: 'ep', number: 1, sources: [{ url: 'non-un-link' }], progress: { watched: false, pos: 0, duration: 0 } }] }] }), /Link non valido/);
 assert.strictEqual(importedStore.data.series.length, 1, 'un import non valido non deve sostituire la libreria');
 ok('libreria: salvataggio, duplicati, metadati');
 ok('libreria: export/import e validazione');
 
+const stats = store.statistics();
+assert.strictEqual(stats.watchedEpisodes, 0);
+store.markWatched(s.id, store.getSeries(s.id).episodes[0].id, true);
+store.setProgress(s.id, store.getSeries(s.id).episodes[0].id, { duration: 90 });
+const statsAfter = store.statistics();
+assert.strictEqual(statsAfter.watchedEpisodes, 1);
+assert.strictEqual(statsAfter.watchTime, 132);
+assert.strictEqual(statsAfter.completedSeries, 0);
+assert.ok(statsAfter.latestActivity.some((x) => x.seriesId === s.id));
+ok('statistiche: episodi, durata, completamento e attività recente');
+assert.strictEqual(DEFAULT_SETTINGS.theme, 'default');
+
 // --- mpv reale
 let mpvPath = null; try { mpvPath = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['mpv']).toString().split(/\r?\n/)[0].trim(); } catch {}
-if (!mpvPath) { console.log('  (mpv non installato: salto i test di riproduzione)'); console.log(`\n${n} test passati`); process.exit(0); }
+if (!mpvPath) { console.log('  (mpv non installato: salto i test di riproduzione)'); console.log(`\n${n} test passati`); cleanup(); process.exit(0); }
 
 const HEADLESS = '--vo=null --ao=null --no-config --msg-level=all=no';
 const lavfi = (d) => `av://lavfi:testsrc=duration=${d}:size=160x120:rate=25`;
@@ -124,5 +159,6 @@ const lavfi = (d) => `av://lavfi:testsrc=duration=${d}:size=160x120:rate=25`;
   ok('mpv mancante: messaggio chiaro');
 
   console.log(`\n${n} test passati`);
+  cleanup();
   process.exit(0);
-})().catch((e) => { console.error('FALLITO:', e); process.exit(1); });
+})().catch((e) => { cleanup(); console.error('FALLITO:', e); process.exit(1); });

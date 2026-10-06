@@ -13,10 +13,25 @@ Per usarla in sviluppo:
 npm install
 npm start
 ```
-All'avvio l'app cerca `mpv.exe` da sola (PATH, winget, scoop, chocolatey, Program Files). Se non lo trova: *Impostazioni → Sfoglia*.
+Al primo avvio compare una configurazione obbligatoria: scegli il file `mpv.exe`
+e il preset Anime4K predefinito. Il percorso viene verificato prima di
+proseguire. Le librerie già esistenti vengono migrate senza perdere dati; dopo
+la configurazione puoi cambiare entrambi i valori in *Impostazioni*.
 
-Per l'uso normale non servono Node.js, `npm install` o `npm start`: esegui `AnimePlayer-portable.exe` dalla cartella `dist/`.
-Per rigenerare l'eseguibile portatile dopo modifiche al progetto: `npm run dist`.
+Per l'uso normale non servono Node.js, `npm install` o `npm start`. `npm run dist`
+produce nella cartella `dist/` sia `AnimePlayer-portable.exe` sia
+`AnimePlayer-Setup-<version>.exe`. L'installer NSIS crea i collegamenti Desktop
+e Start Menu, supporta la disinstallazione e, per impostazione predefinita,
+installa per l'utente corrente. È possibile scegliere una directory diversa
+durante l'installazione; il target portatile resta disponibile per chi non
+vuole installare l'app.
+
+## Interfaccia e temi
+
+L'interfaccia si adatta anche a finestre compatte (fino a 720×480). In
+*Impostazioni → Tema dell'interfaccia* puoi scegliere **Predefinito** oppure
+**Compatto / minimale**; la scelta viene salvata nella libreria e applicata
+globalmente.
 
 ## Come si usa
 1. **Aggiungi serie** → cerchi il titolo, l'app scarica poster, trama ed elenco episodi.
@@ -33,6 +48,14 @@ e un pulsante rapido per riprenderlo (oppure per passare all'episodio
 successivo). La ricerca filtra i titoli della libreria; il menu accanto alla
 ricerca permette di mostrare tutte le serie, quelle da riprendere, quelle con
 episodi non visti o quelle con episodi già visti.
+
+Nella pagina di una serie **Aggiorna info** ricarica da AniList/Kitsu poster,
+banner, descrizione, generi, punteggio, anno, formato, conteggio episodi,
+titoli e miniature. L'operazione aggiunge gli episodi nuovi senza eliminare o
+modificare i link, i progressi o gli episodi già presenti.
+
+La voce **Statistiche** mostra episodi visti, tempo guardato calcolato dai dati
+di durata/progresso, serie completate e attività recente.
 
 I pulsanti **Esporta** e **Importa** usano i dialoghi di Windows per salvare o
 caricare un file JSON della libreria, inclusi link, progressi, impostazioni e
