@@ -245,6 +245,7 @@ class Store {
     for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
     if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
       for (let n = 1; n <= s.episodeCount; n++) this.ensureEpisode(s, n);
+      s.episodes = s.episodes.filter((ep) => ep.number <= s.episodeCount || ep.sources.length || ep.progress.pos > 0 || ep.progress.watched);
     }
     for (const m of list) {
       if (!Number.isInteger(m.number) || m.number < 0) continue;

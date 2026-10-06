@@ -66,7 +66,7 @@ async function kitsuIdFor(anilistId, title) {
 }
 
 // Ritorna [{number, title, thumb, rating}]; se Kitsu non basta usa gli streamingEpisodes di AniList.
-async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes }) {
+async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, episodeCount }) {
   const out = new Map();
   let kid = kitsuId;
   try {
@@ -76,6 +76,7 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes }) {
       for (const e of j.data) {
         const a = e.attributes;
         if (!a.number) continue;
+        if (Number.isInteger(episodeCount) && episodeCount > 0 && a.number > episodeCount) continue;
         const rating = normalizeRating(a.averageRating != null ? a.averageRating : a.ratingAverage);
         out.set(a.number, {
           number: a.number,
@@ -91,7 +92,9 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes }) {
   for (const s of streamingEpisodes || []) {
     const m = /^Episode\s+(\d+)\s*[-–:]\s*(.*)$/i.exec(s.title || '');
     if (!m) continue;
-    const n = Number(m[1]); const cur = out.get(n) || { number: n, title: '', thumb: null, rating: null, ratingSource: null };
+    const n = Number(m[1]);
+    if (Number.isInteger(episodeCount) && episodeCount > 0 && n > episodeCount) continue;
+    const cur = out.get(n) || { number: n, title: '', thumb: null, rating: null, ratingSource: null };
     if (!cur.title) cur.title = m[2]; if (!cur.thumb) cur.thumb = s.thumbnail || null;
     out.set(n, cur);
   }

@@ -129,7 +129,7 @@ function register() {
     const m = await meta.getAnime(anilistId);
     const { streamingEpisodes, altTitle, status, ...fields } = m;
     const s = store.addSeries(fields);
-    const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId, title: m.altTitle || m.title, streamingEpisodes });
+    const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId, title: m.altTitle || m.title, streamingEpisodes, episodeCount: m.episodeCount });
     store.updateSeries(s.id, { kitsuId });
     if (m.episodeCount && m.episodeCount <= 300) {
       const seriesObj = store.getSeries(s.id);
@@ -162,7 +162,7 @@ function register() {
         const { streamingEpisodes, altTitle, status, ...f } = m;
         fields = f;
         const { kitsuId: kid, episodes } = await meta.fetchEpisodes({
-          anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes,
+          anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes, episodeCount: m.episodeCount,
         });
         kitsuId = kid;
         kitsuEpisodes = episodes;

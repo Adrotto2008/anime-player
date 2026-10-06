@@ -153,18 +153,18 @@ main:focus, main:focus-visible { outline: none; }
 .ratings-chart-container { display: flex; flex-direction: column; gap: 16px; max-width: 1240px; margin: 0 auto; }
 .ratings-chart-back { align-self: flex-start; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; color: var(--lantern); background: none; border: 0; padding: 4px 0; font-size: 14px; cursor: pointer; }
 .ratings-chart-back:hover { filter: brightness(1.2); }
-.ratings-chart-layout { display: grid; grid-template-columns: 260px 1fr; gap: 32px; align-items: start; }
+.ratings-chart-layout { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 24px; align-items: start; }
 .ratings-chart-sidebar { display: flex; flex-direction: column; gap: 12px; }
 .ratings-chart-poster { width: 100%; aspect-ratio: 2/3; border-radius: 8px; background: var(--panel-2) center/cover no-repeat; border: 1px solid var(--line); box-shadow: 0 10px 25px rgba(0,0,0,.5); overflow: hidden; }
-.ratings-chart-total { display: flex; align-items: center; gap: 6px; font-size: 20px; font-weight: 700; color: #fff; margin-top: 2px; }
+.ratings-chart-total { display: flex; align-items: center; gap: 6px; font-size: 18px; font-weight: 700; color: #fff; margin-top: 2px; }
 .ratings-chart-total .star { color: #f59e0b; font-size: 20px; }
-.ratings-chart-total .score-val { font-size: 20px; font-weight: 700; }
+.ratings-chart-total .score-val { font-size: 18px; font-weight: 700; }
 .ratings-chart-total .score-src { font-size: 12px; color: var(--muted); font-weight: 400; margin-left: 4px; }
 .ratings-chart-title { font-size: 24px; font-weight: 700; line-height: 1.2; color: #fff; }
 .ratings-chart-desc { font-size: 13px; line-height: 1.5; color: #a1a1aa; max-height: 280px; overflow-y: auto; white-space: pre-line; }
 
 .ratings-chart-main { display: flex; flex-direction: column; min-width: 0; }
-.ratings-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; margin-bottom: 20px; font-size: 13px; font-weight: 500; color: #e2e8f0; }
+.ratings-legend { display: flex; align-items: center; flex-wrap: wrap; gap: 8px 14px; margin-bottom: 14px; font-size: 12px; font-weight: 500; color: #e2e8f0; }
 .legend-item { display: inline-flex; align-items: center; gap: 6px; user-select: none; }
 .legend-dot { width: 10px; height: 10px; border-radius: 50%; display: inline-block; flex-shrink: 0; }
 
@@ -182,11 +182,12 @@ main:focus, main:focus-visible { outline: none; }
 .rating-tier-bad { background-color: #ef4444 !important; color: #ffffff !important; }
 .rating-tier-garbage { background-color: #8b5cf6 !important; color: #ffffff !important; }
 
-.ratings-matrix-wrapper { overflow: auto; max-height: calc(100vh - 170px); padding-bottom: 20px; }
-.ratings-matrix { border-collapse: separate; border-spacing: 5px; }
-.ratings-matrix th { padding: 4px 6px; font-size: 13px; font-weight: 600; color: var(--muted); text-align: center; min-width: 48px; }
-.ratings-matrix td.ep-label { padding: 4px 8px 4px 0; font-size: 12px; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; }
-.ratings-cell { width: 48px; height: 28px; border-radius: 6px; font-size: 13px; font-weight: 600; text-align: center; line-height: 28px; cursor: default; transition: transform .1s ease, filter .1s ease; user-select: none; }
+.ratings-matrix-wrapper { overflow: auto; max-height: calc(100vh - 150px); padding: 4px 2px 16px; }
+.ratings-matrix { border-collapse: separate; border-spacing: 3px; }
+.ratings-matrix th { position: sticky; top: 0; z-index: 2; padding: 4px 5px; font-size: 12px; font-weight: 700; color: var(--muted); text-align: center; min-width: 42px; background: var(--ink); }
+.ratings-matrix td.ep-label { position: sticky; left: 0; z-index: 1; padding: 3px 7px 3px 0; font-size: 11px; font-weight: 600; color: var(--muted); text-align: right; white-space: nowrap; background: var(--ink); }
+.ratings-cell { width: 42px; height: 25px; border-radius: 6px; font-size: 12px; font-weight: 600; text-align: center; line-height: 25px; cursor: default; transition: transform .1s ease, filter .1s ease; user-select: none; }
+.ratings-cell.empty { height: 23px; border: 1px solid color-mix(in srgb, var(--line) 65%, transparent); opacity: .45; }
 .ratings-cell:hover:not(.empty) { transform: scale(1.12); filter: brightness(1.15); box-shadow: 0 2px 10px rgba(0,0,0,.5); z-index: 2; position: relative; }
 .ratings-cell.empty { background: transparent; width: 48px; height: 28px; }
 

@@ -81,6 +81,15 @@ assert.strictEqual(refreshed.episodes[1].thumb, 'https://img.example/2-new.jpg')
 assert.strictEqual(refreshed.episodes[1].rating, 9.1, 'online episode rating is merged');
 assert.strictEqual(refreshed.episodes[3].title, 'Quattro');
 ok('refresh metadati: link e progressi preservati, episodi aggiunti');
+const seasonLimited = new Store(path.join(tmp, 'season-limited.json'));
+const limited = seasonLimited.addSeries({ title: 'Re:Zero', episodeCount: 25 });
+seasonLimited.mergeEpisodeMeta(limited.id, [{ number: 41, title: 'Stagione sbagliata', thumb: 'https://img.example/41.jpg' }]);
+seasonLimited.refreshSeriesMetadata(limited.id, { episodeCount: 25 });
+assert.strictEqual(seasonLimited.getSeries(limited.id).episodes.some((e) => e.number === 41), false, 'orphan metadata episodes beyond the season count are removed');
+seasonLimited.addSources(limited.id, [{ number: 41, url: 'https://keep.example/season-3-episode-1.mp4' }]);
+seasonLimited.refreshSeriesMetadata(limited.id, { episodeCount: 25 });
+assert.ok(seasonLimited.getSeries(limited.id).episodes.some((e) => e.number === 41), 'user-linked episodes beyond the count are preserved');
+ok('episodi extra di stagioni sbagliate filtrati senza perdere link utente');
 store.setSettings({ onboardingComplete: true, theme: 'compact' });
 store.save(true);
 const reloaded = new Store(path.join(tmp, 'library.json'));
