@@ -67,6 +67,8 @@ class MpvSession extends EventEmitter {
     } else if (m.event === 'client-message' && Array.isArray(m.args)) {
       if (m.args[0] === 'ap-next') this.emit('nav', 'next');
       else if (m.args[0] === 'ap-prev') this.emit('nav', 'prev');
+      else if (m.args[0] === 'ap-skip-intro') this.emit('skip', 'intro');
+      else if (m.args[0] === 'ap-skip-ending') this.emit('skip', 'ending');
     }
   }
 

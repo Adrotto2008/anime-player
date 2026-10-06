@@ -127,7 +127,7 @@ function register() {
       return { id: s.id, lib: lib() };
     }
     const m = await meta.getAnime(anilistId, { language: store.data.settings.language });
-    const { streamingEpisodes, altTitle, status, ...fields } = m;
+    const { streamingEpisodes, altTitle, ...fields } = m;
     const s = store.addSeries(fields);
     const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId, title: m.altTitle || m.title, streamingEpisodes, episodeCount: m.episodeCount });
     store.updateSeries(s.id, { kitsuId });
@@ -159,7 +159,7 @@ function register() {
     if (s.anilistId) {
       try {
         const m = await meta.getAnime(s.anilistId, { language: store.data.settings.language });
-        const { streamingEpisodes, altTitle, status, ...f } = m;
+        const { streamingEpisodes, altTitle, ...f } = m;
         fields = f;
         const { kitsuId: kid, episodes } = await meta.fetchEpisodes({
           anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes, episodeCount: m.episodeCount,
@@ -194,6 +194,19 @@ function register() {
 
   h('series:refresh', (id) => syncSeriesRatings(id));
   h('series:ratings', (id) => syncSeriesRatings(id));
+  h('episodes:rate', (sid, eid, rating) => { store.rateEpisode(sid, eid, rating); return lib(); });
+  h('episodes:skipTimes', async (sid, eid) => {
+    const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
+    if (!s || !ep) throw new Error('Episodio non trovato');
+    if (!s.malId || !s.anilistId) return { skipTimes: ep.skipTimes || [], lib: lib() };
+    try {
+      const skipTimes = await meta.fetchAniSkipTimes(s.malId, ep.number);
+      store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes }]);
+    } catch (err) {
+      console.warn('AniSkip error:', err.message);
+    }
+    return { skipTimes: store.getEpisode(sid, eid).skipTimes || [], lib: lib() };
+  });
 
   const checkItems = (items) => {
     const bad = items.find((i) => !isValidSource(i.url));
@@ -214,7 +227,13 @@ function register() {
   h('episodes:delete', (sid, eid) => { store.deleteEpisode(sid, eid); return lib(); });
   h('episodes:mark', (sid, eid, watched) => { store.markWatched(sid, eid, watched); return lib(); });
 
-  h('player:play', (sid, eid) => player.play(sid, eid).then(() => lib()));
+  h('player:play', async (sid, eid) => {
+    const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
+    if (s && ep && s.malId && (!Array.isArray(ep.skipTimes) || !ep.skipTimes.length)) {
+      try { store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes: await meta.fetchAniSkipTimes(s.malId, ep.number) }]); } catch (err) { console.warn('AniSkip error:', err.message); }
+    }
+    return player.play(sid, eid).then(() => lib());
+  });
   h('player:playUrl', (url, preset) => {
     if (!isValidSource(String(url).trim())) throw new Error('Link non valido.');
     return player.playUrl(String(url).trim(), preset);
@@ -225,7 +244,27 @@ function register() {
   h('player:seekAbsolute', (seconds) => player.seekAbsolute(seconds));
   h('player:skipIntro', () => player.skipIntro());
   h('player:skipEnding', () => player.skipEnding());
+  h('player:skipSegment', (end) => player.skipSegment(end));
   h('stats:get', () => store.statistics());
+}
+
+async function refreshAiringStatuses() {
+  for (const series of [...store.data.series]) {
+    if (!series.anilistId) continue;
+    try {
+      const m = await meta.getAnime(series.anilistId, { language: store.data.settings.language });
+      store.updateSeries(series.id, {
+        status: m.status,
+        nextAiringAt: m.nextAiringAt,
+        nextEpisode: m.nextEpisode,
+        malId: m.malId,
+        description: m.description || series.description,
+      });
+    } catch (err) {
+      console.warn('Aggiornamento stato anime fallito:', series.title, err.message);
+    }
+  }
+  send('lib:changed', store.snapshot());
 }
 
 app.whenReady().then(async () => {
@@ -237,6 +276,7 @@ app.whenReady().then(async () => {
     if (p) store.setSettings({ mpvPath: p });
   }
   createWindow();
+  setTimeout(() => refreshAiringStatuses().catch((err) => console.warn('Aggiornamento programmazione fallito:', err.message)), 1200);
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });

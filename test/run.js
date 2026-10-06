@@ -48,6 +48,8 @@ assert.deepStrictEqual(A.PRESETS['bb-fast'].chain.slice(-3), ['Anime4K_AutoDowns
 assert.deepStrictEqual(A.splitArgs('--volume=70 "--title=a b"'), ['--volume=70', '--title=a b']);
 const conf = A.buildInputConf(shaderDir);
 assert.ok(conf.includes('CTRL+1 ') && conf.includes('ALT+6 ') && conf.includes('CTRL+0') && conf.includes('ap-next'));
+const customConf = A.buildInputConf(shaderDir, { next: 'CTRL+N', previous: 'CTRL+P', skipIntro: 'CTRL+I', skipEnding: 'CTRL+E' });
+assert.ok(customConf.includes('CTRL+N script-message ap-next') && customConf.includes('CTRL+I script-message ap-skip-intro'));
 ok('preset Anime4K, catene, input.conf');
 
 // --- libreria
@@ -83,6 +85,11 @@ assert.strictEqual(refreshed.episodes[3].title, 'Quattro');
 store.updateSeries(s.id, { introDuration: -4, outroDuration: 86 });
 assert.strictEqual(store.getSeries(s.id).introDuration, 0, 'opening duration is clamped to zero');
 assert.strictEqual(store.getSeries(s.id).outroDuration, 86);
+store.rateEpisode(s.id, store.getSeries(s.id).episodes[0].id, 8.5);
+assert.strictEqual(store.getSeries(s.id).episodes[0].personalRating, 8.5);
+store.updateSeries(s.id, { personalRating: null, status: 'RELEASING', nextAiringAt: 1780000000000, nextEpisode: 5 });
+assert.strictEqual(store.getSeries(s.id).status, 'RELEASING');
+assert.strictEqual(store.getSeries(s.id).nextEpisode, 5);
 ok('refresh metadati: link e progressi preservati, episodi aggiunti');
 const seasonLimited = new Store(path.join(tmp, 'season-limited.json'));
 const limited = seasonLimited.addSeries({ title: 'Re:Zero', episodeCount: 25 });

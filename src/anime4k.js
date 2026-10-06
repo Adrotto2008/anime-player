@@ -55,7 +55,7 @@ function shaderList(presetId, shaderDir) {
 
 // input.conf: CTRL+1..6 = preset Fast, ALT+1..6 = preset HQ, CTRL+0 = spento.
 // PGDOWN/PGUP o > < = episodio successivo/precedente (gestito dall'app).
-function buildInputConf(shaderDir) {
+function buildInputConf(shaderDir, shortcuts = {}) {
   const lines = [];
   MODES.forEach((mode, i) => {
     for (const [key, tierId] of [['CTRL', 'fast'], ['ALT', 'hq']]) {
@@ -65,7 +65,9 @@ function buildInputConf(shaderDir) {
     }
   });
   lines.push('CTRL+0 no-osd change-list glsl-shaders clr ""; show-text "Anime4K spento" 2000');
-  lines.push('> script-message ap-next', '< script-message ap-prev', 'PGDWN script-message ap-next', 'PGUP script-message ap-prev');
+  lines.push(`${shortcuts.next || 'PGDWN'} script-message ap-next`, `${shortcuts.previous || 'PGUP'} script-message ap-prev`);
+  if (shortcuts.skipIntro) lines.push(`${shortcuts.skipIntro} script-message ap-skip-intro`);
+  if (shortcuts.skipEnding) lines.push(`${shortcuts.skipEnding} script-message ap-skip-ending`);
   return lines.join('\n') + '\n';
 }
 

@@ -27,6 +27,11 @@ function toast(msg, kind) {
   $('#toasts').append(t);
   setTimeout(() => t.remove(), kind === 'error' ? 7000 : 3500);
 }
+function toastAction(msg, label, action) {
+  const item = h('div', { class: 'toast action-toast' }, h('span', null, msg), h('button', { class: 'btn sm primary', onclick: () => { action(); item.remove(); } }, label));
+  $('#toasts').append(item);
+  setTimeout(() => item.remove(), 8000);
+}
 function applyTheme() {
   document.documentElement.dataset.theme = state.lib.settings.theme || 'default';
   setLanguage(state.lib.settings.language || 'en');
@@ -63,6 +68,7 @@ function renderRail() {
     h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, 'A'), h('span', { class: 'brand-copy' }, 'Anime Player', h('small', null, 'mpv + Anime4K'))),
     h('button', { class: 'nav', 'aria-current': v === 'home' || v === 'series' ? 'page' : null, onclick: () => go({ name: 'home' }) }, h('span', { class: 'nav-icon library-icon', 'aria-hidden': 'true' }), h('span', null, t('library'))),
     h('button', { class: 'nav', 'aria-current': v === 'stats' ? 'page' : null, onclick: () => go({ name: 'stats' }) }, h('span', { class: 'nav-icon stats-icon', 'aria-hidden': 'true' }), h('span', null, t('stats'))),
+    h('button', { class: 'nav', 'aria-current': v === 'shortcuts' ? 'page' : null, onclick: () => go({ name: 'shortcuts' }) }, h('span', { class: 'nav-icon settings-icon', 'aria-hidden': 'true' }), h('span', null, t('shortcuts'))),
     h('button', { class: 'nav', onclick: openLinkDialog }, h('span', { class: 'nav-icon link-icon', 'aria-hidden': 'true' }), h('span', null, t('openLink'))),
     h('button', { class: 'nav', onclick: openSettings }, h('span', { class: 'nav-icon settings-icon', 'aria-hidden': 'true' }), h('span', null, t('settings'))),
     h('div', { class: 'spacer' }),
@@ -105,12 +111,10 @@ function render() {
   const searchSelStart = isSearchFocused ? document.activeElement.selectionStart : 0;
   const searchSelEnd = isSearchFocused ? document.activeElement.selectionEnd : 0;
 
-  if (document.activeElement && main.contains(document.activeElement) && !isSearchFocused && /INPUT|SELECT|TEXTAREA/.test(document.activeElement.tagName)) return;
-
   main.replaceChildren(
     state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
     state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
-    state.view.name === 'stats' ? statsView() : homeView()
+    state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : homeView()
   );
 
   if (isSearchFocused) {
@@ -150,9 +154,10 @@ function seriesMatches(s, filter) {
   if (filter === 'all') return true;
   const episodes = s.episodes.filter((e) => e.sources.length);
   const watched = episodes.filter((e) => e.progress.watched);
-  if (filter === 'watched') return watched.length > 0;
+  if (filter === 'watched') return episodes.length > 0 && watched.length === episodes.length;
   if (filter === 'unwatched') return episodes.some((e) => !e.progress.watched);
   if (filter === 'progress') return episodes.some((e) => !e.progress.watched && e.progress.pos > 0);
+  if (filter === 'started') return watched.length > 0 && watched.length < episodes.length;
   return true;
 }
 
@@ -192,6 +197,7 @@ function homeView() {
   const filter = h('select', { class: 'input library-filter', 'aria-label': t('filterProgress'), value: state.progressFilter, onchange: (e) => { state.progressFilter = e.target.value; render(); } },
     h('option', { value: 'all' }, t('all')),
     h('option', { value: 'progress' }, t('resume')),
+    h('option', { value: 'started' }, t('started')),
     h('option', { value: 'unwatched' }, t('unwatched')),
     h('option', { value: 'watched' }, t('withWatched')));
   const sort = h('select', { class: 'input library-sort', 'aria-label': t('sortBy'), value: state.sort, onchange: (e) => { state.sort = e.target.value; render(); } },
@@ -200,13 +206,14 @@ function homeView() {
     h('option', { value: 'rating' }, t('sortRating')));
   const posterCard = (s) => {
     const seen = s.episodes.filter((e) => e.progress.watched).length;
+    const personal = effectivePersonalRating(s);
     return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
       h('div', { class: 'cover', style: bg(s.cover) },
         s.cover ? null : s.title.slice(0, 1).toUpperCase(),
         h('span', { class: 'poster-play', 'aria-hidden': 'true' }, '▶'),
         episodeTotal(s) ? h('span', { class: 'poster-badge' }, `${episodeTotal(s)} EP`) : null),
       h('div', { class: 't' }, s.title),
-      h('div', { class: 'muted small' }, episodeTotal(s) ? t('watchedOf', seen, episodeTotal(s)) : t('noEpisodes')));
+      h('div', { class: 'muted small' }, [episodeTotal(s) ? t('watchedOf', seen, episodeTotal(s)) : t('noEpisodes'), statusLabel(s), personal != null ? `★ ${personal.toFixed(1)}` : null].filter(Boolean).join(' · ')));
   };
   const featuredTarget = featured && resumeTarget(featured);
   const featuredHero = featured ? h('section', { class: 'home-featured', style: { '--bg': featured.banner || featured.cover ? `url("${featured.banner || featured.cover}")` : 'none' } },
@@ -242,9 +249,10 @@ function homeView() {
   const recentSection = !q && state.progressFilter === 'all' && recent.length > 0
     ? h('section', { class: 'section recent-section' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity')), h('span', { class: 'section-link' }, t('seeAll'))), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
     : null;
+  const schedule = !q && state.progressFilter === 'all' ? airingSections(list) : null;
   return h('div', null,
     h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library'))), h('div', { class: 'toolbar row wrap' }, search, filter, sort, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),
-    featuredHero, continueSection, librarySection, recentSection);
+    featuredHero, continueSection, librarySection, schedule, recentSection);
 }
 
 function formatDuration(seconds) {
@@ -252,6 +260,41 @@ function formatDuration(seconds) {
   const hours = Math.floor(total / 3600);
   const minutes = Math.floor((total % 3600) / 60);
   return hours ? t('hoursMinutes', hours, minutes) : t('minutes', minutes);
+}
+
+function effectivePersonalRating(s) {
+  if (s.personalRating != null) return Number(s.personalRating);
+  const ratings = (s.episodes || []).map((e) => e.personalRating).filter((x) => x != null && Number.isFinite(Number(x)));
+  return ratings.length ? ratings.reduce((sum, x) => sum + Number(x), 0) / ratings.length : null;
+}
+function statusLabel(s) {
+  if (s.status === 'FINISHED') return t('finished');
+  if (s.status === 'RELEASING') return t('airing');
+  if (s.status === 'NOT_YET_RELEASED') return t('upcoming');
+  return s.status ? String(s.status).replaceAll('_', ' ') : '';
+}
+function airingDay(s) {
+  return s.nextAiringAt ? new Date(s.nextAiringAt).getDay() : null;
+}
+function airingSections(series) {
+  const groups = new Map();
+  for (const s of series.filter((x) => x.status === 'RELEASING' && x.nextAiringAt)) {
+    const day = airingDay(s);
+    if (!groups.has(day)) groups.set(day, []);
+    groups.get(day).push(s);
+  }
+  if (!groups.size) return null;
+  const days = [1, 2, 3, 4, 5, 6, 0].filter((day) => groups.has(day));
+  const daySections = days.map((day) => {
+    const items = groups.get(day).sort((a, b) => a.nextAiringAt - b.nextAiringAt).map((s) =>
+      h('button', { class: 'airing-item', onclick: () => go({ name: 'series', id: s.id }) },
+        h('div', { class: 'airing-cover', style: bg(s.cover) }),
+        h('span', null, h('b', null, s.title), h('small', { class: 'muted' }, `${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`))));
+    return h('div', { class: 'airing-day' }, h('h3', null, t(`day${day}`)), h('div', { class: 'airing-list' }, items));
+  });
+  return h('section', { class: 'section airing-schedule' },
+    h('div', { class: 'section-head' }, h('h2', null, t('weeklySchedule')), h('span', { class: 'section-link' }, t('airing'))),
+    daySections);
 }
 
 function statsView() {
@@ -329,7 +372,9 @@ function seriesView(s) {
   const heroBody = h('div', { class: 'body' },
     h('div', { class: 'cover', style: bg(s.cover) }),
     h('div', null, h('h1', null, s.title), metaRow,
-      h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g))),
+      h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g)), statusLabel(s) ? h('span', { class: 'chip active' }, statusLabel(s)) : null),
+      s.status === 'RELEASING' && s.nextAiringAt ? h('div', { class: 'muted small airing-next' }, `${t('nextEpisode')}: ${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleString()}`) : null,
+      field(t('personalRating'), h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', value: effectivePersonalRating(s) == null ? '' : effectivePersonalRating(s), placeholder: s.personalRating == null && s.episodes.some((e) => e.personalRating != null) ? t('episodeAverage') : '', onchange: (e) => mutate('series:update', s.id, { personalRating: e.target.value === '' ? null : Number(e.target.value) }) })),
       desc, more, actions));
   const resumeAction = target
     ? h('aside', { class: 'hero-resume' },
@@ -472,8 +517,9 @@ function episodeRow(s, e) {
     pct(e) && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
   const info = h('div', null,
     h('div', { class: 'name' }, `${e.number}. ${e.title || t('episode', e.number)}`),
-    h('div', { class: 'muted small' }, `${has ? t('sources', e.sources.length) : t('noLink')}${p.watched ? ' · ' + t('watched') : resume ? ' · ' + t('resumeStatus') : ''}`),
-    h('div', { class: 'muted small rating-line' }, e.rating == null ? t('ratingUnavailable') : `${t('rating')}: ${Number(e.rating).toFixed(1)}/10${e.ratingSource ? ` (${e.ratingSource})` : ''}`));
+    h('div', { class: 'muted small' }, `${has ? t('sources', e.sources.length) : t('noLink')}${p.watched ? ' · ' + t('watched') : resume ? ' · ' + t('resumeStatus') : ''}${e.duration ? ' · ' + formatDuration(e.duration) : ''}`),
+    h('div', { class: 'muted small rating-line' }, e.rating == null ? t('ratingUnavailable') : `${t('rating')}: ${Number(e.rating).toFixed(1)}/10${e.ratingSource ? ` (${e.ratingSource})` : ''}`),
+    field(t('personalRating'), h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', value: e.personalRating == null ? '' : e.personalRating, onchange: (ev) => mutate('episodes:rate', s.id, e.id, ev.target.value === '' ? null : Number(ev.target.value)) })));
   const acts = h('div', { class: 'acts' },
     h('button', { class: 'btn sm' + (has ? ' primary' : ''), disabled: !has, onclick: () => play(s.id, e.id) }, p.watched ? t('rewatch') : resume ? t('resume') : t('watch')),
     h('button', { class: 'btn sm', onclick: () => openEditLinks(s, e) }, t('link')),
@@ -611,6 +657,8 @@ function openSettings() {
     const slang = h('input', { class: 'input', value: st.slang || '' });
     const ua = h('input', { class: 'input', value: st.userAgent || '', placeholder: t('userAgentPlaceholder') });
     const extra = h('input', { class: 'input', value: st.extraArgs || '', placeholder: 'es. --fullscreen --volume=70' });
+    const skipOpening = h('input', { type: 'checkbox' }); skipOpening.checked = !!st.skipOpening;
+    const skipEnding = h('input', { type: 'checkbox' }); skipEnding.checked = !!st.skipEnding;
     return [
       field(t('mpvPath'), h('div', { class: 'row' }, mpv,
         h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
@@ -621,11 +669,27 @@ function openSettings() {
       field(t('primaryLanguage'), language),
       h('div', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`),
       h('label', { class: 'row', style: { marginBottom: '14px' } }, auto, t('autoplay')),
+      h('label', { class: 'row', style: { marginBottom: '8px' } }, skipOpening, t('autoSkipOpening')),
+      h('label', { class: 'row', style: { marginBottom: '14px' } }, skipEnding, t('autoSkipEnding')),
       h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang)),
       field(t('userAgent'), ua), field(t('extraArgs'), extra),
       h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')),
-        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
+        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
   });
+}
+
+function shortcutsView() {
+  const shortcuts = { next: 'PGDWN', previous: 'PGUP', skipIntro: '', skipEnding: '', ...(state.lib.settings.shortcuts || {}) };
+  const inputs = Object.fromEntries(Object.entries(shortcuts).map(([key, value]) => [key, h('input', { class: 'input', value: value || '', placeholder: t('shortcutUnset') })]));
+  return h('div', null,
+    h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('shortcuts')))),
+    h('section', { class: 'panel shortcuts-page' },
+      h('p', { class: 'muted' }, t('shortcutsHint')),
+      field(t('shortcutNext'), inputs.next),
+      field(t('shortcutPrevious'), inputs.previous),
+      field(t('shortcutIntro'), inputs.skipIntro),
+      field(t('shortcutEnding'), inputs.skipEnding),
+      h('div', { class: 'foot' }, h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { shortcuts: Object.fromEntries(Object.entries(inputs).map(([key, el]) => [key, el.value.trim().toUpperCase()])) }); toast(t('saved')); } }, t('save')))));
 }
 
 function openSetup() {
@@ -657,6 +721,7 @@ function openSetup() {
   api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null; render(); });
   api.on('player:state', (p) => { state.player = p; renderPlayer(); });
   api.on('player:error', (m) => toast(m, 'error'));
+  api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call('player:skipSegment', offer.end)));
   state.lib = await api.invoke('lib:get');
   state.presets = await api.invoke('presets:list');
   state.version = await api.invoke('app:version');

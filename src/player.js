@@ -15,7 +15,7 @@ class PlayerManager {
 
   _writeInputConf() {
     fs.mkdirSync(this.paths.userData, { recursive: true });
-    fs.writeFileSync(this.inputConf, A4K.buildInputConf(this.paths.shaderDir));
+    fs.writeFileSync(this.inputConf, A4K.buildInputConf(this.paths.shaderDir, this.store.data.settings.shortcuts));
   }
 
   state() {
@@ -66,9 +66,25 @@ class PlayerManager {
         clearTimeout(cur.saveTimer);
         cur.saveTimer = setTimeout(flushProgress, 750);
       }
+      const skips = cur.ep && Array.isArray(cur.ep.skipTimes) ? cur.ep.skipTimes : [];
+      if (this.store.data.settings.skipOpening && !cur.skippedIntro) {
+        const segment = skips.find((x) => (x.skipType === 'op' || x.skipType === 'mixed-op') && t >= x.start && t < x.end);
+        if (segment) { cur.skippedIntro = true; session.seekAbsolute(segment.end); }
+      } else if (!cur.offeredIntro) {
+        const segment = skips.find((x) => (x.skipType === 'op' || x.skipType === 'mixed-op') && t >= x.start && t < x.end);
+        if (segment) { cur.offeredIntro = true; this.notify('player:skip-offer', { kind: 'intro', end: segment.end }); }
+      }
+      if (this.store.data.settings.skipEnding && !cur.skippedEnding) {
+        const segment = skips.find((x) => (x.skipType === 'ed' || x.skipType === 'mixed-ed' || x.skipType === 'mixed-ending') && t >= x.start && t < x.end);
+        if (segment) { cur.skippedEnding = true; session.seekAbsolute(segment.end); }
+      } else if (!cur.offeredEnding) {
+        const segment = skips.find((x) => (x.skipType === 'ed' || x.skipType === 'mixed-ed' || x.skipType === 'mixed-ending') && t >= x.start && t < x.end);
+        if (segment) { cur.offeredEnding = true; this.notify('player:skip-offer', { kind: 'ending', end: segment.end }); }
+      }
     });
     session.on('duration', (d) => { cur.dur = d; });
     session.on('nav', (dir) => { cur.nav = dir; session.quit(); });
+    session.on('skip', (kind) => this.skipCurrentSegment(kind));
     session.on('spawn-error', (e) => {
       this.cur = null; this._emitState();
       this.notify('player:error', e.code === 'ENOENT' ? `mpv non trovato in "${settings.mpvPath}". Controlla il percorso in Impostazioni.` : `Impossibile avviare mpv: ${e.message}`);
@@ -140,6 +156,21 @@ class PlayerManager {
     if (!this.cur || !this.cur.series || !this.cur.series.outroDuration || !this.cur.dur) return false;
     this.cur.session.seekAbsolute(Math.max(0, this.cur.dur - this.cur.series.outroDuration));
     return true;
+  }
+
+  skipSegment(end) {
+    if (!this.cur || !Number.isFinite(Number(end))) return false;
+    this.cur.session.seekAbsolute(Number(end));
+    return true;
+  }
+
+  skipCurrentSegment(kind) {
+    if (!this.cur) return false;
+    const skips = Array.isArray(this.cur.ep && this.cur.ep.skipTimes) ? this.cur.ep.skipTimes : [];
+    const types = kind === 'intro' ? ['op', 'mixed-op'] : ['ed', 'mixed-ed', 'mixed-ending'];
+    const segment = skips.find((x) => types.includes(x.skipType) && this.cur.pos >= x.start && this.cur.pos < x.end);
+    if (segment) return this.skipSegment(segment.end);
+    return kind === 'intro' ? this.skipIntro() : this.skipEnding();
   }
 
   async stop() {

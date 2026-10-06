@@ -1,6 +1,7 @@
 // Metadati: AniList (serie) + Kitsu (titoli e miniature degli episodi). Solo API pubbliche.
 const ANILIST = 'https://graphql.anilist.co';
 const KITSU = 'https://kitsu.io/api/edge';
+const ANISKIP = 'https://api.aniskip.com/v2/skip-times';
 
 const stripHtml = (s) => String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
 const normalizeRating = (value) => {
@@ -35,11 +36,12 @@ async function translateDescriptionToItalian(description) {
 }
 
 const FIELDS = `id idMal title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false)
-  genres averageScore episodes seasonYear format status streamingEpisodes { title thumbnail }`;
+  genres averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }`;
 
 function normalize(m) {
   return {
     anilistId: m.id,
+    malId: m.idMal || null,
     title: (m.title && (m.title.english || m.title.romaji)) || 'Senza titolo',
     altTitle: m.title && m.title.romaji,
     cover: m.coverImage && (m.coverImage.extraLarge || m.coverImage.large),
@@ -51,9 +53,22 @@ function normalize(m) {
     year: m.seasonYear || null,
     format: m.format || null,
     status: m.status || null,
+    nextAiringAt: m.nextAiringEpisode && m.nextAiringEpisode.airingAt ? m.nextAiringEpisode.airingAt * 1000 : null,
+    nextEpisode: m.nextAiringEpisode && m.nextAiringEpisode.episode ? m.nextAiringEpisode.episode : null,
     episodeCount: m.episodes || null,
     streamingEpisodes: m.streamingEpisodes || [],
   };
+}
+
+async function fetchAniSkipTimes(malId, episodeNumber) {
+  if (!malId || !Number.isInteger(Number(episodeNumber))) return [];
+  const r = await fetch(`${ANISKIP}/${encodeURIComponent(malId)}/${encodeURIComponent(episodeNumber)}`, { headers: { Accept: 'application/json' } });
+  if (r.status === 404) return [];
+  if (!r.ok) throw new Error(`AniSkip ha risposto ${r.status}`);
+  const data = await r.json();
+  return (data.found && Array.isArray(data.results) ? data.results : [])
+    .filter((x) => x && Number.isFinite(Number(x.interval?.startTime)) && Number.isFinite(Number(x.interval?.endTime)))
+    .map((x) => ({ skipType: x.skipType || 'unknown', start: Number(x.interval.startTime), end: Number(x.interval.endTime) }));
 }
 
 async function searchAnime(text) {
@@ -101,6 +116,7 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, epi
           number: a.number,
           title: a.canonicalTitle || (a.titles && (a.titles.en_us || a.titles.en_jp)) || '',
           thumb: a.thumbnail && (a.thumbnail.original || a.thumbnail.large) || null,
+          duration: a.length || null,
           rating,
           ratingSource: rating == null ? null : 'Kitsu',
         });
@@ -332,6 +348,7 @@ module.exports = {
   searchAnime,
   getAnime,
   fetchEpisodes,
+  fetchAniSkipTimes,
   stripHtml,
   cleanTitleForImdb,
   detectSeasonFromTitle,
