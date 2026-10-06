@@ -60,11 +60,11 @@ const field = (label, input) => h('label', { class: 'field' }, h('span', null, l
 function renderRail() {
   const v = state.view.name; const hasMpv = !!state.lib.settings.mpvPath;
   $('#rail').replaceChildren(
-    h('div', { class: 'brand' }, 'Anime Player', h('small', null, 'mpv + Anime4K')),
-    h('button', { class: 'nav', 'aria-current': v === 'home' || v === 'series' ? 'page' : null, onclick: () => go({ name: 'home' }) }, t('library')),
-    h('button', { class: 'nav', 'aria-current': v === 'stats' ? 'page' : null, onclick: () => go({ name: 'stats' }) }, t('stats')),
-    h('button', { class: 'nav', onclick: openLinkDialog }, t('openLink')),
-    h('button', { class: 'nav', onclick: openSettings }, t('settings')),
+    h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, 'A'), h('span', { class: 'brand-copy' }, 'Anime Player', h('small', null, 'mpv + Anime4K'))),
+    h('button', { class: 'nav', 'aria-current': v === 'home' || v === 'series' ? 'page' : null, onclick: () => go({ name: 'home' }) }, h('span', { class: 'nav-icon library-icon', 'aria-hidden': 'true' }), h('span', null, t('library'))),
+    h('button', { class: 'nav', 'aria-current': v === 'stats' ? 'page' : null, onclick: () => go({ name: 'stats' }) }, h('span', { class: 'nav-icon stats-icon', 'aria-hidden': 'true' }), h('span', null, t('stats'))),
+    h('button', { class: 'nav', onclick: openLinkDialog }, h('span', { class: 'nav-icon link-icon', 'aria-hidden': 'true' }), h('span', null, t('openLink'))),
+    h('button', { class: 'nav', onclick: openSettings }, h('span', { class: 'nav-icon settings-icon', 'aria-hidden': 'true' }), h('span', null, t('settings'))),
     h('div', { class: 'spacer' }),
     h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings }, hasMpv ? t('mpvReady') : t('mpvMissing')),
   );
