@@ -98,14 +98,15 @@ function register() {
     let mpvIsFile = false;
     try { mpvIsFile = Boolean(next.mpvPath && fs.statSync(next.mpvPath).isFile()); } catch { /* percorso non valido */ }
     if (patch && patch.onboardingComplete === true && !mpvIsFile) {
-      throw new Error('Scegli un file mpv.exe valido.');
+      throw new Error(`Scegli un eseguibile mpv valido (${process.platform === 'win32' ? 'mpv.exe' : 'mpv'}).`);
     }
     store.setSettings(patch || {});
     return lib();
   });
   h('mpv:detect', async () => { const p = await detectMpv(); if (p) store.setSettings({ mpvPath: p }); return { path: p, lib: lib() }; });
   h('mpv:browse', async () => {
-    const r = await dialog.showOpenDialog(win, { title: 'Scegli mpv.exe', properties: ['openFile'], filters: process.platform === 'win32' ? [{ name: 'mpv', extensions: ['exe'] }] : [] });
+    const executableName = process.platform === 'win32' ? 'mpv.exe' : 'mpv';
+    const r = await dialog.showOpenDialog(win, { title: `Scegli ${executableName}`, properties: ['openFile'], filters: process.platform === 'win32' ? [{ name: 'mpv', extensions: ['exe'] }] : [] });
     if (r.canceled || !r.filePaths[0]) return lib();
     store.setSettings({ mpvPath: r.filePaths[0] });
     return lib();

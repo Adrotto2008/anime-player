@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.3** is a Windows Electron library for anime links. It stores the
+Anime Player **v0.5.4** is a cross-platform Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -49,8 +49,8 @@ episodes and it does not scrape streaming sites.
 
 ## Requirements
 
-- Windows 10/11.
-- mpv installed separately and available as `mpv.exe` (for example:
+- Windows 10/11 or Debian 13.
+- mpv installed separately and available as `mpv.exe` on Windows or `mpv` on Linux (for example:
   `winget install mpv` or `scoop install mpv`). The app does not download or
   bundle an mpv binary: mpv is an external executable with platform-specific
   licensing and updates. First-run setup provides trusted **Detect** and
@@ -59,7 +59,7 @@ episodes and it does not scrape streaming sites.
 
 ## Development install
 
-```powershell
+```bash
 npm install
 npm start
 ```
@@ -73,7 +73,7 @@ language can be changed later in **Settings**.
 
 Run:
 
-```powershell
+```bash
 npm run dist
 ```
 

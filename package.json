@@ -1,15 +1,15 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.3",
+  "version": "0.5.4",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
     "test": "node test/run.js",
-    "dist": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build.ps1",
-    "check": "powershell -NoProfile -ExecutionPolicy Bypass -File scripts/check.ps1"
+    "dist": "node scripts/build.js",
+    "check": "node scripts/check.js"
   },
   "devDependencies": {
     "electron": "^33.0.0",
@@ -21,6 +21,7 @@
     "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*", "package.json"],
     "extraResources": [{ "from": "shaders", "to": "shaders" }],
     "win": { "target": ["portable", "nsis"] },
+    "linux": { "target": ["AppImage", "deb"], "category": "AudioVideo" },
     "portable": { "artifactName": "AnimePlayer-portable.exe" },
     "nsis": {
       "artifactName": "AnimePlayer-Setup-${version}.exe",

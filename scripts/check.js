@@ -1,0 +1,5 @@
+const { execFileSync, execSync } = require('child_process');
+for (const file of ['main.js', 'preload.js', 'renderer/app.js', 'renderer/i18n.js']) execFileSync(process.execPath, ['--check', file], { stdio: 'inherit' });
+execFileSync(process.execPath, ['test/run.js'], { stdio: 'inherit' });
+execSync('git diff --check', { stdio: 'inherit' });
+console.log('All checks passed.');
