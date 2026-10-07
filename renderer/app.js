@@ -3,6 +3,11 @@
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
 const state = { lib: { series: [], settings: {} }, presets: [], version: '', view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
+const detectSeasonFromTitle = (title) => {
+  const text = String(title || '');
+  const match = text.match(/season\s*(\d+)/i) || text.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || text.match(/\bS(\d+)\b/i) || text.match(/\bPart\s*(\d+)\b/i);
+  return match ? Number(match[1]) : 1;
+};
 
 /* ---------- utilità ---------- */
 function h(tag, props, ...kids) {
@@ -14,9 +19,32 @@ function h(tag, props, ...kids) {
     else if (k === 'style' && typeof v === 'object') { for (const [sk, sv] of Object.entries(v)) { if (sk.startsWith('--')) el.style.setProperty(sk, sv); else el.style[sk] = sv; } } // Object.assign non imposta le variabili CSS (--bg)
     else el.setAttribute(k, v === true ? '' : v);
   }
+
   for (const kid of kids.flat(Infinity)) { if (kid == null || kid === false) continue; el.append(kid.nodeType ? kid : document.createTextNode(String(kid))); }
   if (props && props.value != null) el.value = props.value;
   return el;
+}
+function castRelatedSection(s) {
+  const cast = Array.isArray(s.cast) ? s.cast.slice(0, 8) : [];
+  const related = Array.isArray(s.related) ? s.related.slice(0, 8) : [];
+  if (!cast.length && !related.length) return null;
+  const castPanel = h('div', { class: 'compact-info-panel' },
+    h('h3', null, t('cast')),
+    cast.length ? h('div', { class: 'cast-list' }, cast.map((person) => h('div', { class: 'cast-item' },
+      person.image ? h('img', { src: person.image, alt: person.name, loading: 'lazy' }) : h('div', { class: 'cast-avatar' }),
+      h('div', null, h('b', null, person.name), person.role ? h('span', { class: 'muted small' }, person.role) : null)))) :
+      h('span', { class: 'muted small' }, t('noCast')));
+  const relatedPanel = h('div', { class: 'compact-info-panel' },
+    h('h3', null, t('relatedSeries')),
+    related.length ? h('div', { class: 'related-list' }, related.map((item) => h('button', { class: 'related-item', onclick: () => {
+      const local = state.lib.series.find((x) => x.anilistId === item.id);
+      if (local) go({ name: 'series', id: local.id });
+      else toast(`${item.title} · ${t('sourceUnavailable')}`);
+    } },
+      item.cover ? h('img', { src: item.cover, alt: item.title, loading: 'lazy' }) : null,
+      h('span', null, h('b', null, item.title), h('small', { class: 'muted' }, [item.relation, item.format].filter(Boolean).join(' · ')))))) :
+      h('span', { class: 'muted small' }, t('noRelated')));
+  return h('section', { class: 'compact-info' }, castPanel, relatedPanel);
 }
 const $ = (s) => document.querySelector(s);
 const cleanErr = (e) => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
@@ -145,10 +173,13 @@ function renderPlayer() {
   el.hidden = !p.playing;
   if (!p.playing) return;
   const s = p.seriesId && getSeries(p.seriesId);
-  const skipIntro = s && Number(s.introDuration) > 0
+  const ep = s && s.episodes.find((item) => item.id === p.episodeId);
+  const hasIntro = ep && Array.isArray(ep.skipTimes) && ep.skipTimes.some((x) => ['op', 'mixed-op'].includes(x.skipType));
+  const hasEnding = ep && Array.isArray(ep.skipTimes) && ep.skipTimes.some((x) => ['ed', 'mixed-ed', 'mixed-ending'].includes(x.skipType));
+  const skipIntro = s && (hasIntro || Number(s.introDuration) > 0)
     ? h('button', { class: 'btn sm', onclick: () => call('player:skipIntro') }, t('skipIntro'))
     : null;
-  const skipEnding = s && Number(s.outroDuration) > 0
+  const skipEnding = s && (hasEnding || Number(s.outroDuration) > 0)
     ? h('button', { class: 'btn sm', onclick: () => call('player:skipEnding') }, t('skipEnding'))
     : null;
   el.replaceChildren(...[h('span', { class: 'live-dot', 'aria-hidden': 'true' }),
@@ -162,6 +193,9 @@ function renderPlayer() {
 /* ---------- navigazione ---------- */
 function go(view) {
   state.view = view; render(); $('#main').scrollTop = 0;
+  if (view.name === 'series' && view.episodeId) {
+    requestAnimationFrame(() => document.querySelector(`[data-episode-id="${CSS.escape(view.episodeId)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
+  }
   if (view.name === 'series' || view.name === 'ratings-chart') loadSeriesRatings(view.id);
 }
 async function loadSeriesRatings(id) {
@@ -437,6 +471,7 @@ function seriesView(s) {
     s.format && s.format.replace('_', ' '),
     total ? `${total} ${t('episodes').toLowerCase()}` : null,
   ].filter(Boolean);
+  const knownSkip = s.episodes.filter((e) => Array.isArray(e.skipTimes) && e.skipTimes.some((x) => ['op', 'ed', 'mixed-op', 'mixed-ed'].includes(x.skipType))).length;
   const ratingBtn = h('button', {
     class: 'rating-badge-btn',
     title: t('viewRatingsChart'),
@@ -458,6 +493,7 @@ function seriesView(s) {
     h('div', { class: 'info' }, h('h1', null, s.title), metaRow,
       h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g)), statusLabel(s) ? h('span', { class: 'chip active' }, statusLabel(s)) : null),
       s.status === 'RELEASING' && s.nextAiringAt ? h('div', { class: 'muted small airing-next' }, icon('clock', 14), `${t('nextEpisode')}: ${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleString()}`) : null,
+      knownSkip ? h('div', { class: 'muted small skip-summary' }, t('skipAvailable') + ` · ${knownSkip} ${t('episodes').toLowerCase()}`) : h('div', { class: 'muted small skip-summary' }, t('skipCheckedOnPlay')),
       total ? h('div', { class: 'series-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: (seen / total) * 100 + '%' } })), h('span', { class: 'muted small' }, t('watchedOf', seen, total))) : null,
       desc, more, rate, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
@@ -478,7 +514,7 @@ function seriesView(s) {
     ? h('div', { class: 'eps' }, s.episodes.map((e) => episodeRow(s, e)))
     : h('div', { class: 'empty' }, h('h2', null, t('noEpisodeYet')), t('addLinksHint'),
       h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, icon('plus', 16), t('addLinks'))));
-  return h('div', { class: 'page' }, hero, a4k, h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('episodes'), h('span', { class: 'count' }, s.episodes.length))), episodeContent));
+  return h('div', { class: 'page' }, hero, castRelatedSection(s), a4k, h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('episodes'), h('span', { class: 'count' }, s.episodes.length))), episodeContent));
 }
 
 function getRatingTier(score) {
@@ -542,6 +578,7 @@ function ratingsChartView(s) {
     );
 
     const seasons = chart.seasons.filter((sn) => Number.isInteger(sn.season) && sn.season > 0);
+    const librarySeason = detectSeasonFromTitle(s.title);
     const maxEps = chart.maxEpisodes || Math.max(...seasons.map((sn) => sn.episodes.length), 0);
 
     const headerRow = h('tr', null,
@@ -558,10 +595,20 @@ function ratingsChartView(s) {
         const ep = sn.episodes.find((e) => e.number === epNum);
         if (ep && ep.rating != null) {
           const tier = getRatingTier(ep.rating);
+          const libraryEpisode = sn.season === librarySeason
+            ? s.episodes.find((item) => Number(item.number) === Number(ep.number))
+            : null;
           const cell = h('td', null,
             h('div', {
-              class: `ratings-cell rating-tier-${tier}`,
+              class: `ratings-cell rating-tier-${tier}${libraryEpisode ? ' is-in-library' : ''}`,
               title: `S${sn.season} E${ep.number}: ${ep.title || t('episode', ep.number)} · ${ep.rating.toFixed(1)} ★ (${tier})`,
+              role: libraryEpisode ? 'button' : null,
+              tabindex: libraryEpisode ? '0' : null,
+              'aria-label': libraryEpisode ? `${s.title} · ${t('episode', libraryEpisode.number)} · ${t('openEpisode')}` : null,
+              onclick: libraryEpisode ? () => go({ name: 'series', id: s.id, episodeId: libraryEpisode.id }) : null,
+              onkeydown: libraryEpisode ? (event) => {
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go({ name: 'series', id: s.id, episodeId: libraryEpisode.id }); }
+              } : null,
             }, ep.rating.toFixed(1)),
           );
           cells.push(cell);
@@ -587,19 +634,28 @@ function ratingsChartView(s) {
 
 function episodeRow(s, e) {
   const has = e.sources.length > 0; const p = e.progress; const resume = !p.watched && p.pos > 10;
-  const image = e.thumb || s.banner || s.cover;
+  const priorThumbs = new Set(s.episodes.filter((item) => item.number < e.number).map((item) => item.thumb).filter(Boolean));
+  const distinctThumb = e.thumb && !priorThumbs.has(e.thumb);
+  const image = distinctThumb ? e.thumb : (s.banner || null);
+  const seed = (Number(e.number) * 47 + String(e.title || '').length * 13) % 360;
+  const visualStyle = { ...bg(image), '--ep-hue': `${seed}deg`, '--ep-pos': `${20 + (seed % 61)}%` };
   const label = p.watched ? t('rewatch') : resume ? t('resume') : t('watch');
-  const thumb = h('div', { class: 'th' + (image ? '' : ' fallback') + (e.thumb ? '' : ' no-own'), style: bg(image), title: e.thumb ? '' : t('noThumbnail'), onclick: () => { if (has) play(s.id, e.id); } },
+  const generated = !distinctThumb && !image;
+  const thumb = h('div', { class: 'th' + (image ? '' : ' fallback') + (generated ? ' generated' : ''), style: visualStyle, title: distinctThumb ? '' : t('noThumbnail'), onclick: () => { if (has) play(s.id, e.id); } },
     h('span', { class: 'ep-badge' }, String(e.number)),
+    generated ? h('span', { class: 'th-title' }, e.title || t('episode', e.number)) : null,
     has ? h('span', { class: 'th-play', 'aria-hidden': 'true' }, icon('play', 18)) : null,
     pct(e) && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
+  const skipKinds = new Set((e.skipTimes || []).map((x) => x.skipType));
+  const skipAvailable = skipKinds.has('op') || skipKinds.has('ed') || skipKinds.has('mixed-op') || skipKinds.has('mixed-ed');
+  const skipChip = skipAvailable ? h('span', { class: 'chip active' }, t('skipAvailable')) : null;
   const status = p.watched ? h('span', { class: 'chip ok' }, icon('check', 12), t('watched'))
     : resume ? h('span', { class: 'chip live' }, `${t('resumeStatus')}${pct(e) ? ' · ' + Math.round(pct(e)) + '%' : ''}`)
     : !has ? h('span', { class: 'chip warn' }, t('noLink')) : null;
-  const meta = [e.duration ? formatDuration(e.duration) : null, has ? t('sources', e.sources.length) : null].filter(Boolean).join('  ·  ');
+  const meta = [skipChip, e.duration ? formatDuration(e.duration) : null, has ? t('sources', e.sources.length) : null].filter(Boolean);
   const info = h('div', { class: 'ep-info' },
     h('div', { class: 'name' }, e.title || t('episode', e.number)),
-    h('div', { class: 'ep-meta' }, status, meta ? h('span', { class: 'muted small' }, meta) : null,
+    h('div', { class: 'ep-meta' }, status, ...meta.map((item) => typeof item === 'string' ? h('span', { class: 'muted small' }, item) : item),
       e.rating != null ? h('span', { class: 'ep-rating', title: e.ratingSource || '' }, icon('star', 12), Number(e.rating).toFixed(1)) : null,
       h('label', { class: 'rate-inline mini', title: t('personalRating') }, h('span', null, t('yourRating')),
         h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', placeholder: '—', value: e.personalRating == null ? '' : e.personalRating, onchange: (ev) => mutate('episodes:rate', s.id, e.id, ev.target.value === '' ? null : Number(ev.target.value)) }))));
@@ -610,7 +666,7 @@ function episodeRow(s, e) {
       { icon: p.watched ? 'eye' : 'check', label: p.watched ? t('markUnwatched') : t('markWatched'), action: () => mutate('episodes:mark', s.id, e.id, !p.watched) },
       { icon: 'trash', label: t('delete'), danger: true, action: () => mutate('episodes:delete', s.id, e.id) },
     ]));
-  return h('div', { class: 'ep' + (p.watched ? ' done' : '') }, thumb, info, acts);
+  return h('div', { class: 'ep' + (p.watched ? ' done' : ''), 'data-episode-id': e.id }, thumb, info, acts);
 }
 
 async function play(sid, eid) { try { await call('player:play', sid, eid); } catch { /* toast già mostrato */ } }

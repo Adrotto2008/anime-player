@@ -8,6 +8,7 @@ const A = require('../src/anime4k');
 const { Store, DEFAULT_SETTINGS } = require('../src/store');
 const { PlayerManager } = require('../src/player');
 const { MpvSession, pipePath } = require('../src/mpv');
+const { aniSkipUrl } = require('../src/metadata');
 
 const shaderDir = path.join(__dirname, '..', 'shaders');
 let n = 0; const ok = (name) => console.log('  ok', ++n, name);
@@ -51,6 +52,12 @@ assert.ok(conf.includes('CTRL+1 ') && conf.includes('ALT+6 ') && conf.includes('
 const customConf = A.buildInputConf(shaderDir, { next: 'CTRL+N', previous: 'CTRL+P', skipIntro: 'CTRL+I', skipEnding: 'CTRL+E' });
 assert.ok(customConf.includes('CTRL+N script-message ap-next') && customConf.includes('CTRL+I script-message ap-skip-intro'));
 ok('preset Anime4K, catene, input.conf');
+
+const skipUrl = new URL(aniSkipUrl(31240, 1, 1515));
+assert.strictEqual(skipUrl.pathname, '/v2/skip-times/31240/1');
+assert.deepStrictEqual(skipUrl.searchParams.getAll('types[]'), ['op', 'ed', 'mixed-op', 'mixed-ed', 'recap']);
+assert.strictEqual(skipUrl.searchParams.get('episodeLength'), '1515');
+ok('AniSkip: URL con tipi e durata episodio');
 
 // --- libreria
 const tmp = path.join(__dirname, '.test-data');
@@ -146,6 +153,10 @@ ok('resume: posizione breve salvata all’uscita senza arrotondamento a zero');
 
 // --- IMDb: normalizzazione titolo, riconoscimento stagione e rating chart
 const { cleanTitleForImdb, detectSeasonFromTitle, applyImdbRatingsToEpisodes } = require('../src/metadata');
+const rendererSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
+assert.ok(rendererSource.includes('const librarySeason = detectSeasonFromTitle(s.title)'));
+assert.ok(rendererSource.includes('sn.season === librarySeason'));
+assert.ok(rendererSource.includes("'data-episode-id': e.id"));
 
 assert.strictEqual(cleanTitleForImdb('Attack on Titan Season 2'), 'Attack on Titan');
 assert.strictEqual(cleanTitleForImdb('Attack on Titan: The Final Season Part 2'), 'Attack on Titan');
@@ -189,7 +200,22 @@ assert.ok(sWithImdb.imdbChart && sWithImdb.imdbChart.seasons.length === 2);
 ok('IMDb: normalizzazione titoli, riconoscimento stagione, rating e chart');
 
 // --- mpv reale
-let mpvPath = null; try { mpvPath = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['mpv']).toString().split(/\r?\n/)[0].trim(); } catch {}
+let mpvPath = null;
+try { mpvPath = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['mpv']).toString().split(/\r?\n/)[0].trim(); } catch {}
+if (!mpvPath) {
+  const candidates = process.platform === 'win32'
+    ? ['C:\\Program Files\\mvp\\mpv.exe', 'C:\\Program Files\\mpv\\mpv.exe']
+    : ['/usr/bin/mpv', '/usr/local/bin/mpv'];
+  for (const candidate of candidates) {
+    if (fs.existsSync(candidate)) { mpvPath = candidate; break; }
+  }
+}
+if (!mpvPath) {
+  for (const dir of String(process.env.PATH || '').split(path.delimiter).filter(Boolean)) {
+    const candidate = path.join(dir, process.platform === 'win32' ? 'mpv.exe' : 'mpv');
+    if (fs.existsSync(candidate)) { mpvPath = candidate; break; }
+  }
+}
 if (!mpvPath) { console.log('  (mpv non installato: salto i test di riproduzione)'); console.log(`\n${n} test passati`); cleanup(); process.exit(0); }
 
 const HEADLESS = '--vo=null --ao=null --no-config --msg-level=all=no';

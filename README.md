@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.0** is a Windows Electron library for anime links. It stores the
+Anime Player **v0.5.3** is a Windows Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -15,6 +15,9 @@ episodes and it does not scrape streaming sites.
   recognizing the overall anime franchise across seasons.
 - Kitsu episode titles and thumbnails. Missing ratings fallback gracefully; no
   values are invented.
+- AniList cast and related-series metadata in a compact series panel.
+- AniSkip opening/ending availability is shown per episode after its skip data
+  has been checked.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
 - Automatic episode-number detection, patterns (`{ep}` and `{ep:02}`),
@@ -36,6 +39,8 @@ episodes and it does not scrape streaming sites.
   stronger section headers, and a compact streaming toolbar.
 - Refined navigation, dialogs, settings, statistics, episode actions, and compact
   responsive layouts across the app.
+- Clicking an episode rating in the chart opens the anime page and scrolls to that
+  episode when it is present in the library.
 - Live library search with preserved focus/cursor position, progress filters, and a clear-search control.
 - English and Italian UI translations, selectable at runtime and persisted in
   the library. New installations default to English. Existing libraries
@@ -75,9 +80,14 @@ npm run dist
 This keeps both Windows targets:
 
 - `dist\AnimePlayer-portable.exe`: one executable, no installation required.
-- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.0.exe`): NSIS installer with Desktop and
+- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.3.exe`): NSIS installer with Desktop and
   Start Menu shortcuts, selectable installation directory, and per-user
   installation by default.
+
+Each build removes older `AnimePlayer-Setup-*.exe` installers first, so `dist`
+contains only the installer for the current version. Run `npm run check` for
+tests, syntax checks, and whitespace validation without building. Run
+`npm run dist` to perform those checks and build the Windows artifacts.
 
 The installed/portable application does not need Node.js, `npm install`, or
 `npm start`. The library is stored separately in

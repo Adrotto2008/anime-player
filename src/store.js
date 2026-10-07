@@ -90,6 +90,8 @@ function validateLibraryData(input) {
       outroDuration: nonNegativeSeconds(rawSeries.outroDuration),
       personalRating: personalRating(rawSeries.personalRating),
       genres: Array.isArray(rawSeries.genres) ? rawSeries.genres : [],
+      cast: Array.isArray(rawSeries.cast) ? rawSeries.cast : [],
+      related: Array.isArray(rawSeries.related) ? rawSeries.related : [],
       lastWatchedAt,
     };
   });
@@ -281,7 +283,7 @@ class Store {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
+    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);

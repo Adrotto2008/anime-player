@@ -22,7 +22,7 @@ function detectMpv() {
     env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Links', 'mpv.exe'),
     env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'mpv', 'mpv.exe'),
     env.USERPROFILE && path.join(env.USERPROFILE, 'scoop', 'apps', 'mpv', 'current', 'mpv.exe'),
-    'C:\\Program Files\\mpv\\mpv.exe', 'C:\\Program Files (x86)\\mpv\\mpv.exe', 'C:\\ProgramData\\chocolatey\\bin\\mpv.exe',
+    'C:\\Program Files\\mpv\\mpv.exe', 'C:\\Program Files\\mvp\\mpv.exe', 'C:\\Program Files (x86)\\mpv\\mpv.exe', 'C:\\ProgramData\\chocolatey\\bin\\mpv.exe',
     '/usr/bin/mpv', '/usr/local/bin/mpv', '/opt/homebrew/bin/mpv',
   ].filter(Boolean);
   const hit = candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
@@ -200,7 +200,7 @@ function register() {
     if (!s || !ep) throw new Error('Episodio non trovato');
     if (!s.malId || !s.anilistId) return { skipTimes: ep.skipTimes || [], lib: lib() };
     try {
-      const skipTimes = await meta.fetchAniSkipTimes(s.malId, ep.number);
+      const skipTimes = await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration);
       store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes }]);
     } catch (err) {
       console.warn('AniSkip error:', err.message);
@@ -230,7 +230,7 @@ function register() {
   h('player:play', async (sid, eid) => {
     const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
     if (s && ep && s.malId && (!Array.isArray(ep.skipTimes) || !ep.skipTimes.length)) {
-      try { store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes: await meta.fetchAniSkipTimes(s.malId, ep.number) }]); } catch (err) { console.warn('AniSkip error:', err.message); }
+      try { store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes: await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration) }]); } catch (err) { console.warn('AniSkip error:', err.message); }
     }
     return player.play(sid, eid).then(() => lib());
   });
@@ -242,8 +242,8 @@ function register() {
   h('player:preset', (id) => player.setPreset(id));
   h('player:seekRelative', (seconds) => player.seekRelative(seconds));
   h('player:seekAbsolute', (seconds) => player.seekAbsolute(seconds));
-  h('player:skipIntro', () => player.skipIntro());
-  h('player:skipEnding', () => player.skipEnding());
+  h('player:skipIntro', () => player.skipCurrentSegment('intro'));
+  h('player:skipEnding', () => player.skipCurrentSegment('ending'));
   h('player:skipSegment', (end) => player.skipSegment(end));
   h('stats:get', () => store.statistics());
 }

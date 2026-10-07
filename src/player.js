@@ -135,7 +135,11 @@ class PlayerManager {
   }
 
   skipIntro() {
-    if (!this.cur || !this.cur.series || !this.cur.series.introDuration) return false;
+    if (!this.cur) return false;
+    const skips = Array.isArray(this.cur.ep && this.cur.ep.skipTimes) ? this.cur.ep.skipTimes : [];
+    const segment = skips.find((x) => ['op', 'mixed-op'].includes(x.skipType) && this.cur.pos >= x.start && this.cur.pos < x.end);
+    if (segment) return this.skipSegment(segment.end);
+    if (!this.cur.series || !this.cur.series.introDuration) return false;
     this.cur.session.seekAbsolute(this.cur.series.introDuration);
     return true;
   }
@@ -153,7 +157,11 @@ class PlayerManager {
   }
 
   skipEnding() {
-    if (!this.cur || !this.cur.series || !this.cur.series.outroDuration || !this.cur.dur) return false;
+    if (!this.cur) return false;
+    const skips = Array.isArray(this.cur.ep && this.cur.ep.skipTimes) ? this.cur.ep.skipTimes : [];
+    const segment = skips.find((x) => ['ed', 'mixed-ed', 'mixed-ending'].includes(x.skipType) && this.cur.pos >= x.start && this.cur.pos < x.end);
+    if (segment) return this.skipSegment(segment.end);
+    if (!this.cur.series || !this.cur.series.outroDuration || !this.cur.dur) return false;
     this.cur.session.seekAbsolute(Math.max(0, this.cur.dur - this.cur.series.outroDuration));
     return true;
   }

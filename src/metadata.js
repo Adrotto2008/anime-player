@@ -36,7 +36,9 @@ async function translateDescriptionToItalian(description) {
 }
 
 const FIELDS = `id idMal title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false)
-  genres averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }`;
+  genres averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }
+  characters(sort: ROLE, perPage: 8) { edges { role node { name { full } image { medium } } } }
+  relations { edges { relationType node { id title { romaji english } type format coverImage { medium large } } } }`;
 
 function normalize(m) {
   return {
@@ -57,12 +59,31 @@ function normalize(m) {
     nextEpisode: m.nextAiringEpisode && m.nextAiringEpisode.episode ? m.nextAiringEpisode.episode : null,
     episodeCount: m.episodes || null,
     streamingEpisodes: m.streamingEpisodes || [],
+    cast: (m.characters?.edges || []).filter((x) => x.node?.name?.full).map((x) => ({
+      name: x.node.name.full,
+      role: x.role || null,
+      image: x.node.image?.medium || null,
+    })),
+    related: (m.relations?.edges || []).filter((x) => x.node?.id && x.node?.type === 'ANIME').map((x) => ({
+      id: x.node.id,
+      title: (x.node.title && (x.node.title.english || x.node.title.romaji)) || 'Senza titolo',
+      relation: x.relationType || null,
+      format: x.node.format || null,
+      cover: x.node.coverImage?.large || x.node.coverImage?.medium || null,
+    })),
   };
 }
 
-async function fetchAniSkipTimes(malId, episodeNumber) {
+function aniSkipUrl(malId, episodeNumber, episodeLength) {
+  const params = new URLSearchParams();
+  for (const type of ['op', 'ed', 'mixed-op', 'mixed-ed', 'recap']) params.append('types[]', type);
+  params.set('episodeLength', String(Number.isFinite(Number(episodeLength)) && Number(episodeLength) > 0 ? Number(episodeLength) : 1500));
+  return `${ANISKIP}/${encodeURIComponent(malId)}/${encodeURIComponent(episodeNumber)}?${params}`;
+}
+
+async function fetchAniSkipTimes(malId, episodeNumber, episodeLength) {
   if (!malId || !Number.isInteger(Number(episodeNumber))) return [];
-  const r = await fetch(`${ANISKIP}/${encodeURIComponent(malId)}/${encodeURIComponent(episodeNumber)}`, { headers: { Accept: 'application/json' } });
+  const r = await fetch(aniSkipUrl(malId, episodeNumber, episodeLength), { headers: { Accept: 'application/json' } });
   if (r.status === 404) return [];
   if (!r.ok) throw new Error(`AniSkip ha risposto ${r.status}`);
   const data = await r.json();
@@ -349,6 +370,7 @@ module.exports = {
   getAnime,
   fetchEpisodes,
   fetchAniSkipTimes,
+  aniSkipUrl,
   stripHtml,
   cleanTitleForImdb,
   detectSeasonFromTitle,
