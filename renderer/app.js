@@ -11,7 +11,7 @@ function h(tag, props, ...kids) {
     if (v == null || v === false || k === 'value') continue;
     if (k === 'class') el.className = v;
     else if (k.startsWith('on')) el.addEventListener(k.slice(2), v);
-    else if (k === 'style' && typeof v === 'object') Object.assign(el.style, v);
+    else if (k === 'style' && typeof v === 'object') { for (const [sk, sv] of Object.entries(v)) { if (sk.startsWith('--')) el.style.setProperty(sk, sv); else el.style[sk] = sv; } } // Object.assign non imposta le variabili CSS (--bg)
     else el.setAttribute(k, v === true ? '' : v);
   }
   for (const kid of kids.flat(Infinity)) { if (kid == null || kid === false) continue; el.append(kid.nodeType ? kid : document.createTextNode(String(kid))); }
@@ -21,6 +21,61 @@ function h(tag, props, ...kids) {
 const $ = (s) => document.querySelector(s);
 const cleanErr = (e) => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
 const bg = (url) => (url ? { backgroundImage: `url("${String(url).replace(/"/g, '%22')}")` } : {});
+
+/* ---------- icone, menu a comparsa, interruttori ---------- */
+const ICONS = {
+  library: '<rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/>',
+  stats: '<path d="M5 21V11M12 21V4M19 21v-7"/>',
+  link: '<path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.43"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.33-1.33"/>',
+  keyboard: '<rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+  settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
+  play: '<path d="M7.5 4.8v14.4a.8.8 0 0 0 1.2.7l11.6-7.2a.8.8 0 0 0 0-1.4L8.7 4.1a.8.8 0 0 0-1.2.7z" fill="currentColor"/>',
+  search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.9-3.9"/>',
+  plus: '<path d="M12 5v14M5 12h14"/>',
+  download: '<path d="M12 4v11M7 11l5 5 5-5M5 20h14"/>',
+  upload: '<path d="M12 16V5M7 9l5-5 5 5M5 20h14"/>',
+  more: '<circle cx="5" cy="12" r="1.7" fill="currentColor"/><circle cx="12" cy="12" r="1.7" fill="currentColor"/><circle cx="19" cy="12" r="1.7" fill="currentColor"/>',
+  close: '<path d="M6 6l12 12M18 6L6 18"/>',
+  check: '<path d="M5 12.5l4.5 4.5L19 7.5"/>',
+  star: '<path d="M12 3.4l2.6 5.5 6 .8-4.4 4.2 1.1 6-5.3-2.9-5.3 2.9 1.1-6L3.4 9.7l6-.8z" fill="currentColor" stroke="none"/>',
+  trash: '<path d="M4 7h16M10 11v6M14 11v6M6 7l1 13h10l1-13M9 7V4h6v3"/>',
+  refresh: '<path d="M20 11a8 8 0 0 0-14.5-4M4 5v4h4M4 13a8 8 0 0 0 14.5 4M20 19v-4h-4"/>',
+  back: '<path d="M15 5l-7 7 7 7"/>',
+  clock: '<circle cx="12" cy="12" r="8.5"/><path d="M12 7.5V12l3 2"/>',
+  list: '<path d="M8 6h13M8 12h13M8 18h13M3.5 6h.01M3.5 12h.01M3.5 18h.01"/>',
+  flag: '<path d="M5 21V4M5 4h11l-2 4 2 4H5"/>',
+  chart: '<path d="M4 20h16M7 16V9M12 16V5M17 16v-4"/>',
+  eye: '<path d="M2 12s3.6-6.5 10-6.5S22 12 22 12s-3.6 6.5-10 6.5S2 12 2 12z"/><circle cx="12" cy="12" r="2.6"/>',
+};
+function icon(name, size) {
+  const el = document.createElement('span');
+  el.className = 'ico'; el.setAttribute('aria-hidden', 'true');
+  el.innerHTML = `<svg viewBox="0 0 24 24" width="${size || 18}" height="${size || 18}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
+  return el;
+}
+let openMenu = null;
+function closeMenu() { if (openMenu) { openMenu.remove(); openMenu = null; } }
+document.addEventListener('mousedown', (e) => { if (openMenu && !openMenu.contains(e.target) && !e.target.closest('.menu-btn')) closeMenu(); });
+document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
+window.addEventListener('resize', closeMenu);
+document.addEventListener('scroll', closeMenu, true);
+function menuButton(label, items) {
+  const btn = h('button', { class: 'icon-btn menu-btn', 'aria-label': label, 'aria-haspopup': 'menu', title: label }, icon('more'));
+  btn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (openMenu && openMenu._owner === btn) { closeMenu(); return; }
+    closeMenu();
+    const menu = h('div', { class: 'menu', role: 'menu' }, items.map((it) => h('button', { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', onclick: () => { closeMenu(); it.action(); } }, icon(it.icon), h('span', null, it.label))));
+    menu._owner = btn; document.body.append(menu);
+    const r = btn.getBoundingClientRect();
+    menu.style.top = Math.max(8, Math.min(window.innerHeight - menu.offsetHeight - 8, r.bottom + 6)) + 'px';
+    menu.style.left = Math.max(8, r.right - menu.offsetWidth) + 'px';
+    openMenu = menu;
+  });
+  return btn;
+}
+const toggle = (input, label, hint) => h('label', { class: 'switch' }, input, h('span', { class: 'track', 'aria-hidden': 'true' }), h('span', { class: 'switch-copy' }, h('b', null, label), hint ? h('small', { class: 'muted' }, hint) : null));
+const scorePill = (score) => h('span', { class: 'score-pill' }, icon('star', 13), Number(score).toFixed(1));
 
 function toast(msg, kind) {
   const t = h('div', { class: 'toast ' + (kind || '') }, msg);
@@ -50,12 +105,17 @@ function openDialog(title, bodyBuilder, options = {}) {
   const root = $('#dialog-root');
   const close = () => { scrim.remove(); };
   const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (!options.locked && e.target === scrim) close(); } });
-  const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-label': title }, h('h2', null, title));
-  dlg.append(...[].concat(bodyBuilder(close)));
+  const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
+  const head = h('div', { class: 'dialog-head' }, h('h2', null, title),
+    options.locked ? null : h('button', { class: 'icon-btn', 'aria-label': t('close'), title: t('close'), onclick: close }, icon('close')));
+  const items = [].concat(bodyBuilder(close)).flat().filter(Boolean);
+  const foot = items.filter((i) => i.classList && i.classList.contains('foot'));
+  const body = h('div', { class: 'dialog-body' }); body.append(...items.filter((i) => !foot.includes(i)));
+  dlg.append(head, body, ...foot);
   scrim.append(dlg);
   scrim.addEventListener('keydown', (e) => { if (!options.locked && e.key === 'Escape') close(); });
   root.append(scrim);
-  const first = dlg.querySelector('input, textarea, select');
+  const first = body.querySelector('input:not([type=checkbox]), textarea, select');
   if (first) first.focus();
   return close;
 }
@@ -64,15 +124,20 @@ const field = (label, input) => h('label', { class: 'field' }, h('span', null, l
 /* ---------- rail + player bar ---------- */
 function renderRail() {
   const v = state.view.name; const hasMpv = !!state.lib.settings.mpvPath;
+  const navBtn = (label, ico, onclick, current) => h('button', { class: 'nav', 'aria-current': current ? 'page' : null, onclick }, icon(ico, 19), h('span', null, label));
   $('#rail').replaceChildren(
-    h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, 'A'), h('span', { class: 'brand-copy' }, 'Anime Player', h('small', null, 'mpv + Anime4K'))),
-    h('button', { class: 'nav', 'aria-current': v === 'home' || v === 'series' ? 'page' : null, onclick: () => go({ name: 'home' }) }, h('span', { class: 'nav-icon library-icon', 'aria-hidden': 'true' }), h('span', null, t('library'))),
-    h('button', { class: 'nav', 'aria-current': v === 'stats' ? 'page' : null, onclick: () => go({ name: 'stats' }) }, h('span', { class: 'nav-icon stats-icon', 'aria-hidden': 'true' }), h('span', null, t('stats'))),
-    h('button', { class: 'nav', 'aria-current': v === 'shortcuts' ? 'page' : null, onclick: () => go({ name: 'shortcuts' }) }, h('span', { class: 'nav-icon settings-icon', 'aria-hidden': 'true' }), h('span', null, t('shortcuts'))),
-    h('button', { class: 'nav', onclick: openLinkDialog }, h('span', { class: 'nav-icon link-icon', 'aria-hidden': 'true' }), h('span', null, t('openLink'))),
-    h('button', { class: 'nav', onclick: openSettings }, h('span', { class: 'nav-icon settings-icon', 'aria-hidden': 'true' }), h('span', null, t('settings'))),
+    h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, icon('play', 17)), h('span', { class: 'brand-copy' }, h('b', null, 'Anime Player'), h('small', null, 'mpv + Anime4K'))),
+    h('div', { class: 'nav-label' }, t('navBrowse')),
+    navBtn(t('library'), 'library', () => go({ name: 'home' }), v === 'home' || v === 'series' || v === 'ratings-chart'),
+    navBtn(t('stats'), 'stats', () => go({ name: 'stats' }), v === 'stats'),
+    h('div', { class: 'nav-label' }, t('navTools')),
+    navBtn(t('openLink'), 'link', openLinkDialog, false),
+    navBtn(t('shortcuts'), 'keyboard', () => go({ name: 'shortcuts' }), v === 'shortcuts'),
+    navBtn(t('settings'), 'settings', openSettings, false),
     h('div', { class: 'spacer' }),
-    h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings }, hasMpv ? t('mpvReady') : t('mpvMissing')),
+    h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings },
+      h('span', { class: 'status-dot', 'aria-hidden': 'true' }),
+      h('span', { class: 'status-copy' }, h('b', null, hasMpv ? t('mpvReady') : t('mpvMissing')), hasMpv ? h('small', null, `Anime4K · ${presetLabel(defaultPreset())}`) : null)),
   );
 }
 function renderPlayer() {
@@ -86,10 +151,12 @@ function renderPlayer() {
   const skipEnding = s && Number(s.outroDuration) > 0
     ? h('button', { class: 'btn sm', onclick: () => call('player:skipEnding') }, t('skipEnding'))
     : null;
-  el.replaceChildren(h('span', { class: 'dot' }), h('div', { class: 't' }, h('b', null, p.title), h('span', { class: 'muted' }, `  ·  Anime4K ${p.preset}`)),
-    h('span', { class: 'muted small' }, t('keyboardHint')),
+  el.replaceChildren(...[h('span', { class: 'live-dot', 'aria-hidden': 'true' }),
+    h('div', { class: 't' }, h('b', null, p.title), h('span', { class: 'chip live' }, `Anime4K ${p.preset}`)),
+    h('span', { class: 'muted small hint' }, t('keyboardHint')),
     skipIntro, skipEnding,
-    h('button', { class: 'btn sm', onclick: () => call('player:stop') }, t('stop')));
+    h('button', { class: 'btn sm danger', onclick: () => call('player:stop') }, t('stop'))].filter(Boolean)); // replaceChildren(null) scriverebbe "null"
+
 }
 
 /* ---------- navigazione ---------- */
@@ -104,6 +171,7 @@ async function loadSeriesRatings(id) {
   try { state.lib = await call('series:ratings', id); state.stats = null; render(); } catch { /* stored metadata remains visible */ }
 }
 function render() {
+  closeMenu();
   applyTheme();
   renderRail(); renderPlayer();
   const main = $('#main');
@@ -190,46 +258,52 @@ function homeView() {
   const cont = q || state.progressFilter !== 'all' ? [] : continueItems();
   const featured = !q && state.progressFilter === 'all' ? (cont[0] ? cont[0].s : list[0]) : null;
   const recent = [...list].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)).slice(0, 8);
+  const totalEps = state.lib.series.reduce((n, x) => n + episodeTotal(x), 0);
   const search = h('div', { class: 'search-shell' },
-    h('span', { class: 'search-icon', 'aria-hidden': 'true' }),
+    icon('search', 16),
     h('input', { class: 'search', type: 'search', placeholder: t('filterLibrary'), value: state.filter, 'aria-label': t('filterLibrary'), oninput: (e) => { state.filter = e.target.value; const pos = e.target.selectionStart; render(); const n = $('.search'); if (n) { n.focus(); n.setSelectionRange(pos, pos); } } }),
-    state.filter ? h('button', { class: 'search-clear', type: 'button', 'aria-label': t('clearSearch'), title: t('clearSearch'), onclick: () => { state.filter = ''; render(); } }, '×') : null);
-  const filter = h('select', { class: 'input library-filter', 'aria-label': t('filterProgress'), value: state.progressFilter, onchange: (e) => { state.progressFilter = e.target.value; render(); } },
+    state.filter ? h('button', { class: 'search-clear', type: 'button', 'aria-label': t('clearSearch'), title: t('clearSearch'), onclick: () => { state.filter = ''; render(); } }, icon('close', 14)) : null);
+  const filter = h('select', { class: 'input select library-filter', 'aria-label': t('filterProgress'), value: state.progressFilter, onchange: (e) => { state.progressFilter = e.target.value; render(); } },
     h('option', { value: 'all' }, t('all')),
     h('option', { value: 'progress' }, t('resume')),
     h('option', { value: 'started' }, t('started')),
     h('option', { value: 'unwatched' }, t('unwatched')),
     h('option', { value: 'watched' }, t('withWatched')));
-  const sort = h('select', { class: 'input library-sort', 'aria-label': t('sortBy'), value: state.sort, onchange: (e) => { state.sort = e.target.value; render(); } },
+  const sort = h('select', { class: 'input select library-sort', 'aria-label': t('sortBy'), value: state.sort, onchange: (e) => { state.sort = e.target.value; render(); } },
     h('option', { value: 'title' }, t('sortTitle')),
     h('option', { value: 'recent' }, t('sortRecent')),
     h('option', { value: 'rating' }, t('sortRating')));
   const posterCard = (s) => {
-    const seen = s.episodes.filter((e) => e.progress.watched).length;
-    const personal = effectivePersonalRating(s);
+    const total = episodeTotal(s); const seen = s.episodes.filter((e) => e.progress.watched).length;
+    const personal = effectivePersonalRating(s); const seenPct = total ? (seen / total) * 100 : 0;
     return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
       h('div', { class: 'cover', style: bg(s.cover) },
         s.cover ? null : s.title.slice(0, 1).toUpperCase(),
-        h('span', { class: 'poster-play', 'aria-hidden': 'true' }, '▶'),
-        episodeTotal(s) ? h('span', { class: 'poster-badge' }, `${episodeTotal(s)} EP`) : null),
+        h('span', { class: 'poster-play', 'aria-hidden': 'true' }, icon('play', 18)),
+        total ? h('span', { class: 'poster-badge' }, `${total} EP`) : null,
+        s.status === 'RELEASING' ? h('span', { class: 'poster-live' }, t('airing')) : null,
+        seenPct > 0 ? h('div', { class: 'bar' }, h('i', { style: { width: seenPct + '%' } })) : null),
       h('div', { class: 't' }, s.title),
-      h('div', { class: 'muted small' }, [episodeTotal(s) ? t('watchedOf', seen, episodeTotal(s)) : t('noEpisodes'), statusLabel(s), personal != null ? `★ ${personal.toFixed(1)}` : null].filter(Boolean).join(' · ')));
+      h('div', { class: 'poster-meta' }, [total ? t('watchedOf', seen, total) : t('noEpisodes'), personal != null ? `★ ${personal.toFixed(1)}` : null].filter(Boolean).join('  ·  ')));
   };
   const featuredTarget = featured && resumeTarget(featured);
+  const resuming = featuredTarget && featuredTarget.progress.pos > 0 && !featuredTarget.progress.watched;
   const featuredHero = featured ? h('section', { class: 'home-featured', style: { '--bg': featured.banner || featured.cover ? `url("${featured.banner || featured.cover}")` : 'none' } },
     h('div', { class: 'featured-copy' },
-      h('span', { class: 'eyebrow' }, t('library')),
+      h('span', { class: 'eyebrow' }, resuming ? t('continueWatching') : t('featured')),
       h('h2', null, featured.title),
-      h('div', { class: 'featured-meta' },
-        featured.score != null ? `★ ${Number(featured.score).toFixed(1)}` : '',
-        featured.year ? ` · ${featured.year}` : '',
-        featured.format ? ` · ${featured.format.replace('_', ' ')}` : '',
-        episodeTotal(featured) ? ` · ${episodeTotal(featured)} ${t('episodes').toLowerCase()}` : ''),
+      h('div', { class: 'meta-row' },
+        featured.score != null ? scorePill(featured.score) : null,
+        [featured.year, featured.format && featured.format.replace('_', ' '), episodeTotal(featured) ? `${episodeTotal(featured)} ${t('episodes').toLowerCase()}` : null, statusLabel(featured)].filter(Boolean).map((x) => h('span', { class: 'meta-item' }, x))),
       featured.description ? h('p', null, featured.description) : null,
-      h('button', { class: 'btn primary', onclick: () => featuredTarget ? play(featured.id, featuredTarget.id) : go({ name: 'series', id: featured.id }) }, featuredTarget && featuredTarget.progress.pos > 0 ? t('resume') : t('watch')))) : null;
+      h('div', { class: 'row wrap featured-actions' },
+        h('button', { class: 'btn primary lg', onclick: () => featuredTarget ? play(featured.id, featuredTarget.id) : go({ name: 'series', id: featured.id }) }, icon('play', 16), featuredTarget ? `${resuming ? t('resume') : t('watch')} · ${t('episode', featuredTarget.number)}` : t('details')),
+        h('button', { class: 'btn ghost lg', onclick: () => go({ name: 'series', id: featured.id }) }, t('details'))),
+      resuming && pct(featuredTarget) ? h('div', { class: 'featured-progress', 'aria-hidden': 'true' }, h('div', { class: 'bar' }, h('i', { style: { width: pct(featuredTarget) + '%' } }))) : null),
+    featured.cover ? h('div', { class: 'featured-poster', style: bg(featured.cover) }) : null) : null;
   const continueCards = cont.map(({ s, e }) => {
     const media = h('div', { class: 'pic', style: bg(e.thumb || s.banner || s.cover) },
-      h('span', { class: 'resume-play', 'aria-hidden': 'true' }, '▶'),
+      h('span', { class: 'resume-play', 'aria-hidden': 'true' }, icon('play', 20)),
       h('span', { class: 'resume-badge' }, `EP ${e.number}`),
       pct(e) ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
     const meta = h('div', { class: 'meta' },
@@ -238,20 +312,28 @@ function homeView() {
       pct(e) ? h('span', { class: 'progress-label' }, `${Math.round(pct(e))}%`) : null);
     return h('button', { class: 'resume', onclick: () => play(s.id, e.id) }, media, meta);
   });
+  const sectionHead = (title, count, action) => h('div', { class: 'section-head' }, h('h2', null, title, count != null ? h('span', { class: 'count' }, count) : null), action || null);
   const continueSection = cont.length ? h('section', { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', null, t('continueWatching')), h('span', { class: 'section-link' }, t('seeAll'))),
+    sectionHead(t('continueWatching'), cont.length, h('button', { class: 'section-link', onclick: () => { state.progressFilter = 'progress'; render(); } }, t('seeAll'))),
     h('div', { class: 'strip' }, continueCards)) : null;
   const librarySection = list.length ? h('section', { class: 'section' },
-    h('div', { class: 'section-head' }, h('h2', null, t('library')), h('span', { class: 'section-link' }, t('seeAll'))),
+    sectionHead(t('library'), list.length),
     h('div', { class: 'grid' }, list.map(posterCard))) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
       state.lib.series.length ? t('noFilterMatch') : t('emptyLibraryHint'),
-      state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, t('addFirstSeries'))));
+      state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, icon('plus', 16), t('addFirstSeries'))));
   const recentSection = !q && state.progressFilter === 'all' && recent.length > 0
-    ? h('section', { class: 'section recent-section' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity')), h('span', { class: 'section-link' }, t('seeAll'))), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
+    ? h('section', { class: 'section recent-section' }, sectionHead(t('recentActivity')), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
     : null;
   const schedule = !q && state.progressFilter === 'all' ? airingSections(list) : null;
-  return h('div', null,
-    h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library'))), h('div', { class: 'toolbar row wrap' }, search, filter, sort, h('button', { class: 'btn', onclick: importLibrary }, t('import')), h('button', { class: 'btn', onclick: exportLibrary }, t('export')), h('button', { class: 'btn primary', onclick: openAddSeries }, t('addSeries')))),
+  return h('div', { class: 'page' },
+    h('div', { class: 'head' },
+      h('div', { class: 'head-main' },
+        h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library')), h('p', { class: 'subtitle' }, t('librarySummary', state.lib.series.length, totalEps))),
+        h('div', { class: 'head-actions' },
+          h('button', { class: 'btn ghost', onclick: importLibrary }, icon('download', 16), h('span', { class: 'lbl' }, t('import'))),
+          h('button', { class: 'btn ghost', onclick: exportLibrary }, icon('upload', 16), h('span', { class: 'lbl' }, t('export'))),
+          h('button', { class: 'btn primary', onclick: openAddSeries }, icon('plus', 16), t('addSeries')))),
+      h('div', { class: 'toolbar' }, search, filter, sort)),
     featuredHero, continueSection, librarySection, schedule, recentSection);
 }
 
@@ -309,27 +391,25 @@ function statsView() {
     return h('article', { class: 'stats-series' },
       h('div', { class: 'stats-series-cover', style: bg(item.cover) }),
       h('div', null, h('h3', null, item.title),
-        h('div', { class: 'muted small' }, `${t('watchedOf', item.watchedEpisodes, item.totalEpisodes)} · ${t('completion')}: ${Math.round(item.completion)}% · ${formatDuration(item.watchTime)}`),
+        h('div', { class: 'completion' }, h('div', { class: 'bar' }, h('i', { style: { width: Math.min(100, Math.max(0, item.completion)) + '%' } })), h('span', null, `${Math.round(item.completion)}%`)),
+        h('div', { class: 'muted small' }, `${t('watchedOf', item.watchedEpisodes, item.totalEpisodes)} · ${formatDuration(item.watchTime)}`),
         h('div', { class: 'muted small' }, `${t('lastActivity')}: ${item.lastActivity ? new Date(item.lastActivity).toLocaleDateString() : t('unavailable')}`),
         h('div', { class: 'muted small' }, details)));
   };
   const perSeries = (st.perSeries || []).length ? h('div', { class: 'stats-series-list' }, st.perSeries.map(renderSeriesStat)) : h('div', { class: 'empty' }, t('noResults'));
-  return h('div', null,
-    h('div', { class: 'head' }, h('h1', null, t('stats')),
-      h('button', { class: 'btn', onclick: async () => { state.stats = await call('stats:get'); render(); } }, t('refresh'))),
+  return h('div', { class: 'page' },
+    h('div', { class: 'head' }, h('div', { class: 'head-main' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('stats'))),
+      h('div', { class: 'head-actions' }, h('button', { class: 'btn ghost', onclick: async () => { state.stats = await call('stats:get'); render(); } }, icon('refresh', 16), t('refresh'))))),
     h('div', { class: 'stats-grid' },
-      h('div', { class: 'stat-card' }, h('b', null, String(st.watchedEpisodes)), h('span', { class: 'muted' }, t('watchedEpisodes'))),
-      h('div', { class: 'stat-card' }, h('b', null, formatDuration(st.watchTime)), h('span', { class: 'muted' }, t('watchTime'))),
-      h('div', { class: 'stat-card' }, h('b', null, String(st.completedSeries)), h('span', { class: 'muted' }, t('completedSeries'))),
-      h('div', { class: 'stat-card' }, h('b', null, String(st.seriesCount || 0)), h('span', { class: 'muted' }, t('totalSeries'))),
-      h('div', { class: 'stat-card' }, h('b', null, String(st.episodesTotal || 0)), h('span', { class: 'muted' }, t('totalEpisodes'))),
-      h('div', { class: 'stat-card' }, h('b', null, String(st.inProgressSeries || 0)), h('span', { class: 'muted' }, t('inProgress')))),
-    h('section', { class: 'section stats-activity' }, h('h2', null, t('recentActivity')),
+      [['check', String(st.watchedEpisodes), t('watchedEpisodes'), 'accent'], ['clock', formatDuration(st.watchTime), t('watchTime'), 'accent'], ['flag', String(st.completedSeries), t('completedSeries'), 'accent'],
+        ['library', String(st.seriesCount || 0), t('totalSeries')], ['list', String(st.episodesTotal || 0), t('totalEpisodes')], ['play', String(st.inProgressSeries || 0), t('inProgress')]]
+        .map(([ico, value, label, kind]) => h('div', { class: 'stat-card' + (kind ? ' ' + kind : '') }, h('span', { class: 'stat-ico' }, icon(ico, 20)), h('div', null, h('b', null, value), h('span', { class: 'muted' }, label))))),
+    h('section', { class: 'section stats-activity' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity'))),
       activity.length ? h('div', { class: 'activity-list' }, activity.map((item) => h('button', { class: 'activity', onclick: () => go({ name: 'series', id: item.seriesId }) },
-        h('span', { class: 'activity-dot' }), h('span', null, h('b', null, item.seriesTitle), h('span', { class: 'muted small' }, `${t('episode', item.episodeNumber)} · ${item.title}`)),
+        h('span', { class: 'activity-thumb', style: bg((getSeries(item.seriesId) || {}).cover) }), h('span', null, h('b', null, item.seriesTitle), h('span', { class: 'muted small' }, `${t('episode', item.episodeNumber)} · ${item.title}`)),
         h('time', { class: 'muted small' }, new Date(item.updatedAt).toLocaleDateString())))) :
         h('div', { class: 'empty' }, t('noActivity'))),
-    h('section', { class: 'section stats-activity' }, h('h2', null, t('perAnime')), perSeries));
+    h('section', { class: 'section stats-activity' }, h('div', { class: 'section-head' }, h('h2', null, t('perAnime'))), perSeries));
 }
 
 /* ---------- serie ---------- */
@@ -350,59 +430,55 @@ function seriesView(s) {
   const desc = h('div', { class: 'desc' }, s.description || t('noDescription'));
   const more = s.description && s.description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? t('showLess') : t('readMore'); } }, t('readMore')) : null;
   const target = resumeTarget(s);
+  const resuming = target && target.progress.pos > 0 && !target.progress.watched;
+  const total = episodeTotal(s); const seen = s.episodes.filter((e) => e.progress.watched).length;
   const metaParts = [
     s.year,
     s.format && s.format.replace('_', ' '),
-    episodeTotal(s) ? `${episodeTotal(s)} ${t('episodes').toLowerCase()}` : null,
+    total ? `${total} ${t('episodes').toLowerCase()}` : null,
   ].filter(Boolean);
   const ratingBtn = h('button', {
     class: 'rating-badge-btn',
     title: t('viewRatingsChart'),
     onclick: () => go({ name: 'ratings-chart', id: s.id }),
-  }, s.score != null ? `★ ${Number(s.score).toFixed(1)}/10${s.scoreSource ? ` (${s.scoreSource})` : ''}` : `★ ${t('ratingUnavailable')}`);
-  const metaRow = h('div', { class: 'row wrap', style: { alignItems: 'center', gap: '8px', margin: '4px 0' } },
-    ratingBtn,
-    metaParts.length ? h('span', { class: 'muted' }, ' · ' + metaParts.join('  ·  ')) : null,
-  );
-  const actions = h('div', { class: 'row wrap', style: { marginTop: '14px' } },
-    h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, t('addLinks')),
-    h('button', { class: 'btn', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, '★ ' + t('ratingsChart')),
-    s.anilistId ? h('button', { class: 'btn', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, t('updateInfo')) : null,
-    h('button', { class: 'btn danger', onclick: () => { if (confirm(t('confirmDelete', s.title))) mutate('series:delete', s.id).then(() => go({ name: 'home' })); } }, t('deleteSeries')));
+  }, icon('star', 14), s.score != null ? `${Number(s.score).toFixed(1)}/10${s.scoreSource ? ` · ${s.scoreSource}` : ''}` : t('ratingUnavailable'));
+  const metaRow = h('div', { class: 'meta-row' }, ratingBtn, metaParts.map((x) => h('span', { class: 'meta-item' }, x)));
+  const personal = effectivePersonalRating(s);
+  const rate = h('label', { class: 'rate-inline' }, icon('star', 14), h('span', null, t('personalRating')),
+    h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', value: personal == null ? '' : personal, placeholder: s.personalRating == null && s.episodes.some((e) => e.personalRating != null) ? t('episodeAverage') : '—', onchange: (e) => mutate('series:update', s.id, { personalRating: e.target.value === '' ? null : Number(e.target.value) }) }));
+  const actions = h('div', { class: 'row wrap actions' },
+    target ? h('button', { class: 'btn primary lg', onclick: () => play(s.id, target.id) }, icon('play', 16), `${resuming ? t('resume') : t('watch')} · ${t('episode', target.number)}`) : null,
+    h('button', { class: target ? 'btn' : 'btn primary', onclick: () => openAddLinks(s) }, icon('plus', 16), t('addLinks')),
+    h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, icon('chart', 16), t('ratingsChart')),
+    s.anilistId ? h('button', { class: 'btn ghost', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, icon('refresh', 16), t('updateInfo')) : null,
+    h('span', { class: 'spacer' }),
+    h('button', { class: 'btn ghost danger', onclick: () => { if (confirm(t('confirmDelete', s.title))) mutate('series:delete', s.id).then(() => go({ name: 'home' })); } }, icon('trash', 16), t('deleteSeries')));
   const heroBody = h('div', { class: 'body' },
     h('div', { class: 'cover', style: bg(s.cover) }),
-    h('div', null, h('h1', null, s.title), metaRow,
+    h('div', { class: 'info' }, h('h1', null, s.title), metaRow,
       h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g)), statusLabel(s) ? h('span', { class: 'chip active' }, statusLabel(s)) : null),
-      s.status === 'RELEASING' && s.nextAiringAt ? h('div', { class: 'muted small airing-next' }, `${t('nextEpisode')}: ${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleString()}`) : null,
-      field(t('personalRating'), h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', value: effectivePersonalRating(s) == null ? '' : effectivePersonalRating(s), placeholder: s.personalRating == null && s.episodes.some((e) => e.personalRating != null) ? t('episodeAverage') : '', onchange: (e) => mutate('series:update', s.id, { personalRating: e.target.value === '' ? null : Number(e.target.value) }) })),
-      desc, more, actions));
-  const resumeAction = target
-    ? h('aside', { class: 'hero-resume' },
-      h('div', { class: 'muted small' }, target.progress.pos > 0 && !target.progress.watched ? t('resumeStatus') : t('nextEpisode')),
-      h('strong', null, t('episode', target.number)),
-      target.title ? h('div', { class: 'muted small' }, target.title) : null,
-      h('button', { class: 'btn primary', onclick: () => play(s.id, target.id) }, target.progress.pos > 0 && !target.progress.watched ? t('resume') : t('watch')))
-    : null;
-  heroBody.append(resumeAction);
+      s.status === 'RELEASING' && s.nextAiringAt ? h('div', { class: 'muted small airing-next' }, icon('clock', 14), `${t('nextEpisode')}: ${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleString()}`) : null,
+      total ? h('div', { class: 'series-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: (seen / total) * 100 + '%' } })), h('span', { class: 'muted small' }, t('watchedOf', seen, total))) : null,
+      desc, more, rate, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
-    h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, t('backLibrary')), heroBody);
+    h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, icon('back', 16), t('backLibrary').replace(/^←\s*/, '')), heroBody);
   const advanced = h('details', { class: 'adv' }, h('summary', null, t('advanced')),
     field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })),
     h('div', { class: 'two' },
       field(t('introDuration'), h('input', { class: 'input', type: 'number', min: '0', step: '1', value: Number(s.introDuration) || 0, onchange: (e) => mutate('series:update', s.id, { introDuration: Math.max(0, Number(e.target.value) || 0) }) })),
       field(t('outroDuration'), h('input', { class: 'input', type: 'number', min: '0', step: '1', value: Number(s.outroDuration) || 0, onchange: (e) => mutate('series:update', s.id, { outroDuration: Math.max(0, Number(e.target.value) || 0) }) }))));
   const a4k = h('section', { class: 'a4k' },
-    h('h3', null, t('anime4kSeries')),
-    h('div', { class: 'muted small', style: { marginBottom: '10px' } }, t('activePreset', presetLabel(eff))),
-    h('div', { class: 'row wrap' },
-      h('div', { class: 'seg', role: 'group', 'aria-label': t('mode') }, modeBtns),
-      h('div', { class: 'seg', role: 'group', 'aria-label': t('quality') }, tierBtns)),
+    h('div', { class: 'a4k-head' }, h('h3', null, t('anime4kSeries')), h('span', { class: 'chip live' }, presetLabel(eff))),
+    h('div', { class: 'muted small a4k-hint' }, t('activePreset', presetLabel(eff))),
+    h('div', { class: 'a4k-controls' },
+      h('div', { class: 'ctl' }, h('span', { class: 'ctl-label' }, t('mode')), h('div', { class: 'seg', role: 'group', 'aria-label': t('mode') }, modeBtns)),
+      h('div', { class: 'ctl' }, h('span', { class: 'ctl-label' }, t('quality')), h('div', { class: 'seg', role: 'group', 'aria-label': t('quality') }, tierBtns))),
     advanced);
   const episodeContent = s.episodes.length
     ? h('div', { class: 'eps' }, s.episodes.map((e) => episodeRow(s, e)))
     : h('div', { class: 'empty' }, h('h2', null, t('noEpisodeYet')), t('addLinksHint'),
-      h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, t('addLinks'))));
-  return h('div', null, hero, a4k, h('section', null, h('h2', { style: { marginBottom: '12px' } }, t('episodes')), episodeContent));
+      h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, icon('plus', 16), t('addLinks'))));
+  return h('div', { class: 'page' }, hero, a4k, h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('episodes'), h('span', { class: 'count' }, s.episodes.length))), episodeContent));
 }
 
 function getRatingTier(score) {
@@ -418,7 +494,7 @@ function getRatingTier(score) {
 
 function ratingsChartView(s) {
   const chart = s.imdbChart;
-  const back = h('button', { class: 'ratings-chart-back', onclick: () => go({ name: 'series', id: s.id }) }, t('backToAnime'));
+  const back = h('button', { class: 'ratings-chart-back link', onclick: () => go({ name: 'series', id: s.id }) }, icon('back', 16), t('backToAnime').replace(/^←\s*/, ''));
 
   const totalScoreVal = s.score != null
     ? Number(s.score).toFixed(1)
@@ -512,19 +588,28 @@ function ratingsChartView(s) {
 function episodeRow(s, e) {
   const has = e.sources.length > 0; const p = e.progress; const resume = !p.watched && p.pos > 10;
   const image = e.thumb || s.banner || s.cover;
-  const thumb = h('div', { class: 'th' + (image ? '' : ' fallback'), style: bg(image), title: e.thumb ? '' : t('noThumbnail') },
-    e.thumb ? null : h('span', { class: 'num' }, image ? String(e.number) : t('noThumbnail')),
+  const label = p.watched ? t('rewatch') : resume ? t('resume') : t('watch');
+  const thumb = h('div', { class: 'th' + (image ? '' : ' fallback') + (e.thumb ? '' : ' no-own'), style: bg(image), title: e.thumb ? '' : t('noThumbnail'), onclick: () => { if (has) play(s.id, e.id); } },
+    h('span', { class: 'ep-badge' }, String(e.number)),
+    has ? h('span', { class: 'th-play', 'aria-hidden': 'true' }, icon('play', 18)) : null,
     pct(e) && !p.watched ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
-  const info = h('div', null,
-    h('div', { class: 'name' }, `${e.number}. ${e.title || t('episode', e.number)}`),
-    h('div', { class: 'muted small' }, `${has ? t('sources', e.sources.length) : t('noLink')}${p.watched ? ' · ' + t('watched') : resume ? ' · ' + t('resumeStatus') : ''}${e.duration ? ' · ' + formatDuration(e.duration) : ''}`),
-    h('div', { class: 'muted small rating-line' }, e.rating == null ? t('ratingUnavailable') : `${t('rating')}: ${Number(e.rating).toFixed(1)}/10${e.ratingSource ? ` (${e.ratingSource})` : ''}`),
-    field(t('personalRating'), h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', value: e.personalRating == null ? '' : e.personalRating, onchange: (ev) => mutate('episodes:rate', s.id, e.id, ev.target.value === '' ? null : Number(ev.target.value)) })));
+  const status = p.watched ? h('span', { class: 'chip ok' }, icon('check', 12), t('watched'))
+    : resume ? h('span', { class: 'chip live' }, `${t('resumeStatus')}${pct(e) ? ' · ' + Math.round(pct(e)) + '%' : ''}`)
+    : !has ? h('span', { class: 'chip warn' }, t('noLink')) : null;
+  const meta = [e.duration ? formatDuration(e.duration) : null, has ? t('sources', e.sources.length) : null].filter(Boolean).join('  ·  ');
+  const info = h('div', { class: 'ep-info' },
+    h('div', { class: 'name' }, e.title || t('episode', e.number)),
+    h('div', { class: 'ep-meta' }, status, meta ? h('span', { class: 'muted small' }, meta) : null,
+      e.rating != null ? h('span', { class: 'ep-rating', title: e.ratingSource || '' }, icon('star', 12), Number(e.rating).toFixed(1)) : null,
+      h('label', { class: 'rate-inline mini', title: t('personalRating') }, h('span', null, t('yourRating')),
+        h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', placeholder: '—', value: e.personalRating == null ? '' : e.personalRating, onchange: (ev) => mutate('episodes:rate', s.id, e.id, ev.target.value === '' ? null : Number(ev.target.value)) }))));
   const acts = h('div', { class: 'acts' },
-    h('button', { class: 'btn sm' + (has ? ' primary' : ''), disabled: !has, onclick: () => play(s.id, e.id) }, p.watched ? t('rewatch') : resume ? t('resume') : t('watch')),
-    h('button', { class: 'btn sm', onclick: () => openEditLinks(s, e) }, t('link')),
-    h('button', { class: 'btn sm', onclick: () => mutate('episodes:mark', s.id, e.id, !p.watched) }, p.watched ? t('markUnwatched') : t('markWatched')),
-    h('button', { class: 'btn sm danger', onclick: () => mutate('episodes:delete', s.id, e.id) }, t('delete')));
+    h('button', { class: 'btn sm' + (has ? ' primary' : ''), disabled: !has, onclick: () => play(s.id, e.id) }, icon('play', 13), label),
+    menuButton(t('moreActions'), [
+      { icon: 'link', label: t('link'), action: () => openEditLinks(s, e) },
+      { icon: p.watched ? 'eye' : 'check', label: p.watched ? t('markUnwatched') : t('markWatched'), action: () => mutate('episodes:mark', s.id, e.id, !p.watched) },
+      { icon: 'trash', label: t('delete'), danger: true, action: () => mutate('episodes:delete', s.id, e.id) },
+    ]));
   return h('div', { class: 'ep' + (p.watched ? ' done' : '') }, thumb, info, acts);
 }
 
@@ -644,12 +729,12 @@ function openSettings() {
   const st = state.lib.settings;
   openDialog(t('settingsTitle'), (close) => {
     const mpv = h('input', { class: 'input', value: st.mpvPath || '', placeholder: t('mpvPlaceholder') });
-    const preset = h('select', { class: 'input', value: st.defaultPreset }, state.presets.map((p) => h('option', { value: p.id }, p.label)));
+    const preset = h('select', { class: 'input select', value: st.defaultPreset }, state.presets.map((p) => h('option', { value: p.id }, p.label)));
     preset.value = st.defaultPreset || 'aa-hq';
-    const theme = h('select', { class: 'input', value: st.theme || 'default' },
+    const theme = h('select', { class: 'input select', value: st.theme || 'default' },
       h('option', { value: 'default' }, t('default')),
       h('option', { value: 'compact' }, t('compact')));
-    const language = h('select', { class: 'input', value: st.language || 'en' },
+    const language = h('select', { class: 'input select', value: st.language || 'en' },
       h('option', { value: 'en' }, 'English'),
       h('option', { value: 'it' }, 'Italiano'));
     const auto = h('input', { type: 'checkbox' }); auto.checked = !!st.autoplayNext;
@@ -659,21 +744,20 @@ function openSettings() {
     const extra = h('input', { class: 'input', value: st.extraArgs || '', placeholder: 'es. --fullscreen --volume=70' });
     const skipOpening = h('input', { type: 'checkbox' }); skipOpening.checked = !!st.skipOpening;
     const skipEnding = h('input', { type: 'checkbox' }); skipEnding.checked = !!st.skipEnding;
+    const sec = (title, ...kids) => h('section', { class: 'form-section' }, h('h3', null, title), kids);
     return [
-      field(t('mpvPath'), h('div', { class: 'row' }, mpv,
-        h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
-        h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, t('browse')))),
-      h('div', { class: 'muted small setup-note' }, t('mpvExternalNote')),
-      field(t('defaultAnime4K'), preset),
-      field(t('interfaceTheme'), theme),
-      field(t('primaryLanguage'), language),
-      h('div', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`),
-      h('label', { class: 'row', style: { marginBottom: '14px' } }, auto, t('autoplay')),
-      h('label', { class: 'row', style: { marginBottom: '8px' } }, skipOpening, t('autoSkipOpening')),
-      h('label', { class: 'row', style: { marginBottom: '14px' } }, skipEnding, t('autoSkipEnding')),
-      h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang)),
-      field(t('userAgent'), ua), field(t('extraArgs'), extra),
-      h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')),
+      sec(t('secPlayer'),
+        field(t('mpvPath'), h('div', { class: 'row' }, mpv,
+          h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
+          h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, t('browse')))),
+        h('div', { class: 'muted small setup-note' }, t('mpvExternalNote')),
+        field(t('defaultAnime4K'), preset)),
+      sec(t('secPlayback'),
+        toggle(auto, t('autoplay')), toggle(skipOpening, t('autoSkipOpening')), toggle(skipEnding, t('autoSkipEnding')),
+        h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang))),
+      sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language))),
+      sec(t('secAdvanced'), field(t('userAgent'), ua), field(t('extraArgs'), extra)),
+      h('div', { class: 'foot' }, h('span', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`), h('button', { class: 'btn', onclick: close }, t('cancel')),
         h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
   });
 }
@@ -681,7 +765,7 @@ function openSettings() {
 function shortcutsView() {
   const shortcuts = { next: 'PGDWN', previous: 'PGUP', skipIntro: '', skipEnding: '', ...(state.lib.settings.shortcuts || {}) };
   const inputs = Object.fromEntries(Object.entries(shortcuts).map(([key, value]) => [key, h('input', { class: 'input', value: value || '', placeholder: t('shortcutUnset') })]));
-  return h('div', null,
+  return h('div', { class: 'page' },
     h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('shortcuts')))),
     h('section', { class: 'panel shortcuts-page' },
       h('p', { class: 'muted' }, t('shortcutsHint')),

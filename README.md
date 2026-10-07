@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.4.3** is a Windows Electron library for anime links. It stores the
+Anime Player **v0.5.0** is a Windows Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -34,6 +34,8 @@ episodes and it does not scrape streaming sites.
   surfaces.
 - Wide desktop composition with a visible cinematic backdrop, denser poster grid,
   stronger section headers, and a compact streaming toolbar.
+- Refined navigation, dialogs, settings, statistics, episode actions, and compact
+  responsive layouts across the app.
 - Live library search with preserved focus/cursor position, progress filters, and a clear-search control.
 - English and Italian UI translations, selectable at runtime and persisted in
   the library. New installations default to English. Existing libraries
@@ -73,7 +75,7 @@ npm run dist
 This keeps both Windows targets:
 
 - `dist\AnimePlayer-portable.exe`: one executable, no installation required.
-- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.4.3.exe`): NSIS installer with Desktop and
+- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.0.exe`): NSIS installer with Desktop and
   Start Menu shortcuts, selectable installation directory, and per-user
   installation by default.
 

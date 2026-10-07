@@ -2,6 +2,9 @@
 
 const DICT = {
   en: {
+    featured: 'Featured', details: 'Details', navBrowse: 'Browse', navTools: 'Tools', close: 'Close', moreActions: 'More actions', yourRating: 'Your rating',
+    librarySummary: (n, e) => `${n} series · ${e} episodes`,
+    secPlayer: 'Player', secPlayback: 'Playback', secAppearance: 'Appearance', secAdvanced: 'Advanced',
     library: 'Library', stats: 'Statistics', openLink: 'Open a link', settings: 'Settings',
     mpvReady: 'mpv ready', mpvMissing: 'mpv not found: configure it',
     stop: 'Stop', refresh: 'Refresh', continueWatching: 'Continue watching', seeAll: 'See all →',
@@ -71,6 +74,9 @@ const DICT = {
     shortcuts: 'Shortcuts', shortcutsHint: 'Customize the keys used by mpv. Leave a skip key empty to disable it.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
+    featured: 'In evidenza', details: 'Dettagli', navBrowse: 'Esplora', navTools: 'Strumenti', close: 'Chiudi', moreActions: 'Altre azioni', yourRating: 'Il tuo voto',
+    librarySummary: (n, e) => `${n} serie · ${e} episodi`,
+    secPlayer: 'Player', secPlayback: 'Riproduzione', secAppearance: 'Aspetto', secAdvanced: 'Avanzate',
     library: 'Libreria', stats: 'Statistiche', openLink: 'Apri un link', settings: 'Impostazioni',
     mpvReady: 'mpv pronto', mpvMissing: 'mpv non trovato: configuralo',
     stop: 'Ferma', refresh: 'Aggiorna', continueWatching: 'Continua a guardare', seeAll: 'Vedi tutto →',
