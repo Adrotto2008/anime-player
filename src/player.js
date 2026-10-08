@@ -50,7 +50,7 @@ class PlayerManager {
     const pipe = pipePath();
     const args = A4K.buildArgs({ settings, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, inputConf: this.inputConf, pipe, shaderDir: this.paths.shaderDir });
     const session = new MpvSession({ mpvPath: settings.mpvPath, args, pipe });
-    this.cur = { ...c, session, pos: c.start || 0, dur: 0, lastSave: 0, saveTimer: null, nav: null, stopping: false };
+    this.cur = { ...c, session, pos: c.start || 0, dur: 0, playedSeconds: 0, lastReportedPos: c.start || 0, lastSave: 0, saveTimer: null, nav: null, stopping: false, startedAt: Date.now() };
     const cur = this.cur;
 
     const flushProgress = () => {
@@ -61,6 +61,9 @@ class PlayerManager {
       cur.lastSave = Date.now();
     };
     session.on('time', (t) => {
+      const delta = t - cur.lastReportedPos;
+      if (delta > 0 && delta <= 5) cur.playedSeconds += delta;
+      cur.lastReportedPos = t;
       cur.pos = t;
       if (cur.ep && !cur.ep.progress.watched) {
         clearTimeout(cur.saveTimer);
@@ -101,8 +104,19 @@ class PlayerManager {
       clearTimeout(cur.saveTimer);
       const { pos, dur } = cur;
       const watched = eof || (dur > 0 && pos / dur >= 0.92);
-      if (cur.ep.progress.watched) this.store.setProgress(cur.series.id, cur.ep.id, { watched: true, pos: 0, duration: dur });
-      else this.store.setProgress(cur.series.id, cur.ep.id, watched ? { watched: true, pos: 0, duration: dur } : { watched: false, pos: Math.max(0, pos), duration: Math.max(0, dur) });
+      if (cur.ep.progress.watched) this.store.setProgress(cur.series.id, cur.ep.id, { watched: true, pos: 0, duration: dur }, { forceSync: true });
+      else this.store.setProgress(cur.series.id, cur.ep.id, watched ? { watched: true, pos: 0, duration: dur } : { watched: false, pos: Math.max(0, pos), duration: Math.max(0, dur) }, { forceSync: true });
+      if (typeof this.onWatchSession === 'function') {
+        try {
+          this.onWatchSession({
+            seriesId: cur.series.id,
+            episodeId: cur.ep.id,
+            startedAt: cur.startedAt,
+            finishedAt: Date.now(),
+            watchedSeconds: Math.max(0, cur.playedSeconds),
+          });
+        } catch (err) { console.warn('Salvataggio cronologia locale fallito:', err.message); }
+      }
       this.store.save(true);
     }
     this._emitState();

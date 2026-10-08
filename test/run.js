@@ -9,6 +9,7 @@ const { Store, DEFAULT_SETTINGS } = require('../src/store');
 const { PlayerManager } = require('../src/player');
 const { MpvSession, pipePath } = require('../src/mpv');
 const { aniSkipUrl } = require('../src/metadata');
+const { CloudService, readConfig, PROJECT_REF } = require('../src/cloud');
 
 const shaderDir = path.join(__dirname, '..', 'shaders');
 let n = 0; const ok = (name) => console.log('  ok', ++n, name);
@@ -59,6 +60,19 @@ assert.deepStrictEqual(skipUrl.searchParams.getAll('types[]'), ['op', 'ed', 'mix
 assert.strictEqual(skipUrl.searchParams.get('episodeLength'), '1515');
 ok('AniSkip: URL con tipi e durata episodio');
 
+assert.strictEqual(readConfig({ SUPABASE_URL: `https://${PROJECT_REF}.supabase.co`, SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test' }).configured, true);
+assert.strictEqual(readConfig({ SUPABASE_URL: 'https://sjodxonntzqiserdpdfv.supabase.co', SUPABASE_PUBLISHABLE_KEY: 'sb_publishable_test' }).configured, false, 'il progetto haxball2 deve essere rifiutato');
+assert.strictEqual(readConfig({ SUPABASE_URL: `https://${PROJECT_REF}.supabase.co`, SUPABASE_PUBLISHABLE_KEY: 'sb_secret_test' }).configured, false, 'le secret key non devono essere accettate nel client');
+const fakeAnonKey = `header.${Buffer.from(JSON.stringify({ role: 'anon' })).toString('base64url')}.signature`;
+const fakeServiceRoleKey = `header.${Buffer.from(JSON.stringify({ role: 'service_role' })).toString('base64url')}.signature`;
+assert.strictEqual(readConfig({ SUPABASE_URL: `https://${PROJECT_REF}.supabase.co`, SUPABASE_ANON_KEY: fakeAnonKey }).configured, true);
+assert.strictEqual(readConfig({ SUPABASE_URL: `https://${PROJECT_REF}.supabase.co`, SUPABASE_ANON_KEY: fakeServiceRoleKey }).configured, false, 'anche i JWT service_role devono essere rifiutati');
+const localConfigFile = path.join(__dirname, '.supabase-config-test.json');
+fs.writeFileSync(localConfigFile, JSON.stringify({ url: `https://${PROJECT_REF}.supabase.co`, publishableKey: 'sb_publishable_local_test' }));
+assert.strictEqual(readConfig({}, localConfigFile).configured, true, 'la configurazione locale per-dispositivo deve essere letta');
+fs.unlinkSync(localConfigFile);
+ok('configurazione Supabase vincolata al progetto anime-player e alle chiavi client');
+
 // --- libreria
 const tmp = path.join(__dirname, '.test-data');
 fs.rmSync(tmp, { recursive: true, force: true });
@@ -66,6 +80,20 @@ fs.mkdirSync(tmp, { recursive: true });
 const cleanup = () => fs.rmSync(tmp, { recursive: true, force: true });
 process.on('exit', cleanup);
 const store = new Store(path.join(tmp, 'library.json'));
+const resourcesPath = path.join(tmp, 'resources');
+fs.mkdirSync(resourcesPath, { recursive: true });
+fs.writeFileSync(path.join(resourcesPath, 'supabase-config.json'), JSON.stringify({ url: `https://${PROJECT_REF}.supabase.co`, publishableKey: 'sb_publishable_local_test' }));
+const configuredCloud = new CloudService({ store, userDataPath: path.join(tmp, 'fresh-user'), resourcesPath, isPackaged: true, safeStorage: { isEncryptionAvailable: () => false }, env: {} });
+assert.strictEqual(configuredCloud.status().configured, true, 'il client deve caricare la configurazione inclusa nel pacchetto');
+assert.ok(configuredCloud.client, 'il client Supabase deve inizializzarsi nel runtime Node 20 di Electron');
+configuredCloud.stop();
+ok('client Supabase inizializzato da configurazione locale con trasporto WebSocket compatibile');
+const cloudEvents = [];
+const offlineCloud = new CloudService({ store, userDataPath: tmp, env: {}, notify: (channel, payload) => cloudEvents.push({ channel, payload }) });
+offlineCloud.recordWatchSession({ seriesId: 'local-series', episodeId: 'local-episode', startedAt: 1000, finishedAt: 2000, watchedSeconds: 1 });
+assert.strictEqual(JSON.parse(fs.readFileSync(path.join(tmp, 'supabase-sync.json'), 'utf8')).history.length, 1, 'la cronologia in coda resta locale offline');
+offlineCloud.start().then(() => offlineCloud.stop());
+ok('cronologia Supabase accodata localmente senza configurazione/rete');
 assert.strictEqual(store.needsOnboarding(), true);
 assert.strictEqual(store.data.settings.language, 'en', 'new libraries default to English');
 const s = store.addSeries({ title: 'Prova' });

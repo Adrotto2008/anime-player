@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const crypto = require('crypto');
+const { EventEmitter } = require('events');
 const { hostLabel, isValidSource } = require('./patterns');
 
 const DEFAULT_SETTINGS = {
@@ -106,8 +107,9 @@ function validateLibraryData(input) {
   return { settings, series };
 }
 
-class Store {
+class Store extends EventEmitter {
   constructor(file) {
+    super();
     this.file = file;
     this.data = { settings: { ...DEFAULT_SETTINGS }, series: [] };
     this._timer = null;
@@ -169,7 +171,11 @@ class Store {
   getSeries(id) { return this.data.series.find((s) => s.id === id); }
   getEpisode(sid, eid) { const s = this.getSeries(sid); return s && s.episodes.find((e) => e.id === eid); }
 
-  setSettings(patch) { Object.assign(this.data.settings, patch); this.save(); }
+  setSettings(patch) {
+    Object.assign(this.data.settings, patch);
+    this.save();
+    this.emit('settings', { settings: { ...this.data.settings }, updatedAt: Date.now() });
+  }
 
   needsOnboarding() {
     return !this.data.settings.onboardingComplete;
@@ -243,6 +249,7 @@ class Store {
     if (!ep) return;
     ep.progress = { ...ep.progress, watched, pos: 0, updatedAt: Date.now() };
     this.save();
+    this.emit('progress', { seriesId: sid, episodeId: eid, progress: { ...ep.progress }, force: true });
   }
 
   rateEpisode(sid, eid, rating) {
@@ -253,12 +260,30 @@ class Store {
     return ep;
   }
 
-  setProgress(sid, eid, p) {
+  setProgress(sid, eid, p, { forceSync = false } = {}) {
     const s = this.getSeries(sid); const ep = this.getEpisode(sid, eid);
     if (!ep) return;
+    const previous = ep.progress;
     ep.progress = { ...ep.progress, ...p, updatedAt: Date.now() };
     s.lastWatchedAt = Date.now();
     this.save();
+    if (forceSync || previous.pos !== ep.progress.pos || previous.duration !== ep.progress.duration || previous.watched !== ep.progress.watched) {
+      this.emit('progress', { seriesId: sid, episodeId: eid, progress: { ...ep.progress }, force: forceSync });
+    }
+  }
+
+  applySyncedProgress(sid, eid, progress) {
+    const series = this.getSeries(sid); const episode = this.getEpisode(sid, eid);
+    if (!series || !episode) return false;
+    episode.progress = {
+      pos: Math.max(0, Number(progress.position_seconds) || 0),
+      duration: Math.max(0, Number(progress.duration_seconds) || episode.progress.duration || 0),
+      watched: Boolean(progress.completed),
+      updatedAt: Date.parse(progress.updated_at) || 0,
+    };
+    series.lastWatchedAt = Math.max(series.lastWatchedAt || 0, episode.progress.updatedAt);
+    this.save();
+    return true;
   }
 
   // Unisce titoli/miniature trovati online senza toccare link e progresso

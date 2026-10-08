@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], version: '', view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
 const detectSeasonFromTitle = (title) => {
   const text = String(title || '');
   const match = text.match(/season\s*(\d+)/i) || text.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || text.match(/\bS(\d+)\b/i) || text.match(/\bPart\s*(\d+)\b/i);
@@ -161,12 +161,73 @@ function renderRail() {
     h('div', { class: 'nav-label' }, t('navTools')),
     navBtn(t('openLink'), 'link', openLinkDialog, false),
     navBtn(t('shortcuts'), 'keyboard', () => go({ name: 'shortcuts' }), v === 'shortcuts'),
+    navBtn(state.sync.connected ? (state.sync.user && state.sync.user.email || t('account')) : t('account'), 'account', openAccountDialog, false),
     navBtn(t('settings'), 'settings', openSettings, false),
     h('div', { class: 'spacer' }),
     h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings },
       h('span', { class: 'status-dot', 'aria-hidden': 'true' }),
       h('span', { class: 'status-copy' }, h('b', null, hasMpv ? t('mpvReady') : t('mpvMissing')), hasMpv ? h('small', null, `Anime4K · ${presetLabel(defaultPreset())}`) : null)),
   );
+}
+function openAccountDialog() {
+  let mode = 'signIn';
+  openAccountDialogForMode(mode);
+}
+function openAccountDialogForMode(mode) {
+  const status = state.sync;
+  openDialog(t('account'), (close) => {
+    const info = h('div', { class: 'muted small setup-note' }, status.connected
+      ? `${t('accountSignedIn')} ${status.user && status.user.email || ''}.`
+      : t('accountIntro'));
+    const email = h('input', { class: 'input', type: 'email', autocomplete: 'email', required: true, maxlength: '254' });
+    const password = h('input', { class: 'input', type: 'password', autocomplete: mode === 'signIn' ? 'current-password' : 'new-password', required: true, minlength: '6' });
+    const message = h('div', { class: 'muted small setup-note', role: 'status', 'aria-live': 'polite' });
+    const doAuth = async () => {
+      if (!status.configured) return;
+      const button = submit;
+      button.disabled = true;
+      message.textContent = '';
+      try {
+        if (mode === 'signIn') {
+          await api.invoke('auth:signIn', email.value.trim(), password.value);
+          state.sync = await api.invoke('auth:state');
+          message.textContent = t('authReady');
+          password.value = '';
+          renderRail();
+          setTimeout(close, 500);
+        } else {
+          const result = await api.invoke('auth:signUp', email.value.trim(), password.value);
+          if (result.needsEmailConfirmation) message.textContent = t('accountCreated');
+          else {
+            state.sync = await api.invoke('auth:state');
+            message.textContent = t('authReady');
+            password.value = '';
+            renderRail();
+            setTimeout(close, 500);
+          }
+        }
+      } catch (error) { message.textContent = cleanErr(error); }
+      finally { button.disabled = false; }
+    };
+    const submit = h('button', { class: 'btn primary', onclick: doAuth }, t(mode));
+    const switchMode = () => { close(); openAccountDialogForMode(mode === 'signIn' ? 'signUp' : 'signIn'); };
+    if (status.connected) {
+      const signOut = h('button', { class: 'btn danger', onclick: async () => {
+        try { await api.invoke('auth:signOut'); state.sync = await api.invoke('auth:state'); renderRail(); close(); toast(t('accountOffline')); }
+        catch (error) { message.textContent = cleanErr(error); }
+      } }, t('signOut'));
+      return [info, message, h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')), signOut)];
+    }
+    const items = [info];
+    if (!status.configured) {
+      items.push(h('p', { class: 'muted small' }, t('accountConfigMissing')), h('p', { class: 'muted small' }, t('accountConfigHelp')));
+    } else {
+      items.push(field(t('email'), email), field(t('password'), password), message,
+        h('button', { class: 'btn', onclick: switchMode }, t(mode === 'signIn' ? 'switchToSignUp' : 'switchToSignIn')));
+    }
+    items.push(h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('continueOffline')), status.configured ? submit : null));
+    return items;
+  });
 }
 function renderPlayer() {
   const p = state.player; const el = $('#nowplaying');
@@ -861,13 +922,16 @@ function openSetup() {
   api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null; render(); });
   api.on('player:state', (p) => { state.player = p; renderPlayer(); });
   api.on('player:error', (m) => toast(m, 'error'));
+  api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call('player:skipSegment', offer.end)));
   state.lib = await api.invoke('lib:get');
   state.presets = await api.invoke('presets:list');
   state.version = await api.invoke('app:version');
   state.player = await api.invoke('player:state');
+  state.sync = await api.invoke('auth:state').catch(() => ({ configured: false, connected: false }));
   render();
   if (!state.lib.settings.onboardingComplete) openSetup();
+  else if (!state.sync.connected) openAccountDialog();
   else if (!state.lib.settings.mpvPath) toast(t('configureMpv'), 'error');
 })();
 })();

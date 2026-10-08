@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.4** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.6** is a cross-platform Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -80,7 +80,7 @@ npm run dist
 This keeps both Windows targets:
 
 - `dist\AnimePlayer-portable.exe`: one executable, no installation required.
-- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.3.exe`): NSIS installer with Desktop and
+- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.6.exe`): NSIS installer with Desktop and
   Start Menu shortcuts, selectable installation directory, and per-user
   installation by default.
 
@@ -120,9 +120,39 @@ A+A HQ, but it can be changed globally, per series, or while mpv is playing.
 
 ## Data and privacy
 
-The app stores library data locally as JSON. It contacts AniList, Kitsu, and
-IMDb only for the metadata and ratings described above. Video links are entered
-by the user; the app does not include a downloader or scraper.
+The app keeps its library in a local JSON file. It contacts AniList, Kitsu, and
+IMDb for metadata and ratings. Video links are entered by the user; the app does
+not include a downloader or scraper.
+
+### Supabase account and sync
+
+The Supabase client runs in Electron's main process, using the `ws` transport
+because the app's Electron/Node 20 runtime does not provide a native WebSocket.
+Release builds include the project's public client configuration automatically,
+so users do not need to create configuration files. The build reads it from the
+developer's local app-data config or `SUPABASE_URL` and
+`SUPABASE_PUBLISHABLE_KEY` environment variables. The app rejects any URL other
+than the `anime-player` project. Never use a secret or `service_role` key. Do
+not commit local config or `.env` files.
+
+The app asks whether to sign in or create an account at startup, and the Account
+item remains available in the navigation. Auth sessions are encrypted with
+Electron `safeStorage` when the operating system provides secure storage.
+Progress is synced after meaningful position changes and when playback ends;
+settings, favorites, and watch history are queued locally and retried when
+Supabase is reachable. The local library remains intact if the user signs out
+or has no network.
+
+Anime and episodes are shared catalog rows, not per-user copies. The app only
+reads these rows and matches them by AniList external ID, season, and episode
+number before syncing user data. The current Supabase catalog has no rows, and
+its catalog policies permit reads only, so local progress cannot sync until
+matching catalog entries are populated through the approved catalog workflow.
+No schema or RLS policy is changed by the app.
+
+Supabase social and watch-room services are prepared for later UI work. Playback
+events use Realtime Broadcast and Presence; video files are never sent to
+Supabase and playback events are not written to PostgreSQL.
 
 ## Tests and validation
 

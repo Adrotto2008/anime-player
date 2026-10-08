@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.4",
+  "version": "0.5.6",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -18,11 +18,40 @@
   "build": {
     "appId": "com.adriano.animeplayer",
     "productName": "Anime Player",
-    "files": ["main.js", "preload.js", "src/**/*", "renderer/**/*", "package.json"],
-    "extraResources": [{ "from": "shaders", "to": "shaders" }],
-    "win": { "target": ["portable", "nsis"] },
-    "linux": { "target": ["AppImage", "deb"], "category": "AudioVideo" },
-    "portable": { "artifactName": "AnimePlayer-portable.exe" },
+    "files": [
+      "main.js",
+      "preload.js",
+      "src/**/*",
+      "renderer/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+    {
+      "from": "shaders",
+      "to": "shaders"
+    },
+    {
+      "from": ".build-resources/supabase-config.json",
+      "to": "supabase-config.json"
+    }
+    ],
+    "win": {
+      "target": [
+        "portable",
+        "nsis"
+      ]
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb"
+      ],
+      "category": "AudioVideo",
+      "maintainer": "Arklight <adrianopalmeri02@gmail.com>"
+    },
+    "portable": {
+      "artifactName": "AnimePlayer-portable.exe"
+    },
     "nsis": {
       "artifactName": "AnimePlayer-Setup-${version}.exe",
       "oneClick": false,
@@ -33,5 +62,9 @@
       "shortcutName": "Anime Player",
       "deleteAppDataOnUninstall": false
     }
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "2.109.0",
+    "ws": "8.22.0"
   }
 }

@@ -4,13 +4,14 @@ const fs = require('fs');
 const { execFile } = require('child_process');
 const { Store, validateLibraryData } = require('./src/store');
 const { PlayerManager } = require('./src/player');
+const { CloudService } = require('./src/cloud');
 const A4K = require('./src/anime4k');
 const meta = require('./src/metadata');
 const { expandPattern, expandList, parseM3U, isValidSource, detectEpisodeNumber } = require('./src/patterns');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win; let store; let player;
+let win; let store; let player; let cloud; let roomSubscription;
 
 const shaderDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'shaders') : path.join(__dirname, 'shaders'));
 const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.send(ch, payload); };
@@ -57,6 +58,40 @@ function register() {
 
   h('lib:get', () => lib());
   h('app:version', () => app.getVersion());
+  h('auth:state', () => cloud.getSession());
+  h('auth:signUp', (email, password) => cloud.signUp(email, password));
+  h('auth:signIn', (email, password) => cloud.signIn(email, password));
+  h('auth:signOut', () => cloud.signOut());
+  h('profile:get', (userId) => cloud.getProfile(userId));
+  h('profile:update', (patch) => cloud.updateProfile(patch));
+  h('favorites:list', () => cloud.listFavorites());
+  h('favorites:set', (seriesId, favorite) => cloud.setFavorite(seriesId, favorite));
+  h('friends:search', (query) => cloud.searchUsers(query));
+  h('friends:requests', () => cloud.listFriendRequests());
+  h('friends:request', (receiverId) => cloud.sendFriendRequest(receiverId));
+  h('friends:respond', (requestId, status) => cloud.respondFriendRequest(requestId, status));
+  h('friends:list', () => cloud.listFriends());
+  h('friends:remove', (friendId) => cloud.removeFriend(friendId));
+  h('watchRooms:create', (params) => cloud.createWatchRoom(params));
+  h('watchRooms:join', (roomId) => cloud.joinWatchRoom(roomId));
+  h('watchRooms:subscribe', (roomId) => {
+    if (roomSubscription) roomSubscription.unsubscribe();
+    roomSubscription = cloud.subscribeWatchRoom(roomId, {
+      onPlayback: (payload) => send('watchRoom:playback', payload),
+      onPresence: (payload) => send('watchRoom:presence', payload),
+    });
+    return true;
+  });
+  h('watchRooms:broadcast', (type, details) => {
+    if (!roomSubscription) throw new Error('Non sei collegato a una watch room.');
+    return roomSubscription.sendPlayback(type, details);
+  });
+  h('watchRooms:unsubscribe', async () => {
+    if (roomSubscription) await roomSubscription.unsubscribe();
+    roomSubscription = null;
+    return true;
+  });
+  h('sync:run', () => cloud.sync());
   h('library:export', async () => {
     const r = await dialog.showSaveDialog(win, {
       title: 'Esporta libreria',
@@ -271,15 +306,18 @@ async function refreshAiringStatuses() {
 app.whenReady().then(async () => {
   store = new Store(path.join(app.getPath('userData'), 'library.json'));
   player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: app.getPath('userData') }, notify: send });
+  cloud = new CloudService({ store, userDataPath: app.getPath('userData'), safeStorage: require('electron').safeStorage, notify: send, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  player.onWatchSession = (session) => cloud.recordWatchSession(session);
   register();
   if (!store.data.settings.mpvPath || !fs.existsSync(store.data.settings.mpvPath)) {
     const p = await detectMpv();
     if (p) store.setSettings({ mpvPath: p });
   }
   createWindow();
+  cloud.start().catch((err) => console.warn('Avvio Supabase fallito:', err.message));
   setTimeout(() => refreshAiringStatuses().catch((err) => console.warn('Aggiornamento programmazione fallito:', err.message)), 1200);
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('before-quit', () => { store && store.save(true); if (player) player.stop(); });
+app.on('before-quit', () => { if (cloud) cloud.stop(); store && store.save(true); if (player) player.stop(); });
 app.on('window-all-closed', () => app.quit());
