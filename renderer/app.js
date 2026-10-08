@@ -548,7 +548,15 @@ function seriesView(s) {
     h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, icon('chart', 16), t('ratingsChart')),
     s.anilistId ? h('button', { class: 'btn ghost', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, icon('refresh', 16), t('updateInfo')) : null,
     h('span', { class: 'spacer' }),
-    h('button', { class: 'btn ghost danger', onclick: () => { if (confirm(t('confirmDelete', s.title))) mutate('series:delete', s.id).then(() => go({ name: 'home' })); } }, icon('trash', 16), t('deleteSeries')));
+    h('button', { class: 'btn ghost danger', onclick: async () => {
+      if (!confirm(t('confirmDelete', s.title))) return;
+      try {
+        await mutate('series:delete', s.id);
+        state.filter = '';
+        state.progressFilter = 'all';
+        go({ name: 'home' });
+      } catch { /* call() displays the error; keep the series view available */ }
+    } }, icon('trash', 16), t('deleteSeries')));
   const heroBody = h('div', { class: 'body' },
     h('div', { class: 'cover', style: bg(s.cover) }),
     h('div', { class: 'info' }, h('h1', null, s.title), metaRow,
