@@ -391,7 +391,7 @@ details.adv .two { max-width: 480px; }
 }
 
 /* ---------- grafico dei voti (fasce colore invariate) ---------- */
-/* Ratings Chart View (stile esempio_rating.png) */
+/* Ratings chart tier legend and episode grid */
 .ratings-chart-container { display: flex; flex-direction: column; gap: 16px; max-width: 1240px; margin: 0 auto; }
 .ratings-chart-back { align-self: flex-start; font-weight: 600; display: inline-flex; align-items: center; gap: 6px; color: var(--lantern); background: none; border: 0; padding: 4px 0; font-size: 14px; cursor: pointer; }
 .ratings-chart-back:hover { filter: brightness(1.2); }

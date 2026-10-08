@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.15** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.16** is a cross-platform Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -52,10 +52,12 @@ episodes and it does not scrape streaming sites.
   the library. New installations default to English. Existing libraries
   created before language support are migrated to Italian rather than having
   their current experience silently changed.
+- Social profiles with nickname/avatar, profile search by email or nickname,
+  friend requests, and a friends list.
 
 ## Requirements
 
-- Windows 10/11 or Debian 13.
+- Windows 10/11, macOS 12+, or Linux (AppImage and Debian packages).
 - mpv installed separately and available as `mpv.exe` on Windows or `mpv` on Linux (for example:
   `winget install mpv` or `scoop install mpv`). The app does not download or
   bundle an mpv binary: mpv is an external executable with platform-specific
@@ -66,9 +68,15 @@ episodes and it does not scrape streaming sites.
 ## Development install
 
 ```bash
-npm install
+npm ci
 npm start
 ```
+
+Install dependencies on each computer/operating system; do not copy
+`node_modules` between Windows, macOS, and Linux. `npm start` and `npm run dist`
+check and repair the platform-specific Electron binary before running, which
+also handles incomplete downloads. If installation still fails, run `npm ci`
+again with a working network connection. Node.js 22 LTS is recommended.
 
 The first-run setup explains that Anime4K shaders are included in the app, while
 mpv must be installed separately. It asks for the mpv executable and the
@@ -83,17 +91,18 @@ Run:
 npm run dist
 ```
 
-This keeps both Windows targets:
+The build targets the operating system where the command runs:
 
-- `dist\AnimePlayer-portable.exe`: one executable, no installation required.
-- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.15.exe`): NSIS installer with Desktop and
-  Start Menu shortcuts, selectable installation directory, and per-user
-  installation by default.
+- Windows: portable executable and NSIS installer.
+- macOS: DMG and ZIP application packages.
+- Linux: AppImage and DEB packages.
 
 Each build removes older `AnimePlayer-Setup-*.exe` installers first, so `dist`
 contains only the installer for the current version. Run `npm run check` for
 tests, syntax checks, and whitespace validation without building. Run
-`npm run dist` to perform those checks and build the Windows artifacts.
+`npm run dist` to perform those checks and build packages for the current OS.
+Build each platform on that platform; macOS signing/notarization needs an Apple
+developer identity, and Windows/Linux cross-builds may need additional tools.
 
 The installed/portable application does not need Node.js, `npm install`, or
 `npm start`. The library is stored separately in

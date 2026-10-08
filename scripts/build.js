@@ -19,7 +19,9 @@ fs.mkdirSync(resourceDir, { recursive: true, mode: 0o700 });
 fs.writeFileSync(path.join(resourceDir, 'supabase-config.json'), JSON.stringify({ url: config.url, publishableKey: config.key }), { mode: 0o600 });
 
 execFileSync(process.execPath, [path.join(__dirname, 'check.js')], { cwd: root, stdio: 'inherit' });
-const target = process.platform === 'win32' ? '--win' : '--linux';
+const targets = { win32: '--win', darwin: '--mac', linux: '--linux' };
+const target = targets[process.platform];
+if (!target) throw new Error(`Build non configurata per la piattaforma ${process.platform}.`);
 const npmArgs = ['exec', '--', 'electron-builder', target];
 if (process.platform === 'win32') {
   execFileSync(process.env.ComSpec || 'cmd.exe', ['/d', '/s', '/c', `npm.cmd ${npmArgs.join(' ')}`], {

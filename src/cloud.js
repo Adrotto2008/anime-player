@@ -687,12 +687,14 @@ class CloudService {
     const value = String(query || '').trim();
     if (value.length < 2) return [];
     let result;
-    if (value.includes('@')) {
+    if (value.includes('@') && !value.startsWith('@')) {
       const email = value.toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return [];
       result = await this.client.rpc('search_profiles_by_email', { search_email: email });
     } else {
-      const escaped = value.replace(/[\\%_]/g, (character) => `\\${character}`);
+      const nickname = value.replace(/^@+/, '').trim();
+      if (nickname.length < 2) return [];
+      const escaped = nickname.replace(/[\\%_]/g, (character) => `\\${character}`);
       result = await this.client.from('profiles').select('id,username,display_name,avatar_url,bio').ilike('username', `%${escaped}%`).limit(20);
     }
     const { data, error } = result;

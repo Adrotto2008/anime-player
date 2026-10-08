@@ -1,14 +1,16 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.15",
+  "version": "0.5.16",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
   "scripts": {
     "start": "electron .",
+    "prestart": "node scripts/ensure-electron.js",
     "test": "node test/run.js",
     "dist": "node scripts/build.js",
+    "predist": "node scripts/ensure-electron.js",
     "check": "node scripts/check.js"
   },
   "devDependencies": {
@@ -48,6 +50,13 @@
       ],
       "category": "AudioVideo",
       "maintainer": "Arklight <adrianopalmeri02@gmail.com>"
+    },
+    "mac": {
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "category": "public.app-category.entertainment"
     },
     "portable": {
       "artifactName": "AnimePlayer-portable.exe"

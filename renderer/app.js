@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], results: [], query: '', loading: false, loaded: false }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
 const detectSeasonFromTitle = (title) => {
   const text = String(title || '');
   const match = text.match(/season\s*(\d+)/i) || text.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || text.match(/\bS(\d+)\b/i) || text.match(/\bPart\s*(\d+)\b/i);
@@ -57,6 +57,7 @@ const ICONS = {
   stats: '<path d="M5 21V11M12 21V4M19 21v-7"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.43"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.33-1.33"/>',
   keyboard: '<rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
+  account: '<circle cx="12" cy="8" r="3.5"/><path d="M4.5 20a7.5 7.5 0 0 1 15 0"/>',
   settings: '<path d="M4 7h9M17 7h3M4 17h3M11 17h9"/><circle cx="15" cy="7" r="2"/><circle cx="9" cy="17" r="2"/>',
   play: '<path d="M7.5 4.8v14.4a.8.8 0 0 0 1.2.7l11.6-7.2a.8.8 0 0 0 0-1.4L8.7 4.1a.8.8 0 0 0-1.2.7z" fill="currentColor"/>',
   search: '<circle cx="11" cy="11" r="6.5"/><path d="M20 20l-3.9-3.9"/>',
@@ -153,7 +154,7 @@ const field = (label, input) => h('label', { class: 'field' }, h('span', null, l
 /* ---------- rail + player bar ---------- */
 function renderRail() {
   const v = state.view.name; const hasMpv = !!state.lib.settings.mpvPath;
-  const navBtn = (label, ico, onclick, current) => h('button', { class: 'nav', 'aria-current': current ? 'page' : null, onclick }, icon(ico, 19), h('span', null, label));
+  const navBtn = (label, ico, onclick, current) => h('button', { class: 'nav', 'aria-current': current ? 'page' : null, onclick }, ico ? icon(ico, 19) : null, h('span', null, label));
   $('#rail').replaceChildren(
     h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, icon('play', 17)), h('span', { class: 'brand-copy' }, h('b', null, 'Anime Player'), h('small', null, 'mpv + Anime4K'))),
     h('div', { class: 'nav-label' }, t('navBrowse')),
@@ -163,7 +164,9 @@ function renderRail() {
     h('div', { class: 'nav-label' }, t('navTools')),
     navBtn(t('openLink'), 'link', openLinkDialog, false),
     navBtn(t('shortcuts'), 'keyboard', () => go({ name: 'shortcuts' }), v === 'shortcuts'),
-    navBtn(state.sync.connected ? h('span', { class: 'account-nav-label' }, state.profile && state.profile.avatar_url ? h('img', { class: 'account-avatar', src: state.profile.avatar_url, alt: '' }) : null, state.sync.user && state.sync.user.email || t('account')) : t('account'), 'account', openAccountDialog, false),
+    state.sync.connected
+      ? navBtn(h('span', { class: 'account-nav-label' }, state.profile && state.profile.avatar_url ? h('img', { class: 'account-avatar', src: state.profile.avatar_url, alt: '' }) : null, state.sync.user && state.sync.user.email || t('account')), null, openAccountDialog, false)
+      : navBtn(t('account'), 'account', openAccountDialog, false),
     navBtn(t('settings'), 'settings', openSettings, false),
     h('div', { class: 'spacer' }),
     h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings },
@@ -274,9 +277,11 @@ function render() {
   applyTheme();
   renderRail(); renderPlayer();
   const main = $('#main');
-  const isSearchFocused = document.activeElement && document.activeElement.classList.contains('search');
-  const searchSelStart = isSearchFocused ? document.activeElement.selectionStart : 0;
-  const searchSelEnd = isSearchFocused ? document.activeElement.selectionEnd : 0;
+  const focusedSearch = document.activeElement?.matches('.search, .social-search') ? document.activeElement : null;
+  const focusedSearchClass = focusedSearch?.classList.contains('social-search') ? '.social-search' : '.search';
+  const searchSelStart = focusedSearch ? focusedSearch.selectionStart : 0;
+  const searchSelEnd = focusedSearch ? focusedSearch.selectionEnd : 0;
+  const searchSelDirection = focusedSearch ? focusedSearch.selectionDirection : 'none';
 
   main.replaceChildren(
     state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
@@ -284,11 +289,11 @@ function render() {
     state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
   );
 
-  if (isSearchFocused) {
-    const n = $('.search');
+  if (focusedSearch) {
+    const n = $(focusedSearchClass);
     if (n) {
-      n.focus();
-      n.setSelectionRange(searchSelStart, searchSelEnd);
+      n.focus({ preventScroll: true });
+      n.setSelectionRange(searchSelStart, searchSelEnd, searchSelDirection);
     }
   }
 }
@@ -327,13 +332,18 @@ function socialView() {
       renderRail(); render(); toast(t('saved'));
     } catch (error) { toast(cleanErr(error), 'error'); }
   };
-  const query = h('input', { class: 'input', type: 'search', maxlength: '254', value: state.social.query, placeholder: t('socialSearchPlaceholder') });
-  let searchTimer;
+  const query = h('input', { class: 'input social-search', type: 'search', maxlength: '254', autocomplete: 'off', value: state.social.query, placeholder: t('socialSearchPlaceholder') });
   const search = async () => {
     state.social.query = query.value.trim();
-    clearTimeout(searchTimer);
-    searchTimer = setTimeout(async () => {
-      try { state.social.results = await api.invoke('friends:search', state.social.query); render(); }
+    clearTimeout(state.social.searchTimer);
+    const requestId = ++state.social.searchRequestId;
+    state.social.searchTimer = setTimeout(async () => {
+      try {
+        const results = await api.invoke('friends:search', state.social.query);
+        if (requestId !== state.social.searchRequestId || state.view.name !== 'social') return;
+        state.social.results = results;
+        render();
+      }
       catch (error) { toast(cleanErr(error), 'error'); }
     }, 250);
   };
@@ -702,7 +712,7 @@ function ratingsChartView(s) {
       }, t('refresh')),
     );
   } else {
-    // Legenda corrispondente a esempio_rating.png
+    // Legend styled after Series Graph tier charts.
     const TIERS = [
       { id: 'awesome', label: 'Awesome' },
       { id: 'great', label: 'Great' },
