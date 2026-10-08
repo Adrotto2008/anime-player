@@ -63,6 +63,7 @@ function register() {
   h('auth:signIn', (email, password) => cloud.signIn(email, password));
   h('auth:signOut', () => cloud.signOut());
   h('profile:get', (userId) => cloud.getProfile(userId));
+  h('profile:mine', () => cloud.getMyProfile());
   h('profile:update', (patch) => cloud.updateProfile(patch));
   h('favorites:list', () => cloud.listFavorites());
   h('favorites:set', (seriesId, favorite) => cloud.setFavorite(seriesId, favorite));
@@ -180,7 +181,6 @@ function register() {
         store.refreshSeriesMetadata(s.id, patch);
       }
     } catch { /* ignora errori imdb */ }
-    try { await cloud.importSharedSources(s.id); } catch (err) { console.warn('Recupero link condivisi fallito:', err.message); }
     return { id: s.id, lib: lib() };
   });
 
@@ -309,7 +309,6 @@ app.whenReady().then(async () => {
   player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: app.getPath('userData') }, notify: send });
   cloud = new CloudService({ store, userDataPath: app.getPath('userData'), safeStorage: require('electron').safeStorage, notify: send, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
-  player.onSourcePlayable = (source) => cloud.recordPlayableSource(source).catch((err) => console.warn('Salvataggio sorgente condivisa fallito:', err.message));
   register();
   if (!store.data.settings.mpvPath || !fs.existsSync(store.data.settings.mpvPath)) {
     const p = await detectMpv();

@@ -6,11 +6,71 @@ const WebSocket = require('ws');
 const { createClient } = require('@supabase/supabase-js');
 const { PRESETS } = require('./anime4k');
 const { detectSeasonFromTitle } = require('./metadata');
+const { detectEpisodeNumber, expandPattern } = require('./patterns');
 
 const PROJECT_REF = 'gbdcdserzrujiuacefca'; // anime-player; deliberately excludes the old haxball2 project.
 const CLOUD_SETTINGS = ['theme', 'language', 'defaultPreset', 'autoplayNext', 'skipOpening', 'skipEnding', 'alang', 'slang'];
+const DEVICE_SETTINGS = ['mpvPath', 'onboardingComplete'];
 const uuid = () => crypto.randomUUID();
 const nowIso = (value = Date.now()) => new Date(value).toISOString();
+const EMPTY_LIBRARY = () => ({ settings: {}, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false });
+
+function mergeLibrarySnapshots(localInput, remoteInput) {
+  const local = localInput || EMPTY_LIBRARY();
+  const remote = remoteInput || EMPTY_LIBRARY();
+  const deletedSeries = new Map();
+  const deletedEpisodes = new Map();
+  for (const item of [...(remote.deletedSeries || []), ...(local.deletedSeries || [])]) {
+    deletedSeries.set(item.id, Math.max(deletedSeries.get(item.id) || 0, Number(item.deletedAt) || 0));
+  }
+  for (const item of [...(remote.deletedEpisodes || []), ...(local.deletedEpisodes || [])]) {
+    const key = `${item.seriesId}:${item.id}`;
+    deletedEpisodes.set(key, Math.max(deletedEpisodes.get(key) || 0, Number(item.deletedAt) || 0));
+  }
+  const series = new Map();
+  for (const item of [...(remote.series || []), ...(local.series || [])]) {
+    const current = series.get(item.id);
+    if (!current) { series.set(item.id, { ...item, episodes: [...(item.episodes || [])] }); continue; }
+    const winner = (Number(item.updatedAt || item.addedAt) || 0) > (Number(current.updatedAt || current.addedAt) || 0) ? item : current;
+    const episodes = new Map((current.episodes || []).map((episode) => [episode.number, episode]));
+    for (const episode of item.episodes || []) {
+      const old = episodes.get(episode.number);
+      if (!old) { episodes.set(episode.number, episode); continue; }
+      const oldProgressAt = Number(old.progress?.updatedAt) || 0;
+      const newProgressAt = Number(episode.progress?.updatedAt) || 0;
+      const winner = (Number(episode.updatedAt || newProgressAt) || 0) > (Number(old.updatedAt || oldProgressAt) || 0) ? episode : old;
+      const sources = new Map([...(old.sources || []), ...(episode.sources || [])].map((source) => [source.url, source]));
+      episodes.set(episode.number, {
+        ...winner,
+        id: old.id || episode.id,
+        sources: [...sources.values()],
+        progress: newProgressAt > oldProgressAt ? episode.progress : old.progress,
+        updatedAt: Math.max(Number(old.updatedAt) || 0, Number(episode.updatedAt) || 0, oldProgressAt, newProgressAt),
+      });
+    }
+    const sourcePattern = item.sourcePattern || current.sourcePattern;
+    series.set(item.id, { ...winner, ...(sourcePattern ? { sourcePattern: { ...sourcePattern } } : {}), episodes: [...episodes.values()] });
+  }
+  const resultSeries = [];
+  for (const item of series.values()) {
+    if ((deletedSeries.get(item.id) || 0) >= (Number(item.updatedAt || item.addedAt) || 0)) continue;
+    item.episodes = (item.episodes || []).filter((episode) => {
+      const deletedAt = deletedEpisodes.get(`${item.id}:${episode.id}`) || 0;
+      if (deletedAt && deletedAt >= (Number(episode.updatedAt || episode.progress?.updatedAt) || 0)) return false;
+      return true;
+    });
+    resultSeries.push(item);
+  }
+  const localSettingsAt = Number(local.settingsUpdatedAt) || 0;
+  const remoteSettingsAt = Number(remote.settingsUpdatedAt) || 0;
+  const settings = { ...(remote.settings || {}), ...(localSettingsAt > remoteSettingsAt ? local.settings || {} : {}) };
+  return {
+    settings, series: resultSeries,
+    deletedSeries: [...deletedSeries].map(([id, deletedAt]) => ({ id, deletedAt })),
+    deletedEpisodes: [...deletedEpisodes].map(([key, deletedAt]) => { const [seriesId, id] = key.split(':'); return { seriesId, id, deletedAt }; }),
+    updatedAt: Math.max(Number(local.updatedAt) || 0, Number(remote.updatedAt) || 0), cloudDirty: true,
+  };
+}
 function validCloudSetting(key, value) {
   if (key === 'theme') return ['default', 'compact'].includes(value);
   if (key === 'language') return ['en', 'it'].includes(value);
@@ -18,6 +78,57 @@ function validCloudSetting(key, value) {
   if (['autoplayNext', 'skipOpening', 'skipEnding'].includes(key)) return typeof value === 'boolean';
   if (['alang', 'slang'].includes(key)) return typeof value === 'string' && value.length <= 256;
   return false;
+}
+
+function compressLibraryForCloud(input) {
+  const library = JSON.parse(JSON.stringify(input || EMPTY_LIBRARY()));
+  library.series = (library.series || []).map((series) => {
+    const episodes = series.episodes || [];
+    const candidates = new Map();
+    for (const episode of episodes) for (const source of episode.sources || []) {
+      const detected = detectEpisodeNumber(source.url, episode.number);
+      const candidate = detected && detected.candidates.find((item) => item.number === episode.number);
+      if (!candidate) continue;
+      const urls = candidates.get(candidate.pattern) || new Map();
+      urls.set(episode.number, source.url);
+      candidates.set(candidate.pattern, urls);
+    }
+    const ranked = [...candidates.entries()].map(([pattern, urls]) => ({ pattern, urls }))
+      .sort((a, b) => b.urls.size - a.urls.size);
+    const best = ranked[0];
+    let sourcePattern = null;
+    if (best && best.urls.size) {
+      const range = episodes.map((episode) => episode.number).filter(Number.isInteger).sort((a, b) => a - b);
+      if (range.length) sourcePattern = { pattern: best.pattern, from: range[0], to: range[range.length - 1] };
+    }
+    const cleanSeries = { ...series };
+    delete cleanSeries.sourcePattern;
+    if (sourcePattern) cleanSeries.sourcePattern = sourcePattern;
+    cleanSeries.episodes = episodes.map(({ sources, ...episode }) => ({ ...episode }));
+    return cleanSeries;
+  });
+  return library;
+}
+
+function expandLibraryFromCloud(input) {
+  const library = JSON.parse(JSON.stringify(input || EMPTY_LIBRARY()));
+  library.series = (library.series || []).map((series) => {
+    const sourcePattern = series.sourcePattern || (series.episodes || []).find((episode) => episode.sourcePattern)?.sourcePattern;
+    const next = { ...series };
+    delete next.sourcePattern;
+    next.episodes = (series.episodes || []).map((episode) => {
+      let sources = Array.isArray(episode.sources) ? episode.sources : [];
+      if (sourcePattern && Number.isInteger(episode.number) && episode.number >= sourcePattern.from && episode.number <= sourcePattern.to) {
+        try {
+          const link = expandPattern(sourcePattern.pattern, episode.number, episode.number)[0]?.url;
+          if (link) sources = [{ url: link }];
+        } catch { /* pattern cloud non valido: conserva eventuali sorgenti locali */ }
+      }
+      return { ...episode, sources };
+    });
+    return next;
+  });
+  return library;
 }
 
 function readConfig(env = process.env, configFile = null, bundledConfigFile = null) {
@@ -69,13 +180,21 @@ function createSessionStorage({ safeStorage, file }) {
 class CloudService {
   constructor({ store, userDataPath, safeStorage, notify = () => {}, env = process.env, client = null, isPackaged = false, resourcesPath = null }) {
     this.store = store;
+    this.libraryFile = store.file;
+    this.legacyLibrarySnapshot = store.snapshot();
+    this.legacySyncSnapshot = null;
+    this.legacyOwnerOverrideId = String(env.ANIME_PLAYER_LEGACY_OWNER_ID || '').trim() || null;
+    this.libraryClaimFile = path.join(userDataPath, 'library-owner.json');
+    this.activeLibraryUserId = null;
     this.file = path.join(userDataPath, 'supabase-sync.json');
+    this.baseStateFile = this.file;
     this.notify = notify;
     this.configFile = path.join(userDataPath, 'supabase-config.json');
     const bundledConfigFile = isPackaged && resourcesPath ? path.join(resourcesPath, 'supabase-config.json') : null;
     this.config = readConfig(env, this.configFile, bundledConfigFile);
     this.state = this._loadState();
     this.client = client;
+    this.safeStorage = safeStorage;
     if (!this.client && this.config.configured) {
       this.client = createClient(this.config.url, this.config.key, {
         auth: {
@@ -95,6 +214,7 @@ class CloudService {
     this._lastQueuedPosition = new Map();
     this._onProgress = (event) => this._queueProgress(event);
     this._onSettings = (event) => this._queueSettings(event);
+    this._onLibraryChanged = () => { if (this.user && !this.suppressLibrarySync) this._scheduleSync(1500); };
   }
 
   _loadState() {
@@ -102,9 +222,9 @@ class CloudService {
       const loaded = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       return {
         mappings: loaded.mappings || {}, favorites: loaded.favorites || [], removedFavorites: loaded.removedFavorites || [],
-        history: loaded.history || [], settingsUpdatedAt: Number(loaded.settingsUpdatedAt) || 0,
+        history: loaded.history || [], settingsUpdatedAt: Number(loaded.settingsUpdatedAt) || 0, libraryRevision: Number(loaded.libraryRevision) || 0,
       };
-    } catch { return { mappings: {}, favorites: [], removedFavorites: [], history: [], settingsUpdatedAt: 0 }; }
+    } catch { return { mappings: {}, favorites: [], removedFavorites: [], history: [], settingsUpdatedAt: 0, libraryRevision: 0 }; }
   }
 
   _saveState() {
@@ -123,6 +243,7 @@ class CloudService {
   async start() {
     this.store.on('progress', this._onProgress);
     this.store.on('settings', this._onSettings);
+    this.store.on('changed', this._onLibraryChanged);
     if (!this.client) { this._publish(); return; }
     const { data: { subscription } } = this.client.auth.onAuthStateChange((_event, session) => {
       this.user = session && session.user || null;
@@ -146,6 +267,7 @@ class CloudService {
     if (this.authSubscription) this.authSubscription.unsubscribe();
     this.store.removeListener('progress', this._onProgress);
     this.store.removeListener('settings', this._onSettings);
+    this.store.removeListener('changed', this._onLibraryChanged);
   }
 
   _failed(error) {
@@ -189,7 +311,9 @@ class CloudService {
     this._requireClient();
     const { data, error } = await this.client.auth.signInWithPassword({ email, password });
     if (error) throw error;
+    if (this.syncing) await this.syncing.catch(() => {});
     this.user = data.user;
+    await this._activateLibrary(data.user.id);
     await this.ensureProfile(data.user.id);
     this.sync().catch((err) => this._failed(err));
     this._publish();
@@ -198,9 +322,11 @@ class CloudService {
 
   async signOut() {
     this._requireClient();
+    if (this.syncing) await this.syncing.catch(() => {});
     const { error } = await this.client.auth.signOut();
     if (error) throw error;
     this.user = null;
+    await this._activateLibrary(null);
     this._publish();
   }
 
@@ -238,6 +364,26 @@ class CloudService {
     const user = this._requireUser();
     const allowed = ['username', 'display_name', 'avatar_url', 'bio'];
     const value = Object.fromEntries(Object.entries(patch || {}).filter(([key]) => allowed.includes(key)));
+    if (Object.hasOwn(value, 'username')) {
+      value.username = value.username == null ? null : String(value.username).trim().replace(/^@/, '').toLowerCase();
+      if (value.username && !/^[a-z0-9_]{3,24}$/.test(value.username)) throw new Error('Il nickname deve contenere 3–24 caratteri: lettere, numeri o underscore.');
+    }
+    if (Object.hasOwn(value, 'display_name') && value.display_name != null) {
+      value.display_name = String(value.display_name).trim();
+      if (value.display_name.length > 48) throw new Error('Il nome visualizzato può contenere al massimo 48 caratteri.');
+    }
+    if (Object.hasOwn(value, 'avatar_url')) {
+      value.avatar_url = value.avatar_url == null || value.avatar_url === '' ? null : String(value.avatar_url).trim();
+      if (value.avatar_url) {
+        let url;
+        try { url = new URL(value.avatar_url); } catch { throw new Error('L’immagine del profilo deve usare un URL HTTPS valido.'); }
+        if (url.protocol !== 'https:' || value.avatar_url.length > 500) throw new Error('L’immagine del profilo deve usare un URL HTTPS valido (massimo 500 caratteri).');
+      }
+    }
+    if (Object.hasOwn(value, 'bio') && value.bio != null) {
+      value.bio = String(value.bio).trim();
+      if (value.bio.length > 280) throw new Error('La descrizione può contenere al massimo 280 caratteri.');
+    }
     const { data, error } = await this.client.from('profiles').upsert({ id: user.id, ...value, updated_at: nowIso() }, { onConflict: 'id' }).select().single();
     if (error) throw error;
     return data;
@@ -271,67 +417,127 @@ class CloudService {
   async sync() {
     if (this.syncing) return this.syncing;
     if (!this.client || !this.user || this.stopped) return;
-    this.syncing = this._syncForUser(this.user.id).finally(() => { this.syncing = null; this._publish(); });
+    const userId = this.user.id;
+    this.syncing = this._syncForUser(userId).finally(() => { this.syncing = null; this._publish(); if (this.user && this.user.id !== userId) this._scheduleSync(0); });
     this._publish();
     return this.syncing;
   }
 
   async _syncForUser(userId) {
+    await this._activateLibrary(userId);
+    await this._syncPrivateLibrary(userId);
     await this.ensureProfile(userId);
-    await this._syncSharedSources();
     const catalog = await this._resolveCatalog();
     await this._syncProgress(userId, catalog);
     await this._syncHistory(userId, catalog);
     await this._syncFavorites(userId, catalog);
     await this._syncSettings(userId);
+    await this._syncPrivateLibrary(userId);
     this._saveState();
     this.lastError = null;
     const message = this.pendingCatalogMatches
-      ? `Sync utente completata; ${this.pendingCatalogMatches} anime/episodi locali attendono una voce nel catalogo condiviso.`
-      : 'Sincronizzazione completata';
+      ? `Libreria privata sincronizzata; ${this.pendingCatalogMatches} anime/episodi locali attendono una voce nel catalogo condiviso per la sincronizzazione aggiuntiva.`
+      : 'Libreria privata sincronizzata';
     this._publish(message);
   }
 
-  async recordPlayableSource({ seriesId, anilistId, seasonNumber, episodeNumber, url }) {
-    if (!this.client || !this.user || !anilistId || !Number.isInteger(episodeNumber) || episodeNumber < 0 || !Number.isInteger(seasonNumber) || seasonNumber < 1) return false;
-    let parsed;
-    try { parsed = new URL(url); } catch { return false; }
-    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || url.length > 2048) return false;
-    const row = {
-      external_id: `anilist:${anilistId}`,
-      season_number: seasonNumber,
-      episode_number: episodeNumber,
-      source_url: url,
-      submitted_by: this.user.id,
-    };
-    const { error } = await this.client.from('shared_episode_sources').upsert(row, { onConflict: 'external_id,season_number,episode_number,source_url', ignoreDuplicates: true });
-    if (error) { this._failed(error); return false; }
-    await this.importSharedSources(seriesId);
-    return true;
+  async getMyProfile() {
+    const user = this._requireUser();
+    const profile = await this.getProfile(user.id);
+    return profile || { id: user.id, username: null, display_name: null, avatar_url: null, bio: null };
   }
 
-  async importSharedSources(seriesId) {
-    if (!this.client || !this.user) return 0;
-    const series = this.store.getSeries(seriesId);
-    if (!series || !series.anilistId) return 0;
-    const seasonNumber = detectSeasonFromTitle(series.title) || 1;
-    const { data, error } = await this.client.from('shared_episode_sources')
-      .select('episode_number,source_url')
-      .eq('external_id', `anilist:${series.anilistId}`)
-      .eq('season_number', seasonNumber);
-    if (error) throw error;
-    const added = this.store.addSources(seriesId, (data || []).map((row) => ({ number: row.episode_number, url: row.source_url })));
-    if (added) this.notify('lib:changed', this.store.snapshot());
-    return added;
-  }
+  _syncFileForUser(userId) { return path.join(path.dirname(this.baseStateFile), `supabase-sync-${userId}.json`); }
 
-  async _syncSharedSources() {
-    if (!this.client || !this.user) return;
-    for (const series of this.store.data.series) {
-      if (!series.anilistId) continue;
-      try { await this.importSharedSources(series.id); }
-      catch (error) { console.warn('[supabase] Recupero link condivisi fallito:', error.message); }
+  async _activateLibrary(userId) {
+    if (this.activeLibraryUserId === userId) return;
+    const wasUnclaimed = !fs.existsSync(this.libraryClaimFile);
+    let claim = null;
+    try { claim = JSON.parse(fs.readFileSync(this.libraryClaimFile, 'utf8')); } catch { /* first login */ }
+    const targetFile = userId ? path.join(path.dirname(this.libraryFile), `library-${userId}.json`) : this.libraryFile;
+    if (userId && wasUnclaimed && this.legacyOwnerOverrideId && this.legacyOwnerOverrideId !== userId && this.legacyLibrarySnapshot.series.length) {
+      throw new Error('Per trasferire la libreria locale, accedi all’account che hai indicato.');
     }
+    const legacyOwnerId = claim && claim.userId ? claim.userId : (userId && wasUnclaimed ? userId : null);
+    const legacyOwnerFile = legacyOwnerId ? path.join(path.dirname(this.libraryFile), `library-${legacyOwnerId}.json`) : null;
+    if (legacyOwnerId && this.legacyLibrarySnapshot.series.length && !fs.existsSync(legacyOwnerFile)) {
+      // A saved owner marker keeps the original library assigned to the selected account.
+      this.store.writeLibraryFile(legacyOwnerFile, this.legacyLibrarySnapshot);
+      const ownerStateFile = this._syncFileForUser(legacyOwnerId);
+      if (!fs.existsSync(ownerStateFile)) {
+        try { fs.writeFileSync(ownerStateFile, JSON.stringify(this.legacySyncSnapshot, null, 2), { mode: 0o600 }); } catch { /* no previous sync state */ }
+      }
+    }
+    if (userId && wasUnclaimed && !claim) {
+      fs.mkdirSync(path.dirname(this.libraryClaimFile), { recursive: true });
+      fs.writeFileSync(this.libraryClaimFile, JSON.stringify({ userId }), { mode: 0o600 });
+    }
+    if (userId && (wasUnclaimed || claim)) {
+      // Keep the legacy path empty after transferring its contents to the selected owner.
+      this.store.writeLibraryFile(this.libraryFile, EMPTY_LIBRARY());
+    }
+    this.suppressLibrarySync = true;
+    try { this.store.switchFile(targetFile); } finally { this.suppressLibrarySync = false; }
+    this.activeLibraryUserId = userId;
+    this.file = userId ? this._syncFileForUser(userId) : this.baseStateFile;
+    this.state = this._loadState();
+    this.legacySyncSnapshot = JSON.parse(JSON.stringify(this.state));
+  }
+
+  _privateSnapshot() {
+    const library = this.store.snapshot();
+    library.settings = Object.fromEntries(Object.entries(library.settings || {}).filter(([key]) => !DEVICE_SETTINGS.includes(key)));
+    library.cloudDirty = false;
+    return { library: compressLibraryForCloud(library), history: this.state.history, sync: { mappings: this.state.mappings, favorites: this.state.favorites, removedFavorites: this.state.removedFavorites, settingsUpdatedAt: this.state.settingsUpdatedAt } };
+  }
+
+  async _syncPrivateLibrary(userId) {
+    const { data: remote, error } = await this.client.from('user_library_snapshots').select('snapshot,revision,updated_at').eq('user_id', userId).maybeSingle();
+    if (error) throw error;
+    const localDirty = Boolean(this.store.data.cloudDirty);
+    const localRevision = Number(this.state.libraryRevision) || 0;
+    if (!remote) {
+      const snapshot = this._privateSnapshot();
+      snapshot.library.settings = Object.fromEntries(Object.entries(snapshot.library.settings || {}).filter(([key]) => !DEVICE_SETTINGS.includes(key)));
+      const { data, error: insertError } = await this.client.from('user_library_snapshots').insert({ user_id: userId, snapshot, revision: 1, updated_at: nowIso() }).select('revision,updated_at').single();
+      if (insertError) { if (insertError.code === '23505') return this._syncPrivateLibrary(userId); throw insertError; }
+      this.state.libraryRevision = Number(data.revision) || 1;
+      this.store.markCloudSynced(data.updated_at);
+      this._saveState();
+      return;
+    }
+    if (!localDirty && localRevision !== Number(remote.revision)) {
+      const deviceSettings = Object.fromEntries(DEVICE_SETTINGS.map((key) => [key, this.store.data.settings[key]]));
+      const remoteSnapshot = remote.snapshot || {};
+      const restored = mergeLibrarySnapshots(this.store.snapshot(), { ...expandLibraryFromCloud(remoteSnapshot.library || EMPTY_LIBRARY()), cloudDirty: false });
+      restored.settings = { ...(remoteSnapshot.library?.settings || {}), ...deviceSettings };
+      restored.cloudDirty = false;
+      this.suppressLibrarySync = true;
+      try { this.store.applyCloudData(restored, remote.updated_at); } finally { this.suppressLibrarySync = false; }
+      this.state = { ...this.state, ...(remoteSnapshot.sync || {}), history: remoteSnapshot.history || this.state.history, libraryRevision: Number(remote.revision) };
+      this._saveState();
+      return;
+    }
+    if (!localDirty) return;
+    let library = this.store.snapshot();
+    if (localRevision !== Number(remote.revision)) library = mergeLibrarySnapshots(library, remote.snapshot?.library || EMPTY_LIBRARY());
+    const snapshot = this._privateSnapshot();
+    snapshot.library = compressLibraryForCloud(library);
+    snapshot.library.settings = Object.fromEntries(Object.entries(snapshot.library.settings || {}).filter(([key]) => !DEVICE_SETTINGS.includes(key)));
+    const history = new Map([...(remote.snapshot?.history || []), ...this.state.history].map((record) => [record.id, record]));
+    snapshot.history = [...history.values()];
+    snapshot.sync = { ...(remote.snapshot?.sync || {}), mappings: this.state.mappings, favorites: this.state.favorites, removedFavorites: this.state.removedFavorites, settingsUpdatedAt: this.state.settingsUpdatedAt };
+    const updatedAt = nowIso();
+    const { data, error: updateError } = await this.client.from('user_library_snapshots').update({ snapshot, revision: Number(remote.revision) + 1, updated_at: updatedAt }).eq('user_id', userId).eq('revision', remote.revision).select('revision,updated_at').maybeSingle();
+    if (updateError) throw updateError;
+    if (!data) { this.state.libraryRevision = 0; this._saveState(); this._scheduleSync(1000); return; }
+    this.state.libraryRevision = Number(data.revision);
+    if (library !== this.store.data) {
+      const deviceSettings = Object.fromEntries(DEVICE_SETTINGS.map((key) => [key, this.store.data.settings[key]]));
+      this.suppressLibrarySync = true;
+      try { this.store.applyCloudData({ ...library, settings: { ...library.settings, ...deviceSettings } }, data.updated_at); } finally { this.suppressLibrarySync = false; }
+    } else this.store.markCloudSynced(data.updated_at);
+    this._saveState();
   }
 
   async _resolveCatalog() {
@@ -480,7 +686,16 @@ class CloudService {
     this._requireUser();
     const value = String(query || '').trim();
     if (value.length < 2) return [];
-    const { data, error } = await this.client.from('profiles').select('id,username,display_name,avatar_url,bio').ilike('username', `%${value}%`).limit(20);
+    let result;
+    if (value.includes('@')) {
+      const email = value.toLowerCase();
+      if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return [];
+      result = await this.client.rpc('search_profiles_by_email', { search_email: email });
+    } else {
+      const escaped = value.replace(/[\\%_]/g, (character) => `\\${character}`);
+      result = await this.client.from('profiles').select('id,username,display_name,avatar_url,bio').ilike('username', `%${escaped}%`).limit(20);
+    }
+    const { data, error } = result;
     if (error) throw error;
     return data;
   }
@@ -507,11 +722,9 @@ class CloudService {
     if (error) throw error;
     if (status === 'accepted') {
       const friendId = data.sender_id;
-      const { data: existing, error: selectError } = await this.client.from('friendships').select('friend_id').eq('user_id', user.id).eq('friend_id', friendId).maybeSingle();
-      if (selectError) throw selectError;
-      if (!existing) {
-        const { error: friendshipError } = await this.client.from('friendships').insert({ user_id: user.id, friend_id: friendId });
-        if (friendshipError && friendshipError.code !== '23505') throw friendshipError;
+      for (const row of [{ user_id: user.id, friend_id: friendId }, { user_id: friendId, friend_id: user.id }]) {
+        const { error: friendshipError } = await this.client.from('friendships').upsert(row, { onConflict: 'user_id,friend_id', ignoreDuplicates: true });
+        if (friendshipError) throw friendshipError;
       }
     }
     return data;
@@ -530,7 +743,7 @@ class CloudService {
 
   async removeFriend(friendId) {
     const user = this._requireUser();
-    const { error } = await this.client.from('friendships').delete().eq('user_id', user.id).eq('friend_id', friendId);
+    const { error } = await this.client.from('friendships').delete().or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`);
     if (error) throw error;
   }
 
@@ -568,4 +781,4 @@ class CloudService {
   }
 }
 
-module.exports = { CloudService, PROJECT_REF, CLOUD_SETTINGS, readConfig, createSessionStorage };
+module.exports = { CloudService, PROJECT_REF, CLOUD_SETTINGS, readConfig, createSessionStorage, mergeLibrarySnapshots, compressLibraryForCloud, expandLibraryFromCloud };

@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.8** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.15** is a cross-platform Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -20,9 +20,11 @@ episodes and it does not scrape streaming sites.
   has been checked.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
-- Signed-in users can share HTTP(S) episode links after mpv has played them for
-  at least eight seconds; matching AniList seasons can then recover those links
-  automatically. The local library remains available offline.
+- Signed-in users privately sync their complete library, one representative
+  episode-link pattern per series when available, metadata, playback progress,
+  deletion records, watch history, and shared app preferences
+  across devices. Each account has a separate local library and cloud snapshot.
+  Individual episode URLs stay on the device.
 - Automatic episode-number detection, patterns (`{ep}` and `{ep:02}`),
   newline lists, and `.m3u`/`.m3u8` import.
 - Exact playback progress (flushed during playback and on exit), watched state, resume cards, autoplay, and
@@ -84,7 +86,7 @@ npm run dist
 This keeps both Windows targets:
 
 - `dist\AnimePlayer-portable.exe`: one executable, no installation required.
-- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.8.exe`): NSIS installer with Desktop and
+- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.15.exe`): NSIS installer with Desktop and
   Start Menu shortcuts, selectable installation directory, and per-user
   installation by default.
 
@@ -124,7 +126,8 @@ A+A HQ, but it can be changed globally, per series, or while mpv is playing.
 
 ## Data and privacy
 
-The app keeps its library in a local JSON file. It contacts AniList, Kitsu, and
+The app keeps an offline local JSON copy of the library and can sync a private
+copy to the signed-in user's Supabase account. It contacts AniList, Kitsu, and
 IMDb for metadata and ratings. Video links are entered by the user; the app does
 not include a downloader or scraper.
 
@@ -142,20 +145,30 @@ not commit local config or `.env` files.
 The app asks whether to sign in or create an account at startup, and the Account
 item remains available in the navigation. Auth sessions are encrypted with
 Electron `safeStorage` when the operating system provides secure storage.
-Progress is synced after meaningful position changes and when playback ends;
-settings, favorites, and watch history are queued locally and retried when
-Supabase is reachable. The local library remains intact if the user signs out
-or has no network.
+The full library snapshot (including user-entered episode-link patterns, progress,
+watched state, personal ratings, metadata, and deletion records), watch history,
+favorites, and shared app preferences are stored in a private, account-owned
+Supabase row. Row Level Security restricts that row to its owner. The data is
+retried when Supabase is reachable and also remains available offline. Separate
+accounts on one device use separate local library files. The mpv executable path
+and first-run setup state remain device-specific.
 
-Anime and episodes are shared catalog rows, not per-user copies. The app only
-reads these rows and matches them by AniList external ID, season, and episode
-number before syncing user data. The current Supabase catalog has no rows, and
-its catalog policies permit reads only, so local progress cannot sync until
-matching catalog entries are populated through the approved catalog workflow.
-No schema or RLS policy is changed by the app.
+Anime and episodes may also be shared catalog rows. The app matches them by
+AniList external ID, season, and episode number for optional catalog-based
+progress and favorites. Episode URLs are no longer published to a shared table.
+The private snapshot sync does not
+depend on catalog rows, so the full library and watch history still sync when
+the shared catalog has no matching entries. Social profile queries expose only
+selected profile fields; they do not grant access to private library snapshots.
+The Social section supports profile nicknames and image URLs, searching by
+nickname or exact email, and friend requests. Email addresses are matched in a
+restricted database function and are never returned in search results. Where a
+series' episode URLs do not share a reconstructible pattern, those URLs remain
+on that device and are omitted from the cloud snapshot. The database enforces
+this rule when any app version syncs, retaining a saved representative pattern
+while stripping per-episode URL fields.
 
-Supabase social and watch-room services are prepared for later UI work. Playback
-events use Realtime Broadcast and Presence; video files are never sent to
+Playback events use Realtime Broadcast and Presence; video files are never sent to
 Supabase and playback events are not written to PostgreSQL.
 
 ## Tests and validation

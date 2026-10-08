@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.8",
+  "version": "0.5.15",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -26,14 +26,14 @@
       "package.json"
     ],
     "extraResources": [
-    {
-      "from": "shaders",
-      "to": "shaders"
-    },
-    {
-      "from": ".build-resources/supabase-config.json",
-      "to": "supabase-config.json"
-    }
+      {
+        "from": "shaders",
+        "to": "shaders"
+      },
+      {
+        "from": ".build-resources/supabase-config.json",
+        "to": "supabase-config.json"
+      }
     ],
     "win": {
       "target": [

@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], results: [], query: '', loading: false, loaded: false }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
 const detectSeasonFromTitle = (title) => {
   const text = String(title || '');
   const match = text.match(/season\s*(\d+)/i) || text.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || text.match(/\bS(\d+)\b/i) || text.match(/\bPart\s*(\d+)\b/i);
@@ -53,6 +53,7 @@ const bg = (url) => (url ? { backgroundImage: `url("${String(url).replace(/"/g, 
 /* ---------- icone, menu a comparsa, interruttori ---------- */
 const ICONS = {
   library: '<rect x="3" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="3" width="7.5" height="7.5" rx="2"/><rect x="13.5" y="13.5" width="7.5" height="7.5" rx="2"/><rect x="3" y="13.5" width="7.5" height="7.5" rx="2"/>',
+  social: '<circle cx="9" cy="8" r="3.2"/><path d="M3 20v-1.2a6 6 0 0 1 12 0V20M17 5.5a3.2 3.2 0 0 1 0 6.2M19 15a5 5 0 0 1 2 4v1"/>',
   stats: '<path d="M5 21V11M12 21V4M19 21v-7"/>',
   link: '<path d="M10 13a5 5 0 0 0 7.07 0l2.83-2.83a5 5 0 0 0-7.07-7.07L11.5 4.43"/><path d="M14 11a5 5 0 0 0-7.07 0L4.1 13.83a5 5 0 0 0 7.07 7.07l1.33-1.33"/>',
   keyboard: '<rect x="2" y="6" width="20" height="12" rx="2.5"/><path d="M6 10h.01M10 10h.01M14 10h.01M18 10h.01M7.5 14h9"/>',
@@ -158,10 +159,11 @@ function renderRail() {
     h('div', { class: 'nav-label' }, t('navBrowse')),
     navBtn(t('library'), 'library', () => go({ name: 'home' }), v === 'home' || v === 'series' || v === 'ratings-chart'),
     navBtn(t('stats'), 'stats', () => go({ name: 'stats' }), v === 'stats'),
+    navBtn(t('social'), 'social', () => go({ name: 'social' }), v === 'social'),
     h('div', { class: 'nav-label' }, t('navTools')),
     navBtn(t('openLink'), 'link', openLinkDialog, false),
     navBtn(t('shortcuts'), 'keyboard', () => go({ name: 'shortcuts' }), v === 'shortcuts'),
-    navBtn(state.sync.connected ? (state.sync.user && state.sync.user.email || t('account')) : t('account'), 'account', openAccountDialog, false),
+    navBtn(state.sync.connected ? h('span', { class: 'account-nav-label' }, state.profile && state.profile.avatar_url ? h('img', { class: 'account-avatar', src: state.profile.avatar_url, alt: '' }) : null, state.sync.user && state.sync.user.email || t('account')) : t('account'), 'account', openAccountDialog, false),
     navBtn(t('settings'), 'settings', openSettings, false),
     h('div', { class: 'spacer' }),
     h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings },
@@ -188,9 +190,10 @@ function openAccountDialogForMode(mode) {
       button.disabled = true;
       message.textContent = '';
       try {
-        if (mode === 'signIn') {
+    if (mode === 'signIn') {
           await api.invoke('auth:signIn', email.value.trim(), password.value);
           state.sync = await api.invoke('auth:state');
+          state.profile = await api.invoke('profile:mine').catch(() => null);
           message.textContent = t('authReady');
           password.value = '';
           renderRail();
@@ -200,6 +203,7 @@ function openAccountDialogForMode(mode) {
           if (result.needsEmailConfirmation) message.textContent = t('accountCreated');
           else {
             state.sync = await api.invoke('auth:state');
+            state.profile = await api.invoke('profile:mine').catch(() => null);
             message.textContent = t('authReady');
             password.value = '';
             renderRail();
@@ -213,7 +217,7 @@ function openAccountDialogForMode(mode) {
     const switchMode = () => { close(); openAccountDialogForMode(mode === 'signIn' ? 'signUp' : 'signIn'); };
     if (status.connected) {
       const signOut = h('button', { class: 'btn danger', onclick: async () => {
-        try { await api.invoke('auth:signOut'); state.sync = await api.invoke('auth:state'); renderRail(); close(); toast(t('accountOffline')); }
+        try { await api.invoke('auth:signOut'); state.sync = await api.invoke('auth:state'); state.profile = null; renderRail(); close(); toast(t('accountOffline')); }
         catch (error) { message.textContent = cleanErr(error); }
       } }, t('signOut'));
       return [info, message, h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')), signOut)];
@@ -277,7 +281,7 @@ function render() {
   main.replaceChildren(
     state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
     state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
-    state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : homeView()
+    state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
   );
 
   if (isSearchFocused) {
@@ -287,6 +291,74 @@ function render() {
       n.setSelectionRange(searchSelStart, searchSelEnd);
     }
   }
+}
+
+function profileAvatar(profile, sizeClass = '') {
+  return profile && profile.avatar_url
+    ? h('img', { class: `social-avatar ${sizeClass}`.trim(), src: profile.avatar_url, alt: '', loading: 'lazy' })
+    : h('span', { class: `social-avatar avatar-placeholder ${sizeClass}`.trim() }, String((profile?.display_name || profile?.username || '?').slice(0, 1)).toUpperCase());
+}
+
+function socialView() {
+  if (!state.sync.connected) return h('div', { class: 'page' }, h('header', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('social')))),
+    h('section', { class: 'panel social-panel' }, h('h2', null, t('socialSignInTitle')), h('p', { class: 'muted' }, t('socialSignInHint')), h('button', { class: 'btn primary', onclick: openAccountDialog }, t('account'))));
+
+  const refresh = async () => {
+    state.social.loading = true;
+    try {
+      const [profile, friends, requests] = await Promise.all([api.invoke('profile:mine'), api.invoke('friends:list'), api.invoke('friends:requests')]);
+      state.profile = profile || null;
+      state.social.friends = friends || [];
+      state.social.requests = requests || [];
+      state.social.loaded = true;
+    } catch (error) { toast(cleanErr(error), 'error'); }
+    finally { state.social.loading = false; renderRail(); render(); }
+  };
+  const friendIds = new Set(state.social.friends.map((friend) => friend.id));
+  const incoming = state.social.requests.filter((request) => request.receiver_id === state.sync.user.id && request.status === 'pending');
+  const outgoing = state.social.requests.filter((request) => request.sender_id === state.sync.user.id && request.status === 'pending');
+  const profile = state.profile || {};
+  const nickname = h('input', { class: 'input', value: profile.username || '', maxlength: '24', placeholder: t('socialNicknamePlaceholder') });
+  const displayName = h('input', { class: 'input', value: profile.display_name || '', maxlength: '48', placeholder: t('socialDisplayNamePlaceholder') });
+  const avatarUrl = h('input', { class: 'input', value: profile.avatar_url || '', maxlength: '500', type: 'url', placeholder: 'https://…' });
+  const saveProfile = async () => {
+    try {
+      state.profile = await api.invoke('profile:update', { username: nickname.value.trim().replace(/^@/, '').toLowerCase() || null, display_name: displayName.value.trim() || null, avatar_url: avatarUrl.value.trim() || null });
+      renderRail(); render(); toast(t('saved'));
+    } catch (error) { toast(cleanErr(error), 'error'); }
+  };
+  const query = h('input', { class: 'input', type: 'search', maxlength: '254', value: state.social.query, placeholder: t('socialSearchPlaceholder') });
+  let searchTimer;
+  const search = async () => {
+    state.social.query = query.value.trim();
+    clearTimeout(searchTimer);
+    searchTimer = setTimeout(async () => {
+      try { state.social.results = await api.invoke('friends:search', state.social.query); render(); }
+      catch (error) { toast(cleanErr(error), 'error'); }
+    }, 250);
+  };
+  query.addEventListener('input', search);
+  const sendRequest = async (userId) => { try { await api.invoke('friends:request', userId); await refresh(); toast(t('socialRequestSent')); } catch (error) { toast(cleanErr(error), 'error'); } };
+  const respond = async (request, status) => { try { await api.invoke('friends:respond', request.id, status); await refresh(); } catch (error) { toast(cleanErr(error), 'error'); } };
+  const friendCard = (person, actions = []) => h('article', { class: 'social-user' }, profileAvatar(person), h('div', { class: 'social-user-copy' }, h('b', null, person.display_name || person.username || t('socialUser')), h('span', { class: 'muted small' }, person.username ? `@${person.username}` : t('socialNoNickname'))), h('div', { class: 'social-actions' }, actions));
+  const requestProfileCard = (request, person, isIncoming) => h('article', { class: 'social-user' }, profileAvatar(person), h('div', { class: 'social-user-copy' }, h('b', null, person?.display_name || person?.username || t('socialUser')), h('span', { class: 'muted small' }, isIncoming ? t('socialIncoming') : t('socialOutgoing'))), h('div', { class: 'social-actions' }, isIncoming ? [h('button', { class: 'btn sm primary', onclick: () => respond(request, 'accepted') }, t('socialAccept')), h('button', { class: 'btn sm', onclick: () => respond(request, 'rejected') }, t('socialDecline'))] : [h('button', { class: 'btn sm', onclick: () => respond(request, 'cancelled') }, t('socialCancel'))]));
+  const peopleById = new Map([...state.social.friends, ...state.social.results].map((person) => [person.id, person]));
+  const requestRows = [...incoming.map((request) => requestProfileCard(request, peopleById.get(request.sender_id), true)), ...outgoing.map((request) => requestProfileCard(request, peopleById.get(request.receiver_id), false))];
+  const results = state.social.results.filter((person) => person.id !== state.sync.user.id).map((person) => {
+    const pending = state.social.requests.some((request) => request.status === 'pending' && ((request.sender_id === state.sync.user.id && request.receiver_id === person.id) || (request.receiver_id === state.sync.user.id && request.sender_id === person.id)));
+    const action = friendIds.has(person.id) ? h('span', { class: 'chip ok' }, t('socialFriends')) : pending ? h('span', { class: 'chip' }, t('socialPending')) : h('button', { class: 'btn sm primary', onclick: () => sendRequest(person.id) }, t('socialAddFriend'));
+    return friendCard(person, [action]);
+  });
+  const friends = state.social.friends.map((person) => friendCard(person, [h('button', { class: 'btn sm ghost danger', onclick: async () => { if (!confirm(t('socialRemoveConfirm', person.display_name || person.username || t('socialUser')))) return; try { await api.invoke('friends:remove', person.id); await refresh(); } catch (error) { toast(cleanErr(error), 'error'); } } }, t('socialRemove'))]));
+  requestAnimationFrame(() => { if (!state.social.loaded && !state.social.loading) refresh(); });
+  return h('div', { class: 'page social-page' },
+    h('header', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('social')))),
+    h('section', { class: 'panel social-panel' }, h('div', { class: 'social-panel-head' }, h('div', null, h('h2', null, t('socialProfile')), h('p', { class: 'muted small' }, state.sync.user.email)), profileAvatar(profile, 'large')),
+      field(t('socialNickname'), nickname), field(t('socialDisplayName'), displayName), field(t('socialAvatarUrl'), avatarUrl), h('button', { class: 'btn primary', onclick: saveProfile }, t('save'))),
+    h('section', { class: 'panel social-panel' }, h('h2', null, t('socialFind')), h('p', { class: 'muted small' }, t('socialPrivacyHint')), query,
+      state.social.query.length >= 2 ? h('div', { class: 'social-list' }, results.length ? results : h('p', { class: 'muted small' }, t('socialNoResults'))) : null),
+    h('section', { class: 'panel social-panel' }, h('h2', null, t('socialRequests')), h('div', { class: 'social-list' }, requestRows.length ? requestRows : h('p', { class: 'muted small' }, t('socialNoRequests')))),
+    h('section', { class: 'panel social-panel' }, h('h2', null, t('socialFriends')), h('div', { class: 'social-list' }, friends.length ? friends : h('p', { class: 'muted small' }, t('socialNoFriends')))));
 }
 
 /* ---------- home ---------- */
@@ -937,6 +1009,7 @@ function openSetup() {
   state.version = await api.invoke('app:version');
   state.player = await api.invoke('player:state');
   state.sync = await api.invoke('auth:state').catch(() => ({ configured: false, connected: false }));
+  if (state.sync.connected) state.profile = await api.invoke('profile:mine').catch(() => null);
   render();
   if (!state.lib.settings.onboardingComplete) openSetup();
   else if (!state.sync.connected) openAccountDialog();

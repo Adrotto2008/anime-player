@@ -63,19 +63,6 @@ class PlayerManager {
     session.on('time', (t) => {
       const delta = t - cur.lastReportedPos;
       if (delta > 0 && delta <= 5) cur.playedSeconds += delta;
-      if (!cur.sourceReported && cur.series && cur.ep && cur.playedSeconds >= 8 && typeof this.onSourcePlayable === 'function') {
-        cur.sourceReported = true;
-        try {
-          this.onSourcePlayable({
-            seriesId: cur.series.id,
-            anilistId: cur.series.anilistId,
-            title: cur.series.title,
-            seasonNumber: require('./metadata').detectSeasonFromTitle(cur.series.title) || 1,
-            episodeNumber: cur.ep.number,
-            url: cur.url,
-          });
-        } catch (err) { console.warn('Condivisione sorgente verificata fallita:', err.message); }
-      }
       cur.lastReportedPos = t;
       cur.pos = t;
       if (cur.ep && !cur.ep.progress.watched) {

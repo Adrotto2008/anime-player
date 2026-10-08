@@ -9,7 +9,7 @@ const { Store, DEFAULT_SETTINGS } = require('../src/store');
 const { PlayerManager } = require('../src/player');
 const { MpvSession, pipePath } = require('../src/mpv');
 const { aniSkipUrl } = require('../src/metadata');
-const { CloudService, readConfig, PROJECT_REF } = require('../src/cloud');
+const { CloudService, readConfig, PROJECT_REF, mergeLibrarySnapshots, compressLibraryForCloud, expandLibraryFromCloud } = require('../src/cloud');
 
 const shaderDir = path.join(__dirname, '..', 'shaders');
 let n = 0; const ok = (name) => console.log('  ok', ++n, name);
@@ -72,6 +72,32 @@ fs.writeFileSync(localConfigFile, JSON.stringify({ url: `https://${PROJECT_REF}.
 assert.strictEqual(readConfig({}, localConfigFile).configured, true, 'la configurazione locale per-dispositivo deve essere letta');
 fs.unlinkSync(localConfigFile);
 ok('configurazione Supabase vincolata al progetto anime-player e alle chiavi client');
+
+const cloudMerge = mergeLibrarySnapshots(
+  { settings: { language: 'it' }, series: [{ id: 's1', title: 'Serie locale', addedAt: 10, episodes: [{ id: 'e1', number: 1, updatedAt: 20, sources: [], progress: { watched: false, pos: 0, duration: 0, updatedAt: 20 } }, { id: 'e3-old', number: 3, updatedAt: 20, sources: [{ url: 'https://local.example/3.mp4' }], progress: { watched: false, pos: 0, duration: 0, updatedAt: 0 } }, { id: 'e4', number: 4, sources: [], progress: { watched: false, pos: 0, duration: 0, updatedAt: 0 } }] }], deletedSeries: [], deletedEpisodes: [] },
+  { settings: { language: 'en' }, series: [{ id: 's1', title: 'Serie remota', addedAt: 10, updatedAt: 30, episodes: [{ id: 'e2', number: 2, updatedAt: 25, sources: [], progress: { watched: false, pos: 0, duration: 0, updatedAt: 25 } }, { id: 'e3-new', number: 3, updatedAt: 30, sources: [{ url: 'https://remote.example/3.mp4' }], progress: { watched: false, pos: 0, duration: 0, updatedAt: 0 } }] }, { id: 's2', title: 'Da rimuovere', addedAt: 5, episodes: [] }], deletedSeries: [{ id: 's2', deletedAt: 40 }], deletedEpisodes: [{ seriesId: 's1', id: 'e4', deletedAt: 40 }] },
+);
+assert.strictEqual(cloudMerge.series.length, 1, 'le serie eliminate non ricompaiono nel merge');
+assert.strictEqual(cloudMerge.series[0].title, 'Serie remota', 'vince la versione più recente dei metadati');
+assert.deepStrictEqual(cloudMerge.series[0].episodes.map((episode) => episode.id).sort(), ['e1', 'e2', 'e3-new'], 'gli episodi indipendenti vengono uniti mantenendo un solo elemento per numero');
+assert.strictEqual(cloudMerge.series[0].episodes.find((episode) => episode.number === 3).sources.length, 2, 'le sorgenti di entrambi i dispositivi vengono conservate');
+ok('merge libreria cloud: metadati recenti, episodi uniti, eliminazioni rispettate');
+
+const sourceLibrary = { settings: {}, series: [{ id: 'pattern-series', title: 'Pattern', episodes: [1, 2, 3].map((number) => ({ id: `ep-${number}`, number, sources: [{ url: `https://video.example/show/ep${String(number).padStart(2, '0')}.m3u8` }], progress: { watched: false, pos: 0, duration: 0, updatedAt: 0 } })) }, { id: 'single-series', title: 'Singolo', episodes: [{ id: 'ep-1', number: 1, sources: [{ url: 'https://video.example/opaque' }] }] }] };
+const compressedLibrary = compressLibraryForCloud(sourceLibrary);
+assert.deepStrictEqual(compressedLibrary.series[0].sourcePattern, { pattern: 'https://video.example/show/ep{ep:2}.m3u8', from: 1, to: 3 });
+assert.ok(compressedLibrary.series.every((series) => series.episodes.every((episode) => !Object.hasOwn(episode, 'sources'))), 'il cloud non deve contenere link episodio per episodio');
+const restoredLibrary = expandLibraryFromCloud(compressedLibrary);
+assert.strictEqual(restoredLibrary.series[0].episodes[2].sources[0].url, sourceLibrary.series[0].episodes[2].sources[0].url, 'il dispositivo ricostruisce gli URL dal pattern cloud');
+assert.deepStrictEqual(restoredLibrary.series[1].episodes[0].sources, [], 'i link senza pattern restano solo locali');
+const lossyPattern = compressLibraryForCloud({ series: [{ id: 'lossy', title: 'Parziale', episodes: [
+  { id: '1', number: 1, sources: [{ url: 'https://v.example/ep1.mp4' }] },
+  { id: '2', number: 2, sources: [{ url: 'https://v.example/ep2.mp4' }] },
+  { id: '3', number: 3, sources: [] },
+] }] });
+assert.deepStrictEqual(lossyPattern.series[0].sourcePattern, { pattern: 'https://v.example/ep{ep}.mp4', from: 1, to: 3 }, 'il pattern rappresentativo genera la stagione intera anche se mancava il link locale di alcuni episodi');
+assert.strictEqual(expandLibraryFromCloud(lossyPattern).series[0].episodes[2].sources[0].url, 'https://v.example/ep3.mp4');
+ok('snapshot cloud compatto: un pattern per serie e link episodio ricostruiti sul dispositivo');
 
 // --- libreria
 const tmp = path.join(__dirname, '.test-data');

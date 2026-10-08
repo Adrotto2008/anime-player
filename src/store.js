@@ -67,6 +67,7 @@ function validateLibraryData(input) {
       }
       return {
         ...rawEpisode,
+        updatedAt: Math.max(0, Number(rawEpisode.updatedAt) || Number(p.updatedAt) || Number(rawSeries.updatedAt) || Number(rawSeries.addedAt) || 0),
         title: typeof rawEpisode.title === 'string' ? rawEpisode.title : '',
         thumb: rawEpisode.thumb || null,
         duration: Math.max(0, Number(rawEpisode.duration || 0)),
@@ -86,6 +87,7 @@ function validateLibraryData(input) {
     return {
       ...rawSeries,
       title: rawSeries.title.trim() || 'Senza titolo',
+      updatedAt: Math.max(0, Number(rawSeries.updatedAt) || Number(rawSeries.addedAt) || 0),
       episodes,
       introDuration: nonNegativeSeconds(rawSeries.introDuration),
       outroDuration: nonNegativeSeconds(rawSeries.outroDuration),
@@ -104,14 +106,16 @@ function validateLibraryData(input) {
   if (!input.settings || input.settings.onboardingComplete == null) {
     try { settings.onboardingComplete = Boolean(settings.mpvPath && fs.statSync(settings.mpvPath).isFile()); } catch { /* onboarding richiesto */ }
   }
-  return { settings, series };
+  const deletedSeries = Array.isArray(input.deletedSeries) ? input.deletedSeries.filter((item) => item && typeof item.id === 'string' && Number.isFinite(Number(item.deletedAt))).map((item) => ({ id: item.id, deletedAt: Number(item.deletedAt) })) : [];
+  const deletedEpisodes = Array.isArray(input.deletedEpisodes) ? input.deletedEpisodes.filter((item) => item && typeof item.seriesId === 'string' && typeof item.id === 'string' && Number.isFinite(Number(item.deletedAt))).map((item) => ({ seriesId: item.seriesId, id: item.id, deletedAt: Number(item.deletedAt) })) : [];
+  return { settings, series, deletedSeries, deletedEpisodes, updatedAt: Math.max(0, Number(input.updatedAt) || 0), cloudDirty: Boolean(input.cloudDirty) };
 }
 
 class Store extends EventEmitter {
   constructor(file) {
     super();
     this.file = file;
-    this.data = { settings: { ...DEFAULT_SETTINGS }, series: [] };
+    this.data = { settings: { ...DEFAULT_SETTINGS }, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false };
     this._timer = null;
     this.load();
   }
@@ -120,9 +124,15 @@ class Store extends EventEmitter {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
+      this.data.deletedSeries = Array.isArray(raw.deletedSeries) ? raw.deletedSeries : [];
+      this.data.deletedEpisodes = Array.isArray(raw.deletedEpisodes) ? raw.deletedEpisodes : [];
+      this.data.updatedAt = Math.max(0, Number(raw.updatedAt) || 0);
+      this.data.cloudDirty = raw.cloudDirty == null ? this.data.series.length > 0 : Boolean(raw.cloudDirty);
       this.data.series.forEach((s) => {
+        s.updatedAt = Math.max(0, Number(s.updatedAt) || Number(s.addedAt) || 0);
         s.introDuration = nonNegativeSeconds(s.introDuration);
         s.outroDuration = nonNegativeSeconds(s.outroDuration);
+        for (const episode of s.episodes || []) episode.updatedAt = Math.max(0, Number(episode.updatedAt) || Number(episode.progress && episode.progress.updatedAt) || s.updatedAt || 0);
       });
       this.data.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
       if (!['default', 'compact'].includes(this.data.settings.theme)) this.data.settings.theme = DEFAULT_SETTINGS.theme;
@@ -139,14 +149,17 @@ class Store extends EventEmitter {
     } catch { /* primo avvio o file rovinato: si parte da zero */ }
   }
 
-  save(now = false, throwOnError = false) {
+  save(now = false, throwOnError = false, { cloud = false, emit = true } = {}) {
     clearTimeout(this._timer);
+    this.data.updatedAt = cloud ? Math.max(this.data.updatedAt || 0, Date.now()) : Date.now();
+    if (!cloud) this.data.cloudDirty = true;
     const write = () => {
       try {
         fs.mkdirSync(path.dirname(this.file), { recursive: true });
         const tmp = this.file + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(this.data, null, 1));
         fs.renameSync(tmp, this.file);
+        if (emit) this.emit('changed', { updatedAt: this.data.updatedAt, cloudDirty: this.data.cloudDirty });
         return true;
       } catch (e) {
         console.error('Salvataggio libreria fallito:', e.message);
@@ -168,6 +181,45 @@ class Store extends EventEmitter {
     return this.snapshot();
   }
 
+  applyCloudData(input, updatedAt) {
+    const next = validateLibraryData(input);
+    const previous = this.data;
+    next.updatedAt = Math.max(0, Date.parse(updatedAt) || Number(input.updatedAt) || 0);
+    next.cloudDirty = false;
+    this.data = next;
+    try { this.save(true, true, { cloud: true, emit: false }); } catch (error) { this.data = previous; throw error; }
+    return this.snapshot();
+  }
+
+  markCloudSynced(updatedAt) {
+    this.data.cloudDirty = false;
+    this.data.updatedAt = Math.max(this.data.updatedAt || 0, Date.parse(updatedAt) || Date.now());
+    this.save(true, true, { cloud: true, emit: false });
+  }
+
+  switchFile(file) {
+    if (path.resolve(file) === path.resolve(this.file)) return;
+    this.save(true, true);
+    const deviceSettings = { mpvPath: this.data.settings.mpvPath || '', onboardingComplete: Boolean(this.data.settings.onboardingComplete) };
+    this.file = file;
+    this.data = { settings: { ...DEFAULT_SETTINGS, ...deviceSettings }, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false };
+    this.load();
+    this.data.settings.mpvPath = deviceSettings.mpvPath || this.data.settings.mpvPath || '';
+    if (this.data.settings.mpvPath) this.data.settings.onboardingComplete = deviceSettings.onboardingComplete;
+    this.save(true, true, { cloud: true, emit: false });
+  }
+
+  writeLibraryFile(file, data) {
+    const previousFile = this.file;
+    const previousData = this.data;
+    this.file = file;
+    this.data = validateLibraryData(data);
+    try { this.save(true, true, { cloud: true, emit: false }); }
+    catch (error) { this.file = previousFile; this.data = previousData; throw error; }
+    this.file = previousFile;
+    this.data = previousData;
+  }
+
   getSeries(id) { return this.data.series.find((s) => s.id === id); }
   getEpisode(sid, eid) { const s = this.getSeries(sid); return s && s.episodes.find((e) => e.id === eid); }
 
@@ -182,11 +234,12 @@ class Store extends EventEmitter {
   }
 
   addSeries(meta = {}) {
+    const now = Date.now();
     const s = {
       id: uid(), title: 'Senza titolo', anilistId: null, kitsuId: null, imdbId: null, imdbChart: null, cover: null, banner: null,
       description: '', genres: [], score: null, scoreSource: null, year: null, format: null, episodeCount: null, status: null,
       nextAiringAt: null, nextEpisode: null, malId: null, personalRating: null,
-      preset: null, referer: '', addedAt: Date.now(), lastWatchedAt: 0, episodes: [], ...meta,
+      preset: null, referer: '', addedAt: now, updatedAt: now, lastWatchedAt: 0, episodes: [], ...meta,
     };
     if (!Array.isArray(s.episodes)) s.episodes = [];
     s.introDuration = nonNegativeSeconds(s.introDuration);
@@ -202,6 +255,7 @@ class Store extends EventEmitter {
     if (!s) throw new Error('Serie non trovata');
     const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
+    s.updatedAt = Date.now();
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);
     s.personalRating = personalRating(s.personalRating);
@@ -209,12 +263,18 @@ class Store extends EventEmitter {
     return s;
   }
 
-  deleteSeries(id) { this.data.series = this.data.series.filter((s) => s.id !== id); this.save(); }
+  deleteSeries(id) {
+    if (!this.data.series.some((s) => s.id === id)) return;
+    this.data.deletedSeries ||= [];
+    this.data.deletedSeries.push({ id, deletedAt: Date.now() });
+    this.data.series = this.data.series.filter((s) => s.id !== id);
+    this.save();
+  }
 
   ensureEpisode(s, number) {
     let ep = s.episodes.find((e) => e.number === number);
     if (!ep) {
-      ep = { id: uid(), number, title: '', thumb: null, duration: 0, rating: null, ratingSource: null, personalRating: null, skipTimes: [], sources: [], progress: { pos: 0, duration: 0, watched: false, updatedAt: 0 } };
+      ep = { id: uid(), number, title: '', thumb: null, duration: 0, rating: null, ratingSource: null, personalRating: null, skipTimes: [], sources: [], updatedAt: Date.now(), progress: { pos: 0, duration: 0, watched: false, updatedAt: 0 } };
       s.episodes.push(ep);
       s.episodes.sort((a, b) => a.number - b.number);
     }
@@ -229,8 +289,9 @@ class Store extends EventEmitter {
     for (const it of items) {
       const ep = this.ensureEpisode(s, it.number);
       if (it.title && !ep.title) ep.title = it.title;
-      if (!ep.sources.some((x) => x.url === it.url)) { ep.sources.push({ url: it.url, label: hostLabel(it.url) }); added++; }
+      if (!ep.sources.some((x) => x.url === it.url)) { ep.sources.push({ url: it.url, label: hostLabel(it.url) }); ep.updatedAt = Date.now(); added++; }
     }
+    if (added) s.updatedAt = Date.now();
     this.save();
     return added;
   }
@@ -239,15 +300,27 @@ class Store extends EventEmitter {
     const ep = this.getEpisode(sid, eid);
     if (!ep) throw new Error('Episodio non trovato');
     ep.sources = [...new Set(urls)].map((url) => ({ url, label: hostLabel(url) }));
+    ep.updatedAt = Date.now();
+    const series = this.getSeries(sid); if (series) series.updatedAt = ep.updatedAt;
     this.save();
   }
 
-  deleteEpisode(sid, eid) { const s = this.getSeries(sid); if (s) { s.episodes = s.episodes.filter((e) => e.id !== eid); this.save(); } }
+  deleteEpisode(sid, eid) {
+    const s = this.getSeries(sid);
+    if (!s || !s.episodes.some((e) => e.id === eid)) return;
+    this.data.deletedEpisodes ||= [];
+    this.data.deletedEpisodes.push({ seriesId: sid, id: eid, deletedAt: Date.now() });
+    s.episodes = s.episodes.filter((e) => e.id !== eid);
+    s.updatedAt = Date.now();
+    this.save();
+  }
 
   markWatched(sid, eid, watched) {
     const ep = this.getEpisode(sid, eid);
     if (!ep) return;
     ep.progress = { ...ep.progress, watched, pos: 0, updatedAt: Date.now() };
+    ep.updatedAt = ep.progress.updatedAt;
+    const series = this.getSeries(sid); if (series) series.updatedAt = ep.updatedAt;
     this.save();
     this.emit('progress', { seriesId: sid, episodeId: eid, progress: { ...ep.progress }, force: true });
   }
@@ -256,6 +329,8 @@ class Store extends EventEmitter {
     const ep = this.getEpisode(sid, eid);
     if (!ep) throw new Error('Episodio non trovato');
     ep.personalRating = personalRating(rating);
+    ep.updatedAt = Date.now();
+    const series = this.getSeries(sid); if (series) series.updatedAt = ep.updatedAt;
     this.save();
     return ep;
   }
@@ -266,6 +341,8 @@ class Store extends EventEmitter {
     const previous = ep.progress;
     ep.progress = { ...ep.progress, ...p, updatedAt: Date.now() };
     s.lastWatchedAt = Date.now();
+    ep.updatedAt = ep.progress.updatedAt;
+    s.updatedAt = ep.progress.updatedAt;
     this.save();
     if (forceSync || previous.pos !== ep.progress.pos || previous.duration !== ep.progress.duration || previous.watched !== ep.progress.watched) {
       this.emit('progress', { seriesId: sid, episodeId: eid, progress: { ...ep.progress }, force: forceSync });
@@ -281,6 +358,8 @@ class Store extends EventEmitter {
       watched: Boolean(progress.completed),
       updatedAt: Date.parse(progress.updated_at) || 0,
     };
+    episode.updatedAt = episode.progress.updatedAt;
+    series.updatedAt = Math.max(series.updatedAt || 0, episode.updatedAt);
     series.lastWatchedAt = Math.max(series.lastWatchedAt || 0, episode.progress.updatedAt);
     this.save();
     return true;
@@ -292,16 +371,19 @@ class Store extends EventEmitter {
     if (!s) return;
     for (const m of list) {
       const ep = this.ensureEpisode(s, m.number);
+      const before = JSON.stringify(ep);
       if (m.title && !ep.title) ep.title = m.title;
       if (m.thumb && !ep.thumb) ep.thumb = m.thumb;
       if (m.duration != null && Number.isFinite(Number(m.duration))) ep.duration = Math.max(0, Number(m.duration) * (Number(m.duration) < 1000 ? 60 : 1));
       if (Array.isArray(m.skipTimes)) ep.skipTimes = m.skipTimes;
       if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'IMDb'; }
+      if (JSON.stringify(ep) !== before) ep.updatedAt = Date.now();
     }
     if (s.imdbChart && Array.isArray(s.imdbChart.seasons) && s.imdbChart.seasons.length > 0) {
       const { applyImdbRatingsToEpisodes } = require('./metadata');
       applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s.title);
     }
+    s.updatedAt = Date.now();
     this.save();
   }
 
@@ -325,11 +407,13 @@ class Store extends EventEmitter {
         if (!existing || !retainEpisode(existing)) continue;
       }
       const ep = this.ensureEpisode(s, m.number);
+      const before = JSON.stringify(ep);
       if (m.title) ep.title = m.title;
       if (m.thumb) ep.thumb = m.thumb;
       if (m.duration != null && Number.isFinite(Number(m.duration))) ep.duration = Math.max(0, Number(m.duration) * (Number(m.duration) < 1000 ? 60 : 1));
       if (Array.isArray(m.skipTimes)) ep.skipTimes = m.skipTimes;
       if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'IMDb'; }
+      if (JSON.stringify(ep) !== before) ep.updatedAt = Date.now();
     }
     if (s.imdbChart && Array.isArray(s.imdbChart.seasons) && s.imdbChart.seasons.length > 0) {
       const { applyImdbRatingsToEpisodes } = require('./metadata');
@@ -338,6 +422,7 @@ class Store extends EventEmitter {
     if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
       s.episodes = s.episodes.filter((ep) => ep.number <= s.episodeCount || retainEpisode(ep));
     }
+    s.updatedAt = Date.now();
     this.save();
     return s;
   }
