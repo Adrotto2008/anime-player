@@ -278,6 +278,7 @@ class CloudService {
 
   async _syncForUser(userId) {
     await this.ensureProfile(userId);
+    await this._syncSharedSources();
     const catalog = await this._resolveCatalog();
     await this._syncProgress(userId, catalog);
     await this._syncHistory(userId, catalog);
@@ -289,6 +290,48 @@ class CloudService {
       ? `Sync utente completata; ${this.pendingCatalogMatches} anime/episodi locali attendono una voce nel catalogo condiviso.`
       : 'Sincronizzazione completata';
     this._publish(message);
+  }
+
+  async recordPlayableSource({ seriesId, anilistId, seasonNumber, episodeNumber, url }) {
+    if (!this.client || !this.user || !anilistId || !Number.isInteger(episodeNumber) || episodeNumber < 0 || !Number.isInteger(seasonNumber) || seasonNumber < 1) return false;
+    let parsed;
+    try { parsed = new URL(url); } catch { return false; }
+    if (!['http:', 'https:'].includes(parsed.protocol) || parsed.username || parsed.password || url.length > 2048) return false;
+    const row = {
+      external_id: `anilist:${anilistId}`,
+      season_number: seasonNumber,
+      episode_number: episodeNumber,
+      source_url: url,
+      submitted_by: this.user.id,
+    };
+    const { error } = await this.client.from('shared_episode_sources').upsert(row, { onConflict: 'external_id,season_number,episode_number,source_url', ignoreDuplicates: true });
+    if (error) { this._failed(error); return false; }
+    await this.importSharedSources(seriesId);
+    return true;
+  }
+
+  async importSharedSources(seriesId) {
+    if (!this.client || !this.user) return 0;
+    const series = this.store.getSeries(seriesId);
+    if (!series || !series.anilistId) return 0;
+    const seasonNumber = detectSeasonFromTitle(series.title) || 1;
+    const { data, error } = await this.client.from('shared_episode_sources')
+      .select('episode_number,source_url')
+      .eq('external_id', `anilist:${series.anilistId}`)
+      .eq('season_number', seasonNumber);
+    if (error) throw error;
+    const added = this.store.addSources(seriesId, (data || []).map((row) => ({ number: row.episode_number, url: row.source_url })));
+    if (added) this.notify('lib:changed', this.store.snapshot());
+    return added;
+  }
+
+  async _syncSharedSources() {
+    if (!this.client || !this.user) return;
+    for (const series of this.store.data.series) {
+      if (!series.anilistId) continue;
+      try { await this.importSharedSources(series.id); }
+      catch (error) { console.warn('[supabase] Recupero link condivisi fallito:', error.message); }
+    }
   }
 
   async _resolveCatalog() {

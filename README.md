@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.6** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.7** is a cross-platform Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -20,6 +20,9 @@ episodes and it does not scrape streaming sites.
   has been checked.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
+- Signed-in users can share HTTP(S) episode links after mpv has played them for
+  at least eight seconds; matching AniList seasons can then recover those links
+  automatically. The local library remains available offline.
 - Automatic episode-number detection, patterns (`{ep}` and `{ep:02}`),
   newline lists, and `.m3u`/`.m3u8` import.
 - Exact playback progress (flushed during playback and on exit), watched state, resume cards, autoplay, and
@@ -80,7 +83,7 @@ npm run dist
 This keeps both Windows targets:
 
 - `dist\AnimePlayer-portable.exe`: one executable, no installation required.
-- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.6.exe`): NSIS installer with Desktop and
+- `dist\AnimePlayer-Setup-<version>.exe` (currently `AnimePlayer-Setup-0.5.7.exe`): NSIS installer with Desktop and
   Start Menu shortcuts, selectable installation directory, and per-user
   installation by default.
 
