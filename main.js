@@ -130,6 +130,11 @@ function register() {
     return { ...result, lib: lib() };
   });
   h('mpv:openGuide', async () => { await shell.openExternal(mpvManager.installGuide); return true; });
+  h('mpv:install', async () => {
+    const result = await mpvManager.install();
+    if (result.ok) store.setSettings({ mpvPath: result.path });
+    return { ...result, lib: lib() };
+  });
   h('mpv:browse', async () => {
     const executableName = process.platform === 'win32' ? 'mpv.exe' : 'mpv';
     const r = await dialog.showOpenDialog(win, { title: `Scegli ${executableName}`, properties: ['openFile'], filters: process.platform === 'win32' ? [{ name: 'mpv', extensions: ['exe'] }] : [] });

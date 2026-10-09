@@ -2,7 +2,11 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { execFile } = require('child_process');
+const { execFile, execFileSync } = require('child_process');
+const https = require('https');
+const crypto = require('crypto');
+const { pipeline } = require('stream/promises');
+const { createWriteStream, createReadStream } = require('fs');
 
 const MIN_VERSION = [0, 30, 0];
 const INSTALL_GUIDE = 'https://mpv.io/installation/';
@@ -20,6 +24,98 @@ function createMpvManager({ platform = process.platform, arch = process.arch, en
   const executableName = platform === 'win32' ? 'mpv.exe' : 'mpv';
   const managedPath = userDataPath && path.join(userDataPath, 'mpv', `${platform}-${arch}`, executableName);
   const supported = Boolean(ARCHITECTURES[platform] && ARCHITECTURES[platform].includes(arch));
+
+  async function download(url, destination) {
+    await new Promise((resolve, reject) => {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'https:' || !['api.github.com', 'github.com', 'release-assets.githubusercontent.com'].includes(parsed.hostname)) { reject(new Error('La release mpv contiene un URL di download non consentito.')); return; }
+      const request = https.get(parsed, { headers: { 'User-Agent': 'AnimePlayer', Accept: 'application/vnd.github+json' } }, (response) => {
+        if (response.statusCode >= 300 && response.statusCode < 400 && response.headers.location) {
+          response.resume();
+          download(response.headers.location, destination).then(resolve, reject);
+        } else if (response.statusCode !== 200) {
+          response.resume(); reject(new Error(`Download mpv fallito (HTTP ${response.statusCode}).`));
+        } else {
+          pipeline(response, createWriteStream(destination, { flags: 'wx' })).then(resolve, reject);
+        }
+      });
+      request.setTimeout(30000, () => request.destroy(new Error('Download mpv scaduto.')));
+      request.on('error', reject);
+    });
+  }
+
+  async function install() {
+    if (platform !== 'win32' || !['x64', 'arm64'].includes(arch)) return { ok: false, status: 'unsupported-platform', error: `Installazione automatica non disponibile per ${platform}/${arch}.`, installGuide: INSTALL_GUIDE };
+    if (!userDataPath || !managedPath) throw new Error('Cartella utente non disponibile per installare mpv.');
+    const release = await new Promise((resolve, reject) => {
+      https.get('https://api.github.com/repos/mpv-player/mpv/releases/latest', { headers: { 'User-Agent': 'AnimePlayer', Accept: 'application/vnd.github+json' } }, (response) => {
+        if (response.statusCode !== 200) { response.resume(); reject(new Error(`Impossibile verificare la release ufficiale di mpv (HTTP ${response.statusCode}).`)); return; }
+        let body = ''; response.setEncoding('utf8'); response.on('data', (chunk) => { body += chunk; if (body.length > 5 * 1024 * 1024) response.destroy(new Error('Risposta release mpv troppo grande.')); }); response.on('end', () => { try { resolve(JSON.parse(body)); } catch { reject(new Error('Risposta release mpv non valida.')); } });
+      }).on('error', reject);
+    });
+    const architecture = arch === 'x64' ? 'x86_64' : 'aarch64';
+    const asset = (release.assets || []).find((item) => item.name === `mpv-${release.tag_name}-${architecture}-pc-windows-msvc.zip`);
+    if (!asset || !/^sha256:[a-f0-9]{64}$/i.test(asset.digest || '') || !asset.browser_download_url || asset.size > 500 * 1024 * 1024) throw new Error('La release ufficiale non espone un archivio Windows di dimensione valida con SHA-256 verificabile.');
+    const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anime-player-mpv-'));
+    const archive = path.join(tempDir, 'mpv.zip');
+    const staging = `${managedPath}.installing-${process.pid}`;
+    try {
+      await download(asset.browser_download_url, archive);
+      const hash = crypto.createHash('sha256');
+      for await (const chunk of createReadStream(archive)) hash.update(chunk);
+      const digest = hash.digest('hex');
+      if (digest.toLowerCase() !== asset.digest.slice('sha256:'.length).toLowerCase()) throw new Error('Il controllo SHA-256 del download di mpv non è riuscito.');
+      fs.mkdirSync(path.dirname(managedPath), { recursive: true });
+      fs.mkdirSync(staging, { recursive: false });
+      execFileSync('tar', ['-xf', archive, '-C', staging], { windowsHide: true, stdio: 'ignore' });
+      const found = [];
+      const walk = (directory, depth = 0) => {
+        if (depth > 3) return;
+        for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+          const child = path.join(directory, entry.name);
+          if (entry.isFile() && entry.name.toLowerCase() === executableName.toLowerCase()) found.push(child);
+          else if (entry.isDirectory()) walk(child, depth + 1);
+        }
+      };
+      walk(staging);
+      if (found.length !== 1) throw new Error('L’archivio ufficiale non contiene un eseguibile mpv riconoscibile.');
+      const candidate = found[0];
+      const validated = await validate(candidate);
+      if (!validated.ok) throw new Error(validated.error || 'La build mpv scaricata non si avvia.');
+      const candidateDir = path.dirname(candidate);
+      const files = fs.readdirSync(candidateDir, { withFileTypes: true });
+      if (!files.some((entry) => entry.name.toLowerCase() === executableName.toLowerCase())) throw new Error('La build ufficiale non contiene tutti i file necessari di mpv.');
+      const installDir = path.dirname(managedPath);
+      const nextDir = `${installDir}.new-${process.pid}`;
+      const backupDir = `${installDir}.previous-${process.pid}`;
+      fs.rmSync(nextDir, { recursive: true, force: true });
+      fs.mkdirSync(nextDir, { recursive: true });
+      for (const entry of files) {
+        if (entry.isFile()) fs.copyFileSync(path.join(candidateDir, entry.name), path.join(nextDir, entry.name));
+        else if (entry.isDirectory()) fs.cpSync(path.join(candidateDir, entry.name), path.join(nextDir, entry.name), { recursive: true });
+      }
+      const nextExecutable = path.join(nextDir, executableName);
+      const stagedValidation = await validate(nextExecutable);
+      if (!stagedValidation.ok) throw new Error(stagedValidation.error || 'Verifica di mpv installato non riuscita.');
+      fs.rmSync(backupDir, { recursive: true, force: true });
+      const hadInstall = fs.existsSync(installDir);
+      if (hadInstall) fs.renameSync(installDir, backupDir);
+      try { fs.renameSync(nextDir, installDir); }
+      catch (error) { if (hadInstall) fs.renameSync(backupDir, installDir); throw error; }
+      const installed = await validate(managedPath);
+      if (!installed.ok) {
+        fs.rmSync(installDir, { recursive: true, force: true });
+        if (hadInstall) fs.renameSync(backupDir, installDir);
+        throw new Error(installed.error || 'Verifica di mpv installato non riuscita.');
+      }
+      fs.rmSync(backupDir, { recursive: true, force: true });
+      return { ...installed, source: 'managed', managedPath };
+    } finally {
+      fs.rmSync(tempDir, { recursive: true, force: true });
+      fs.rmSync(staging, { recursive: true, force: true });
+      fs.rmSync(`${path.dirname(managedPath)}.new-${process.pid}`, { recursive: true, force: true });
+    }
+  }
 
   function conventionalPaths() {
     if (platform === 'win32') {
@@ -93,7 +189,7 @@ function createMpvManager({ platform = process.platform, arch = process.arch, en
       : { ok: false, status: 'not-found', path: null, source: null, managedPath, error: 'mpv non è installato o non è stato trovato.' };
   }
 
-  return { platform, arch, supported, managedPath, installGuide: INSTALL_GUIDE, validate, find };
+  return { platform, arch, supported, managedPath, installGuide: INSTALL_GUIDE, validate, find, install };
 }
 
 function runVersionCheck(executable, { platform = process.platform } = {}) {

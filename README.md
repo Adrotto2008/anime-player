@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.19** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.20** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery is provided for AnimeWorld.
@@ -60,13 +60,16 @@ episodes. Automatic episode-link discovery is provided for AnimeWorld.
 ## Requirements
 
 - Windows 10/11, macOS 12+, or Linux (AppImage and Debian packages).
-- mpv installed separately. First-run setup verifies it by running
+- mpv is required for playback. On Windows x64 and ARM64, **Configure mpv** can
+  install the official mpv Windows build into Anime Player's user data folder,
+  verify its GitHub release SHA-256, and confirm it starts before selecting it.
+  Other platforms can use the official [mpv installation guide](https://mpv.io/installation/)
+  and manual executable selection. First-run setup verifies mpv by running
   `mpv --version`, searches the saved path, Anime Player's persistent managed
   runtime directory, PATH, and common locations, and offers manual selection.
-  **Configure mpv** opens the official [mpv installation guide](https://mpv.io/installation/).
-  Anime Player does not bundle or automatically download mpv: available builds,
-  checksums, and signing differ by OS and architecture. It does not run package
-  managers or privileged install commands for you.
+  If automatic setup is unavailable, the official [mpv installation guide](https://mpv.io/installation/)
+  opens and you can select the executable manually. Anime Player does not run
+  package managers or privileged install commands.
 - Node.js 20.18.1+ only when running from source or building installers.
 
 ## Development install
@@ -83,7 +86,8 @@ also handles incomplete downloads. If installation still fails, run `npm ci`
 again with a working network connection. Node.js 22 LTS is recommended.
 
 The first-run setup explains that Anime4K shaders are included in the app, while
-mpv must be installed separately. It asks for the mpv executable and the
+mpv is installed automatically on supported Windows architectures when you choose
+**Configure mpv**. Other platforms can install it separately. Setup asks for the executable and the
 default Anime4K preset. **Detect** verifies the candidate's version and ability
 to launch; **Browse** does the same before saving a selected executable. **Later**
 lets you use the library and other features without mpv. Setup is offered again

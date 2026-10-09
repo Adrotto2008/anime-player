@@ -1034,7 +1034,16 @@ function openSetup() {
         close();
       } catch { /* toast */ }
     };
-    const configure = async () => { try { await call('mpv:openGuide'); } catch { /* toast */ } };
+    const configure = async () => {
+      const button = document.activeElement;
+      if (button) { button.disabled = true; button.textContent = t('configureMpv') + '…'; }
+      try {
+        const result = await call('mpv:install');
+        if (result.ok) { state.lib = result.lib; mpv.value = result.path; toast(t('setupDone')); }
+        else { toast(result.error || t('mpvExternalNote'), 'error'); if (result.installGuide) await call('mpv:openGuide'); }
+      } catch (error) { toast(error.message || String(error), 'error'); }
+      finally { if (button) { button.disabled = false; button.textContent = t('configureMpv'); } }
+    };
     const save = async () => {
       try {
         const lib = await call('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, language: language.value, onboardingComplete: true });
