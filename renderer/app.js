@@ -208,15 +208,11 @@ function openAccountDialogForMode(mode) {
           setTimeout(close, 500);
         } else {
           const result = await api.invoke('auth:signUp', email.value.trim(), password.value);
-          if (result.needsEmailConfirmation) message.textContent = t('accountCreated');
-          else {
-            state.sync = await api.invoke('auth:state');
+          state.sync = await api.invoke('auth:state');
+          if (result.connected || state.sync.connected) {
             state.profile = await api.invoke('profile:mine').catch(() => null);
-            message.textContent = t('authReady');
-            password.value = '';
-            renderRail();
-            setTimeout(close, 500);
-          }
+            message.textContent = t('authReady'); password.value = ''; renderRail(); setTimeout(close, 500);
+          } else message.textContent = t('accountCreated');
         }
       } catch (error) { message.textContent = cleanErr(error); }
       finally { button.disabled = false; }
@@ -384,6 +380,7 @@ function socialView() {
   return h('div', { class: 'page social-page' },
     h('header', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('social')))),
     h('section', { class: 'panel social-panel' }, h('div', { class: 'social-panel-head' }, h('div', null, h('h2', null, t('socialProfile')), h('p', { class: 'muted small' }, state.sync.user.email)), profileAvatar(profile, 'large')),
+      state.sync.user.email_confirmed_at ? h('div', { class: 'row' }, h('span', { class: 'chip ok' }, t('emailVerified'))) : null,
       field(t('socialNickname'), nickname), field(t('socialDisplayName'), displayName), field(t('socialAvatarUrl'), avatarUrl), h('button', { class: 'btn primary', onclick: saveProfile }, t('save'))),
     h('section', { class: 'panel social-panel' }, h('h2', null, t('socialFind')), h('p', { class: 'muted small' }, t('socialPrivacyHint')), query, resultsHost),
     h('section', { class: 'panel social-panel' }, h('h2', null, t('socialRequests')), h('div', { class: 'social-list' }, requestRows.length ? requestRows : h('p', { class: 'muted small' }, t('socialNoRequests')))),
@@ -1040,7 +1037,8 @@ function openSetup() {
       try {
         const result = await call('mpv:install');
         if (result.ok) { state.lib = result.lib; mpv.value = result.path; toast(t('setupDone')); }
-        else { toast(result.error || t('mpvExternalNote'), 'error'); if (result.installGuide) await call('mpv:openGuide'); }
+        else if (!result.cancelled) { toast(result.error || t('mpvExternalNote'), 'error'); if (result.installGuide) await call('mpv:openGuide'); }
+        else { close(); }
       } catch (error) { toast(error.message || String(error), 'error'); }
       finally { if (button) { button.disabled = false; button.textContent = t('configureMpv'); } }
     };

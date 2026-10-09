@@ -20,9 +20,10 @@ function compareVersions(a, b) {
   return 0;
 }
 
-function createMpvManager({ platform = process.platform, arch = process.arch, env = process.env, userDataPath, fileSystem = fs, run = runVersionCheck, home = os.homedir() } = {}) {
+function createMpvManager({ platform = process.platform, arch = process.arch, env = process.env, userDataPath, installDirectory = '', fileSystem = fs, run = runVersionCheck, home = os.homedir() } = {}) {
   const executableName = platform === 'win32' ? 'mpv.exe' : 'mpv';
-  const managedPath = userDataPath && path.join(userDataPath, 'mpv', `${platform}-${arch}`, executableName);
+  const configuredInstallDirectory = String(installDirectory || '').trim();
+  const managedPath = (configuredInstallDirectory || userDataPath) && path.join(configuredInstallDirectory || userDataPath, 'mpv', `${platform}-${arch}`, executableName);
   const supported = Boolean(ARCHITECTURES[platform] && ARCHITECTURES[platform].includes(arch));
 
   async function download(url, destination) {
@@ -44,9 +45,11 @@ function createMpvManager({ platform = process.platform, arch = process.arch, en
     });
   }
 
-  async function install() {
+  async function install(destinationDirectory = configuredInstallDirectory || userDataPath) {
     if (platform !== 'win32' || !['x64', 'arm64'].includes(arch)) return { ok: false, status: 'unsupported-platform', error: `Installazione automatica non disponibile per ${platform}/${arch}.`, installGuide: INSTALL_GUIDE };
-    if (!userDataPath || !managedPath) throw new Error('Cartella utente non disponibile per installare mpv.');
+    if (!destinationDirectory) throw new Error('Cartella di installazione non disponibile per mpv.');
+    const installRoot = path.resolve(destinationDirectory);
+    const destinationManagedPath = path.join(installRoot, 'mpv', `${platform}-${arch}`, executableName);
     const release = await new Promise((resolve, reject) => {
       https.get('https://api.github.com/repos/mpv-player/mpv/releases/latest', { headers: { 'User-Agent': 'AnimePlayer', Accept: 'application/vnd.github+json' } }, (response) => {
         if (response.statusCode !== 200) { response.resume(); reject(new Error(`Impossibile verificare la release ufficiale di mpv (HTTP ${response.statusCode}).`)); return; }
@@ -58,14 +61,14 @@ function createMpvManager({ platform = process.platform, arch = process.arch, en
     if (!asset || !/^sha256:[a-f0-9]{64}$/i.test(asset.digest || '') || !asset.browser_download_url || asset.size > 500 * 1024 * 1024) throw new Error('La release ufficiale non espone un archivio Windows di dimensione valida con SHA-256 verificabile.');
     const tempDir = fs.mkdtempSync(path.join(os.tmpdir(), 'anime-player-mpv-'));
     const archive = path.join(tempDir, 'mpv.zip');
-    const staging = `${managedPath}.installing-${process.pid}`;
+    const staging = `${destinationManagedPath}.installing-${process.pid}`;
     try {
       await download(asset.browser_download_url, archive);
       const hash = crypto.createHash('sha256');
       for await (const chunk of createReadStream(archive)) hash.update(chunk);
       const digest = hash.digest('hex');
       if (digest.toLowerCase() !== asset.digest.slice('sha256:'.length).toLowerCase()) throw new Error('Il controllo SHA-256 del download di mpv non è riuscito.');
-      fs.mkdirSync(path.dirname(managedPath), { recursive: true });
+      fs.mkdirSync(path.dirname(destinationManagedPath), { recursive: true });
       fs.mkdirSync(staging, { recursive: false });
       execFileSync('tar', ['-xf', archive, '-C', staging], { windowsHide: true, stdio: 'ignore' });
       const found = [];
@@ -85,7 +88,7 @@ function createMpvManager({ platform = process.platform, arch = process.arch, en
       const candidateDir = path.dirname(candidate);
       const files = fs.readdirSync(candidateDir, { withFileTypes: true });
       if (!files.some((entry) => entry.name.toLowerCase() === executableName.toLowerCase())) throw new Error('La build ufficiale non contiene tutti i file necessari di mpv.');
-      const installDir = path.dirname(managedPath);
+      const installDir = path.dirname(destinationManagedPath);
       const nextDir = `${installDir}.new-${process.pid}`;
       const backupDir = `${installDir}.previous-${process.pid}`;
       fs.rmSync(nextDir, { recursive: true, force: true });
@@ -102,18 +105,29 @@ function createMpvManager({ platform = process.platform, arch = process.arch, en
       if (hadInstall) fs.renameSync(installDir, backupDir);
       try { fs.renameSync(nextDir, installDir); }
       catch (error) { if (hadInstall) fs.renameSync(backupDir, installDir); throw error; }
-      const installed = await validate(managedPath);
+      const installed = await validate(destinationManagedPath);
       if (!installed.ok) {
         fs.rmSync(installDir, { recursive: true, force: true });
         if (hadInstall) fs.renameSync(backupDir, installDir);
         throw new Error(installed.error || 'Verifica di mpv installato non riuscita.');
       }
+      let startMenuShortcut = null;
+      if (platform === 'win32' && env.APPDATA) {
+        const startMenu = path.join(env.APPDATA, 'Microsoft', 'Windows', 'Start Menu', 'Programs');
+        const shortcutPath = path.join(startMenu, 'Anime Player', 'mpv.lnk');
+        try {
+          fs.mkdirSync(path.dirname(shortcutPath), { recursive: true });
+          const ps = `$shell = New-Object -ComObject WScript.Shell; $link = $shell.CreateShortcut('${shortcutPath.replace(/'/g, "''")}'); $link.TargetPath = '${destinationManagedPath.replace(/'/g, "''")}'; $link.WorkingDirectory = '${path.dirname(destinationManagedPath).replace(/'/g, "''")}'; $link.Description = 'mpv media player'; $link.Save()`;
+          execFileSync('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-Command', ps], { windowsHide: true, stdio: 'ignore' });
+          startMenuShortcut = shortcutPath;
+        } catch { /* mpv resta utilizzabile direttamente anche senza collegamento Start */ }
+      }
       fs.rmSync(backupDir, { recursive: true, force: true });
-      return { ...installed, source: 'managed', managedPath };
+      return { ...installed, source: 'managed', managedPath: destinationManagedPath, installDirectory: installRoot, startMenuShortcut };
     } finally {
       fs.rmSync(tempDir, { recursive: true, force: true });
       fs.rmSync(staging, { recursive: true, force: true });
-      fs.rmSync(`${path.dirname(managedPath)}.new-${process.pid}`, { recursive: true, force: true });
+      fs.rmSync(`${path.dirname(destinationManagedPath)}.new-${process.pid}`, { recursive: true, force: true });
     }
   }
 
@@ -189,7 +203,7 @@ function createMpvManager({ platform = process.platform, arch = process.arch, en
       : { ok: false, status: 'not-found', path: null, source: null, managedPath, error: 'mpv non è installato o non è stato trovato.' };
   }
 
-  return { platform, arch, supported, managedPath, installGuide: INSTALL_GUIDE, validate, find, install };
+  return { platform, arch, supported, managedPath, installDirectory: configuredInstallDirectory || userDataPath, installGuide: INSTALL_GUIDE, validate, find, install };
 }
 
 function runVersionCheck(executable, { platform = process.platform } = {}) {

@@ -7,6 +7,7 @@ const { hostLabel, isValidSource } = require('./patterns');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
+  mpvInstallDirectory: '',
   defaultPreset: 'aa-hq',
   theme: 'default',
   language: 'en',

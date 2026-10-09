@@ -131,8 +131,16 @@ function register() {
   });
   h('mpv:openGuide', async () => { await shell.openExternal(mpvManager.installGuide); return true; });
   h('mpv:install', async () => {
-    const result = await mpvManager.install();
-    if (result.ok) store.setSettings({ mpvPath: result.path });
+    const currentDirectory = store.data.settings.mpvInstallDirectory || mpvManager.installDirectory;
+    const r = await dialog.showOpenDialog(win, {
+      title: 'Scegli dove installare mpv',
+      buttonLabel: 'Installa mpv qui',
+      properties: ['openDirectory', 'createDirectory'],
+      defaultPath: currentDirectory || app.getPath('userData'),
+    });
+    if (r.canceled || !r.filePaths[0]) return { ok: false, status: 'cancelled', cancelled: true, lib: lib() };
+    const result = await mpvManager.install(r.filePaths[0]);
+    if (result.ok) store.setSettings({ mpvPath: result.path, mpvInstallDirectory: result.installDirectory });
     return { ...result, lib: lib() };
   });
   h('mpv:browse', async () => {
@@ -342,7 +350,7 @@ async function refreshAiringStatuses() {
 app.whenReady().then(async () => {
   const userDataPath = app.getPath('userData');
   store = new Store(path.join(userDataPath, 'library.json'));
-  mpvManager = createMpvManager({ userDataPath });
+  mpvManager = createMpvManager({ userDataPath, installDirectory: store.data.settings.mpvInstallDirectory || '' });
   player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: userDataPath }, notify: send });
   cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);

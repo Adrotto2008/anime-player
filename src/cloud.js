@@ -10,7 +10,7 @@ const { detectEpisodeNumber, expandPattern } = require('./patterns');
 
 const PROJECT_REF = 'gbdcdserzrujiuacefca'; // anime-player; deliberately excludes the old haxball2 project.
 const CLOUD_SETTINGS = ['theme', 'language', 'defaultPreset', 'autoplayNext', 'skipOpening', 'skipEnding', 'alang', 'slang'];
-const DEVICE_SETTINGS = ['mpvPath', 'onboardingComplete'];
+const DEVICE_SETTINGS = ['mpvPath', 'mpvInstallDirectory', 'onboardingComplete'];
 const uuid = () => crypto.randomUUID();
 const nowIso = (value = Date.now()) => new Date(value).toISOString();
 const EMPTY_LIBRARY = () => ({ settings: {}, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false });
@@ -305,7 +305,7 @@ class CloudService {
     const { data, error } = await this.client.auth.signUp({ email, password });
     if (error) throw error;
     if (data.user && data.session) await this.ensureProfile(data.user.id);
-    return { user: data.user, needsEmailConfirmation: Boolean(data.user && !data.session) };
+    return { user: data.user, needsEmailConfirmation: Boolean(data.user && !data.session), connected: Boolean(data.session) };
   }
 
   async signIn(email, password) {
@@ -335,7 +335,8 @@ class CloudService {
     if (!this.client) return this.status();
     const { data, error } = await this.client.auth.getSession();
     if (error) throw error;
-    return { ...this.status(), user: data.session && data.session.user ? { id: data.session.user.id, email: data.session.user.email } : null };
+    this.user = data.session && data.session.user || null;
+    return { ...this.status(), user: data.session && data.session.user ? { id: data.session.user.id, email: data.session.user.email, email_confirmed_at: data.session.user.email_confirmed_at || null } : null };
   }
 
   _requireClient() {
