@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
 const detectSeasonFromTitle = (title) => {
   const text = String(title || '');
   const match = text.match(/season\s*(\d+)/i) || text.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || text.match(/\bS(\d+)\b/i) || text.match(/\bPart\s*(\d+)\b/i);
@@ -47,7 +47,12 @@ function castRelatedSection(s) {
   return h('section', { class: 'compact-info' }, castPanel, relatedPanel);
 }
 const $ = (s) => document.querySelector(s);
-const cleanErr = (e) => String((e && e.message) || e).replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '');
+const cleanErr = (e) => {
+  const value = e && typeof e === 'object'
+    ? [e.message, e.details, e.hint, e.code && `(${e.code})`].filter(Boolean).join(' — ')
+    : String(e || 'Errore sconosciuto.');
+  return value.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '') || 'Errore sconosciuto.';
+};
 const bg = (url) => (url ? { backgroundImage: `url("${String(url).replace(/"/g, '%22')}")` } : {});
 
 /* ---------- icone, menu a comparsa, interruttori ---------- */
@@ -312,9 +317,12 @@ function socialView() {
     state.social.loading = true;
     try {
       const [profile, friends, requests] = await Promise.all([api.invoke('profile:mine'), api.invoke('friends:list'), api.invoke('friends:requests')]);
+      const requestProfileIds = [...new Set((requests || []).filter((request) => request.status === 'pending').flatMap((request) => [request.sender_id, request.receiver_id]).filter((id) => id !== state.sync.user.id))];
+      const requestProfiles = await Promise.all(requestProfileIds.map((id) => api.invoke('profile:get', id).catch(() => null)));
       state.profile = profile || null;
       state.social.friends = friends || [];
       state.social.requests = requests || [];
+      state.social.requestProfiles = requestProfiles.filter(Boolean);
       state.social.loaded = true;
     } catch (error) { toast(cleanErr(error), 'error'); }
     finally { state.social.loading = false; renderRail(); render(); }
@@ -333,16 +341,23 @@ function socialView() {
     } catch (error) { toast(cleanErr(error), 'error'); }
   };
   const query = h('input', { class: 'input social-search', type: 'search', maxlength: '254', autocomplete: 'off', value: state.social.query, placeholder: t('socialSearchPlaceholder') });
+  const resultsHost = h('div', { class: 'social-list' });
   const search = async () => {
     state.social.query = query.value.trim();
     clearTimeout(state.social.searchTimer);
     const requestId = ++state.social.searchRequestId;
+    resultsHost.hidden = state.social.query.length < 2;
+    if (state.social.query.length < 2) {
+      state.social.results = [];
+      resultsHost.replaceChildren();
+      return;
+    }
     state.social.searchTimer = setTimeout(async () => {
       try {
         const results = await api.invoke('friends:search', state.social.query);
         if (requestId !== state.social.searchRequestId || state.view.name !== 'social') return;
         state.social.results = results;
-        render();
+        updateSearchResults();
       }
       catch (error) { toast(cleanErr(error), 'error'); }
     }, 250);
@@ -352,21 +367,25 @@ function socialView() {
   const respond = async (request, status) => { try { await api.invoke('friends:respond', request.id, status); await refresh(); } catch (error) { toast(cleanErr(error), 'error'); } };
   const friendCard = (person, actions = []) => h('article', { class: 'social-user' }, profileAvatar(person), h('div', { class: 'social-user-copy' }, h('b', null, person.display_name || person.username || t('socialUser')), h('span', { class: 'muted small' }, person.username ? `@${person.username}` : t('socialNoNickname'))), h('div', { class: 'social-actions' }, actions));
   const requestProfileCard = (request, person, isIncoming) => h('article', { class: 'social-user' }, profileAvatar(person), h('div', { class: 'social-user-copy' }, h('b', null, person?.display_name || person?.username || t('socialUser')), h('span', { class: 'muted small' }, isIncoming ? t('socialIncoming') : t('socialOutgoing'))), h('div', { class: 'social-actions' }, isIncoming ? [h('button', { class: 'btn sm primary', onclick: () => respond(request, 'accepted') }, t('socialAccept')), h('button', { class: 'btn sm', onclick: () => respond(request, 'rejected') }, t('socialDecline'))] : [h('button', { class: 'btn sm', onclick: () => respond(request, 'cancelled') }, t('socialCancel'))]));
-  const peopleById = new Map([...state.social.friends, ...state.social.results].map((person) => [person.id, person]));
+  const peopleById = new Map([...state.social.friends, ...state.social.requestProfiles, ...state.social.results].map((person) => [person.id, person]));
   const requestRows = [...incoming.map((request) => requestProfileCard(request, peopleById.get(request.sender_id), true)), ...outgoing.map((request) => requestProfileCard(request, peopleById.get(request.receiver_id), false))];
-  const results = state.social.results.filter((person) => person.id !== state.sync.user.id).map((person) => {
-    const pending = state.social.requests.some((request) => request.status === 'pending' && ((request.sender_id === state.sync.user.id && request.receiver_id === person.id) || (request.receiver_id === state.sync.user.id && request.sender_id === person.id)));
-    const action = friendIds.has(person.id) ? h('span', { class: 'chip ok' }, t('socialFriends')) : pending ? h('span', { class: 'chip' }, t('socialPending')) : h('button', { class: 'btn sm primary', onclick: () => sendRequest(person.id) }, t('socialAddFriend'));
-    return friendCard(person, [action]);
-  });
+  const updateSearchResults = () => {
+    const cards = state.social.results.filter((person) => person.id !== state.sync.user.id).map((person) => {
+      const pending = state.social.requests.some((request) => request.status === 'pending' && ((request.sender_id === state.sync.user.id && request.receiver_id === person.id) || (request.receiver_id === state.sync.user.id && request.sender_id === person.id)));
+      const action = friendIds.has(person.id) ? h('span', { class: 'chip ok' }, t('socialFriends')) : pending ? h('span', { class: 'chip' }, t('socialPending')) : h('button', { class: 'btn sm primary', onclick: () => sendRequest(person.id) }, t('socialAddFriend'));
+      return friendCard(person, [action]);
+    });
+    resultsHost.replaceChildren(...(cards.length ? cards : [h('p', { class: 'muted small' }, t('socialNoResults'))]));
+  };
+  resultsHost.hidden = state.social.query.length < 2;
+  if (state.social.query.length >= 2) updateSearchResults();
   const friends = state.social.friends.map((person) => friendCard(person, [h('button', { class: 'btn sm ghost danger', onclick: async () => { if (!confirm(t('socialRemoveConfirm', person.display_name || person.username || t('socialUser')))) return; try { await api.invoke('friends:remove', person.id); await refresh(); } catch (error) { toast(cleanErr(error), 'error'); } } }, t('socialRemove'))]));
   requestAnimationFrame(() => { if (!state.social.loaded && !state.social.loading) refresh(); });
   return h('div', { class: 'page social-page' },
     h('header', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('social')))),
     h('section', { class: 'panel social-panel' }, h('div', { class: 'social-panel-head' }, h('div', null, h('h2', null, t('socialProfile')), h('p', { class: 'muted small' }, state.sync.user.email)), profileAvatar(profile, 'large')),
       field(t('socialNickname'), nickname), field(t('socialDisplayName'), displayName), field(t('socialAvatarUrl'), avatarUrl), h('button', { class: 'btn primary', onclick: saveProfile }, t('save'))),
-    h('section', { class: 'panel social-panel' }, h('h2', null, t('socialFind')), h('p', { class: 'muted small' }, t('socialPrivacyHint')), query,
-      state.social.query.length >= 2 ? h('div', { class: 'social-list' }, results.length ? results : h('p', { class: 'muted small' }, t('socialNoResults'))) : null),
+    h('section', { class: 'panel social-panel' }, h('h2', null, t('socialFind')), h('p', { class: 'muted small' }, t('socialPrivacyHint')), query, resultsHost),
     h('section', { class: 'panel social-panel' }, h('h2', null, t('socialRequests')), h('div', { class: 'social-list' }, requestRows.length ? requestRows : h('p', { class: 'muted small' }, t('socialNoRequests')))),
     h('section', { class: 'panel social-panel' }, h('h2', null, t('socialFriends')), h('div', { class: 'social-list' }, friends.length ? friends : h('p', { class: 'muted small' }, t('socialNoFriends')))));
 }

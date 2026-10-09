@@ -720,15 +720,13 @@ class CloudService {
     const user = this._requireUser();
     if (!['accepted', 'rejected', 'cancelled'].includes(status)) throw new Error('Stato richiesta non valido.');
     const actorColumn = status === 'cancelled' ? 'sender_id' : 'receiver_id';
-    const { data, error } = await this.client.from('friend_requests').update({ status, responded_at: nowIso() }).eq('id', requestId).eq(actorColumn, user.id).select().single();
+    const { data, error } = await this.client.from('friend_requests')
+      .update({ status, responded_at: nowIso() })
+      .eq('id', requestId)
+      .eq(actorColumn, user.id)
+      .select()
+      .single();
     if (error) throw error;
-    if (status === 'accepted') {
-      const friendId = data.sender_id;
-      for (const row of [{ user_id: user.id, friend_id: friendId }, { user_id: friendId, friend_id: user.id }]) {
-        const { error: friendshipError } = await this.client.from('friendships').upsert(row, { onConflict: 'user_id,friend_id', ignoreDuplicates: true });
-        if (friendshipError) throw friendshipError;
-      }
-    }
     return data;
   }
 

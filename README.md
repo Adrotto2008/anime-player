@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.16** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.17** is a cross-platform Electron library for anime links. It stores the
 links you provide, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes and it does not scrape streaming sites.
@@ -53,7 +53,8 @@ episodes and it does not scrape streaming sites.
   created before language support are migrated to Italian rather than having
   their current experience silently changed.
 - Social profiles with nickname/avatar, profile search by email or nickname,
-  friend requests, and a friends list.
+  friend requests, and a friends list. Accepting or declining a request is
+  handled atomically; search results update without replacing the focused input.
 
 ## Requirements
 
