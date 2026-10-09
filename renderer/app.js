@@ -51,7 +51,7 @@ const cleanErr = (e) => {
   const value = e && typeof e === 'object'
     ? [e.message, e.details, e.hint, e.code && `(${e.code})`].filter(Boolean).join(' — ')
     : String(e || 'Errore sconosciuto.');
-  return value.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '') || 'Errore sconosciuto.';
+  return value.replace(/^Error invoking remote method '[^']+':\s*(Error:\s*)?/, '').replace(/^MPV_NOT_CONFIGURED:\s*/, '') || 'Errore sconosciuto.';
 };
 const bg = (url) => (url ? { backgroundImage: `url("${String(url).replace(/"/g, '%22')}")` } : {});
 
@@ -847,7 +847,10 @@ function episodeRow(s, e) {
   return h('div', { class: 'ep' + (p.watched ? ' done' : ''), 'data-episode-id': e.id }, thumb, info, acts);
 }
 
-async function play(sid, eid) { try { await call('player:play', sid, eid); } catch { /* toast già mostrato */ } }
+async function play(sid, eid) {
+  try { await call('player:play', sid, eid); }
+  catch (error) { if (String(error && error.message).includes('MPV_NOT_CONFIGURED')) openSetup(); }
+}
 
 /* ---------- dialoghi ---------- */
 function openAddSeries() {
@@ -960,7 +963,7 @@ function openLinkDialog() {
   openDialog(t('openLinkTitle'), (close) => {
     const url = h('input', { class: 'input', placeholder: t('urlPlaceholder') });
     const sel = h('select', { class: 'input' }, h('option', { value: '' }, `${t('default')} (${presetLabel(defaultPreset())})`), ...state.presets.map((p) => h('option', { value: p.id }, p.label)));
-    const go_ = async () => { try { await call('player:playUrl', url.value, sel.value || null); close(); } catch { /* toast */ } };
+    const go_ = async () => { try { await call('player:playUrl', url.value, sel.value || null); close(); } catch (error) { if (String(error && error.message).includes('MPV_NOT_CONFIGURED')) { close(); openSetup(); } } };
     url.addEventListener('keydown', (e) => { if (e.key === 'Enter') go_(); });
     return [field(t('videoLink'), url), field(t('anime4k'), sel), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')), h('button', { class: 'btn primary', onclick: go_ }, t('play')))];
   });
@@ -989,7 +992,7 @@ function openSettings() {
     return [
       sec(t('secPlayer'),
         field(t('mpvPath'), h('div', { class: 'row' }, mpv,
-          h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
+          h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.ok) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(r.error || t('detectMpvMissing'), 'error'); } }, t('find')),
           h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, t('browse')))),
         h('div', { class: 'muted small setup-note' }, t('mpvExternalNote')),
         field(t('defaultAnime4K'), preset)),
@@ -1025,6 +1028,13 @@ function openSetup() {
     const language = h('select', { class: 'input', value: state.lib.settings.language || 'en' },
       h('option', { value: 'en' }, 'English'), h('option', { value: 'it' }, 'Italiano'));
     const message = h('div', { class: 'muted small setup-note' }, t('setupMessage'));
+    const later = async () => {
+      try {
+        state.lib = await mutate('settings:set', { onboardingComplete: true });
+        close();
+      } catch { /* toast */ }
+    };
+    const configure = async () => { try { await call('mpv:openGuide'); } catch { /* toast */ } };
     const save = async () => {
       try {
         const lib = await call('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, language: language.value, onboardingComplete: true });
@@ -1033,12 +1043,14 @@ function openSetup() {
     };
     mpv.addEventListener('keydown', (e) => { if (e.key === 'Enter') save(); });
     return [message, field(t('mpvPath'), h('div', { class: 'row' }, mpv,
-      h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.path) { mpv.value = r.path; state.lib = r.lib; } else toast(t('detectMpvMissing'), 'error'); } }, t('find')),
+      h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.ok) { mpv.value = r.path; state.lib = r.lib; } else toast(r.error || t('detectMpvMissing'), 'error'); } }, t('find')),
       h('button', { class: 'btn', onclick: async () => { const lib = await call('mpv:browse'); state.lib = lib; mpv.value = lib.settings.mpvPath || ''; } }, t('browse')))),
       h('div', { class: 'muted small setup-note' }, t('mpvExternalNote')),
       field(t('defaultAnime4K'), preset), field(t('primaryLanguage'), language),
-      h('div', { class: 'foot' }, h('button', { class: 'btn primary', onclick: save }, t('completeSetup')))];
-  }, { locked: true });
+      h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: later }, t('setupLater')),
+        h('button', { class: 'btn', onclick: configure }, t('configureMpv')),
+        h('button', { class: 'btn primary', onclick: save }, t('completeSetup')))];
+  });
 }
 
 /* ---------- avvio ---------- */
@@ -1057,6 +1069,5 @@ function openSetup() {
   render();
   if (!state.lib.settings.onboardingComplete) openSetup();
   else if (!state.sync.connected) openAccountDialog();
-  else if (!state.lib.settings.mpvPath) toast(t('configureMpv'), 'error');
 })();
 })();

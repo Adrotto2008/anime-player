@@ -1,7 +1,6 @@
 const { app, BrowserWindow, ipcMain, dialog, Menu, shell } = require('electron');
 const path = require('path');
 const fs = require('fs');
-const { execFile } = require('child_process');
 const { Store, validateLibraryData } = require('./src/store');
 const { PlayerManager } = require('./src/player');
 const { CloudService } = require('./src/cloud');
@@ -9,31 +8,16 @@ const A4K = require('./src/anime4k');
 const meta = require('./src/metadata');
 const { expandPattern, expandList, parseM3U, isValidSource, detectEpisodeNumber } = require('./src/patterns');
 const { AnimeWorldClient } = require('./src/animeworld');
+const { createMpvManager } = require('./src/mpv-manager');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 let win; let store; let player; let cloud; let roomSubscription;
 const animeWorld = new AnimeWorldClient();
+let mpvManager;
 
 const shaderDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'shaders') : path.join(__dirname, 'shaders'));
 const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.send(ch, payload); };
-
-function detectMpv() {
-  const env = process.env;
-  const candidates = [
-    store.data.settings.mpvPath,
-    env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Microsoft', 'WinGet', 'Links', 'mpv.exe'),
-    env.LOCALAPPDATA && path.join(env.LOCALAPPDATA, 'Programs', 'mpv', 'mpv.exe'),
-    env.USERPROFILE && path.join(env.USERPROFILE, 'scoop', 'apps', 'mpv', 'current', 'mpv.exe'),
-    'C:\\Program Files\\mpv\\mpv.exe', 'C:\\Program Files\\mvp\\mpv.exe', 'C:\\Program Files (x86)\\mpv\\mpv.exe', 'C:\\ProgramData\\chocolatey\\bin\\mpv.exe',
-    '/usr/bin/mpv', '/usr/local/bin/mpv', '/opt/homebrew/bin/mpv',
-  ].filter(Boolean);
-  const hit = candidates.find((p) => { try { return fs.statSync(p).isFile(); } catch { return false; } });
-  if (hit) return Promise.resolve(hit);
-  return new Promise((resolve) => {
-    execFile(process.platform === 'win32' ? 'where' : 'which', ['mpv'], (err, out) => resolve(err ? null : out.split(/\r?\n/)[0].trim() || null));
-  });
-}
 
 function createWindow() {
   win = new BrowserWindow({
@@ -128,24 +112,30 @@ function register() {
   });
   h('presets:list', () => A4K.listPresets());
   h('player:state', () => player.state());
-  h('settings:set', (patch) => {
+  h('settings:set', async (patch) => {
     const next = { ...store.data.settings, ...(patch || {}) };
     if (!A4K.PRESETS[next.defaultPreset]) throw new Error('Preset Anime4K non valido.');
     if (!['default', 'compact'].includes(next.theme)) throw new Error('Tema non valido.');
     if (!['en', 'it'].includes(next.language)) throw new Error('Lingua non valida.');
-    let mpvIsFile = false;
-    try { mpvIsFile = Boolean(next.mpvPath && fs.statSync(next.mpvPath).isFile()); } catch { /* percorso non valido */ }
-    if (patch && patch.onboardingComplete === true && !mpvIsFile) {
-      throw new Error(`Scegli un eseguibile mpv valido (${process.platform === 'win32' ? 'mpv.exe' : 'mpv'}).`);
+    if (patch && Object.hasOwn(patch, 'mpvPath') && next.mpvPath) {
+      const result = await mpvManager.validate(next.mpvPath);
+      if (!result.ok) throw new Error(result.error || 'Il file selezionato non è un eseguibile mpv compatibile.');
     }
     store.setSettings(patch || {});
     return lib();
   });
-  h('mpv:detect', async () => { const p = await detectMpv(); if (p) store.setSettings({ mpvPath: p }); return { path: p, lib: lib() }; });
+  h('mpv:detect', async () => {
+    const result = await mpvManager.find(store.data.settings.mpvPath);
+    if (result.ok && result.path !== store.data.settings.mpvPath) store.setSettings({ mpvPath: result.path });
+    return { ...result, lib: lib() };
+  });
+  h('mpv:openGuide', async () => { await shell.openExternal(mpvManager.installGuide); return true; });
   h('mpv:browse', async () => {
     const executableName = process.platform === 'win32' ? 'mpv.exe' : 'mpv';
     const r = await dialog.showOpenDialog(win, { title: `Scegli ${executableName}`, properties: ['openFile'], filters: process.platform === 'win32' ? [{ name: 'mpv', extensions: ['exe'] }] : [] });
     if (r.canceled || !r.filePaths[0]) return lib();
+    const result = await mpvManager.validate(r.filePaths[0]);
+    if (!result.ok) throw new Error(result.error || 'Il file selezionato non è un eseguibile mpv compatibile.');
     store.setSettings({ mpvPath: r.filePaths[0] });
     return lib();
   });
@@ -291,15 +281,28 @@ function register() {
   h('episodes:delete', (sid, eid) => { store.deleteEpisode(sid, eid); return lib(); });
   h('episodes:mark', (sid, eid, watched) => { store.markWatched(sid, eid, watched); return lib(); });
 
+  const ensureMpv = async () => {
+    const current = store.data.settings.mpvPath;
+    if (current) {
+      const result = await mpvManager.validate(current);
+      if (result.ok) return result.path;
+    }
+    const result = await mpvManager.find(current);
+    if (result.ok) { store.setSettings({ mpvPath: result.path }); return result.path; }
+    throw new Error(`MPV_NOT_CONFIGURED: ${result.error || 'mpv non trovato.'}`);
+  };
   h('player:play', async (sid, eid) => {
     const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
+    if (!s || !ep) throw new Error('Episodio non trovato');
+    await ensureMpv();
     if (s && ep && s.malId && (!Array.isArray(ep.skipTimes) || !ep.skipTimes.length)) {
       try { store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes: await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration) }]); } catch (err) { console.warn('AniSkip error:', err.message); }
     }
     return player.play(sid, eid).then(() => lib());
   });
-  h('player:playUrl', (url, preset) => {
+  h('player:playUrl', async (url, preset) => {
     if (!isValidSource(String(url).trim())) throw new Error('Link non valido.');
+    await ensureMpv();
     return player.playUrl(String(url).trim(), preset);
   });
   h('player:stop', () => player.stop());
@@ -332,15 +335,15 @@ async function refreshAiringStatuses() {
 }
 
 app.whenReady().then(async () => {
-  store = new Store(path.join(app.getPath('userData'), 'library.json'));
-  player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: app.getPath('userData') }, notify: send });
-  cloud = new CloudService({ store, userDataPath: app.getPath('userData'), safeStorage: require('electron').safeStorage, notify: send, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  const userDataPath = app.getPath('userData');
+  store = new Store(path.join(userDataPath, 'library.json'));
+  mpvManager = createMpvManager({ userDataPath });
+  player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: userDataPath }, notify: send });
+  cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
   register();
-  if (!store.data.settings.mpvPath || !fs.existsSync(store.data.settings.mpvPath)) {
-    const p = await detectMpv();
-    if (p) store.setSettings({ mpvPath: p });
-  }
+  const detected = await mpvManager.find(store.data.settings.mpvPath);
+  if (detected.ok && detected.path !== store.data.settings.mpvPath) store.setSettings({ mpvPath: detected.path });
   createWindow();
   cloud.start().catch((err) => console.warn('Avvio Supabase fallito:', err.message));
   setTimeout(() => refreshAiringStatuses().catch((err) => console.warn('Aggiornamento programmazione fallito:', err.message)), 1200);
