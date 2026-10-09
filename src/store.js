@@ -59,7 +59,11 @@ function validateLibraryData(input) {
         if (!source || typeof source.url !== 'string' || !isValidSource(source.url)) {
           throw new Error(`Link non valido nella serie "${rawSeries.title}", episodio ${rawEpisode.number}.`);
         }
-        return { url: source.url, label: typeof source.label === 'string' && source.label ? source.label : hostLabel(source.url) };
+        return {
+          url: source.url,
+          label: typeof source.label === 'string' && source.label ? source.label : hostLabel(source.url),
+          ...(source.provider === 'animeworld' ? { provider: 'animeworld' } : {}),
+        };
       });
       const p = rawEpisode.progress || {};
       if (typeof p.watched !== 'boolean' || !Number.isFinite(Number(p.pos || 0)) || !Number.isFinite(Number(p.duration || 0)) || !Number.isFinite(Number(p.updatedAt || 0))) {
@@ -289,7 +293,10 @@ class Store extends EventEmitter {
     for (const it of items) {
       const ep = this.ensureEpisode(s, it.number);
       if (it.title && !ep.title) ep.title = it.title;
-      if (!ep.sources.some((x) => x.url === it.url)) { ep.sources.push({ url: it.url, label: hostLabel(it.url) }); ep.updatedAt = Date.now(); added++; }
+      if (!ep.sources.some((x) => x.url === it.url)) {
+        ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(it.provider === 'animeworld' ? { provider: 'animeworld' } : {}) });
+        ep.updatedAt = Date.now(); added++;
+      }
     }
     if (added) s.updatedAt = Date.now();
     this.save();

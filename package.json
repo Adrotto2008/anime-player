@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.17",
+  "version": "0.5.18",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -74,6 +74,7 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.109.0",
+    "cheerio": "1.1.2",
     "ws": "8.22.0"
   }
 }

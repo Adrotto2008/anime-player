@@ -646,6 +646,14 @@ function seriesView(s) {
   const actions = h('div', { class: 'row wrap actions' },
     target ? h('button', { class: 'btn primary lg', onclick: () => play(s.id, target.id) }, icon('play', 16), `${resuming ? t('resume') : t('watch')} · ${t('episode', target.number)}`) : null,
     h('button', { class: target ? 'btn' : 'btn primary', onclick: () => openAddLinks(s) }, icon('plus', 16), t('addLinks')),
+    s.episodes.some((episode) => !episode.sources?.length) ? h('button', { class: 'btn ghost', onclick: async (event) => {
+      const button = event.currentTarget; button.disabled = true; button.textContent = t('findingSources');
+      try {
+        const result = await call('series:discoverSources', s.id);
+        state.lib = result.lib; state.stats = null; render();
+        toast(result.sourceDiscovery.unavailable ? t('autoLinksUnavailable') : result.sourceDiscovery.episodesAdded ? t('autoLinksAdded', result.sourceDiscovery.episodesAdded) : t('autoLinksNotFound'), result.sourceDiscovery.unavailable ? 'error' : '');
+      } catch { button.disabled = false; button.textContent = t('discoverLinks'); }
+    } }, icon('search', 16), t('discoverLinks')) : null,
     h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, icon('chart', 16), t('ratingsChart')),
     s.anilistId ? h('button', { class: 'btn ghost', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, icon('refresh', 16), t('updateInfo')) : null,
     h('span', { class: 'spacer' }),
@@ -848,7 +856,10 @@ function openAddSeries() {
     const results = h('div', { class: 'results' });
     const add = async (payload, btn) => {
       btn.disabled = true; btn.textContent = t('adding');
-      try { const r = await call('series:create', payload); state.lib = r.lib; close(); go({ name: 'series', id: r.id }); } catch { btn.disabled = false; btn.textContent = t('add'); }
+      try {
+        const r = await call('series:create', payload); state.lib = r.lib; close(); go({ name: 'series', id: r.id });
+        toast(r.sourceDiscovery.unavailable ? t('autoLinksUnavailable') : r.sourceDiscovery.episodesAdded ? t('autoLinksAdded', r.sourceDiscovery.episodesAdded) : t('autoLinksNotFound'), r.sourceDiscovery.unavailable ? 'error' : '');
+      } catch { btn.disabled = false; btn.textContent = t('add'); }
     };
     const search = async () => {
       const text = q.value.trim(); if (!text) return;
@@ -862,7 +873,11 @@ function openAddSeries() {
       } catch { results.replaceChildren(); }
     };
     q.addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
-    const manual = h('button', { class: 'link', onclick: async () => { const title = q.value.trim(); if (!title) { toast(t('writeTitleFirst'), 'error'); return; } const r = await call('series:create', { title }); state.lib = r.lib; close(); go({ name: 'series', id: r.id }); } }, t('addWithoutSearch'));
+    const manual = h('button', { class: 'link', onclick: async () => {
+      const title = q.value.trim(); if (!title) { toast(t('writeTitleFirst'), 'error'); return; }
+      const r = await call('series:create', { title }); state.lib = r.lib; close(); go({ name: 'series', id: r.id });
+      toast(r.sourceDiscovery.unavailable ? t('autoLinksUnavailable') : r.sourceDiscovery.episodesAdded ? t('autoLinksAdded', r.sourceDiscovery.episodesAdded) : t('autoLinksNotFound'), r.sourceDiscovery.unavailable ? 'error' : '');
+    } }, t('addWithoutSearch'));
     return [h('div', { class: 'row' }, q, h('button', { class: 'btn primary', onclick: search }, t('search'))), results, h('div', { style: { marginTop: '14px' } }, manual), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')))];
   });
 }

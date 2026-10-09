@@ -8,10 +8,12 @@ const { CloudService } = require('./src/cloud');
 const A4K = require('./src/anime4k');
 const meta = require('./src/metadata');
 const { expandPattern, expandList, parseM3U, isValidSource, detectEpisodeNumber } = require('./src/patterns');
+const { AnimeWorldClient } = require('./src/animeworld');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 let win; let store; let player; let cloud; let roomSubscription;
+const animeWorld = new AnimeWorldClient();
 
 const shaderDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'shaders') : path.join(__dirname, 'shaders'));
 const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.send(ch, payload); };
@@ -150,6 +152,22 @@ function register() {
 
   h('series:search', (text) => meta.searchAnime(text));
 
+  const discoverSeriesSources = async (series, titles = [series.title]) => {
+    try {
+      const sources = (await animeWorld.findSources({ titles, year: series.year, episodeCount: series.episodeCount }))
+        .map((source) => ({ ...source, provider: 'animeworld' }));
+      if (!sources.length) return { episodesAdded: 0, unavailable: false };
+      const existing = new Map(store.getSeries(series.id).episodes.map((episode) => [episode.number, new Set(episode.sources.map((source) => source.url))]));
+      const linkedEpisodes = new Set(sources.filter((source) => !existing.get(source.number)?.has(source.url)).map((source) => source.number));
+      const added = store.addSources(series.id, sources);
+      if (added) store.updateSeries(series.id, { referer: 'https://www.animeworld.ac/' });
+      return { episodesAdded: linkedEpisodes.size, unavailable: false };
+    } catch (err) {
+      console.warn('AnimeWorld source discovery failed:', err.message);
+      return { episodesAdded: 0, unavailable: true };
+    }
+  };
+
   h('series:create', async ({ anilistId, title }) => {
     if (!anilistId) {
       const s = store.addSeries({ title: String(title || '').trim() || 'Senza titolo' });
@@ -161,7 +179,8 @@ function register() {
           store.refreshSeriesMetadata(s.id, patch);
         }
       } catch { /* ignora errori imdb */ }
-      return { id: s.id, lib: lib() };
+      const sourceDiscovery = await discoverSeriesSources(s, [s.title]);
+      return { id: s.id, lib: lib(), sourceDiscovery };
     }
     const m = await meta.getAnime(anilistId, { language: store.data.settings.language });
     const { streamingEpisodes, altTitle, ...fields } = m;
@@ -173,6 +192,7 @@ function register() {
       for (let n = 1; n <= m.episodeCount; n++) store.ensureEpisode(seriesObj, n);
     }
     store.mergeEpisodeMeta(s.id, episodes);
+    const sourceDiscovery = await discoverSeriesSources(s, [m.title, m.altTitle]);
     try {
       const imdb = await meta.fetchImdbData({ title: s.title || m.title, altTitle: m.altTitle });
       if (imdb) {
@@ -181,7 +201,14 @@ function register() {
         store.refreshSeriesMetadata(s.id, patch);
       }
     } catch { /* ignora errori imdb */ }
-    return { id: s.id, lib: lib() };
+    return { id: s.id, lib: lib(), sourceDiscovery };
+  });
+
+  h('series:discoverSources', async (id) => {
+    const series = store.getSeries(id);
+    if (!series) throw new Error('Serie non trovata.');
+    const sourceDiscovery = await discoverSeriesSources(series, [series.title, series.altTitle]);
+    return { lib: lib(), sourceDiscovery };
   });
 
   h('series:update', (id, patch) => { store.updateSeries(id, patch); return lib(); });

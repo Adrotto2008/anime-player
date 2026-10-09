@@ -90,6 +90,11 @@ assert.ok(compressedLibrary.series.every((series) => series.episodes.every((epis
 const restoredLibrary = expandLibraryFromCloud(compressedLibrary);
 assert.strictEqual(restoredLibrary.series[0].episodes[2].sources[0].url, sourceLibrary.series[0].episodes[2].sources[0].url, 'il dispositivo ricostruisce gli URL dal pattern cloud');
 assert.deepStrictEqual(restoredLibrary.series[1].episodes[0].sources, [], 'i link senza pattern restano solo locali');
+const animeWorldOnly = compressLibraryForCloud({ series: [{ id: 'animeworld', title: 'AnimeWorld', episodes: [1, 2].map((number) => ({
+  id: `aw-${number}`, number, sources: [{ url: `https://video.example/stream/episode${number}.m3u8`, provider: 'animeworld' }],
+})) }] });
+assert.ok(!animeWorldOnly.series[0].sourcePattern, 'AnimeWorld URLs should not be inferred into a cloud pattern');
+assert.ok(animeWorldOnly.series[0].episodes.every((episode) => !Object.hasOwn(episode, 'sources')), 'AnimeWorld URLs stay local');
 const lossyPattern = compressLibraryForCloud({ series: [{ id: 'lossy', title: 'Parziale', episodes: [
   { id: '1', number: 1, sources: [{ url: 'https://v.example/ep1.mp4' }] },
   { id: '2', number: 2, sources: [{ url: 'https://v.example/ep2.mp4' }] },
@@ -97,7 +102,7 @@ const lossyPattern = compressLibraryForCloud({ series: [{ id: 'lossy', title: 'P
 ] }] });
 assert.deepStrictEqual(lossyPattern.series[0].sourcePattern, { pattern: 'https://v.example/ep{ep}.mp4', from: 1, to: 3 }, 'il pattern rappresentativo genera la stagione intera anche se mancava il link locale di alcuni episodi');
 assert.strictEqual(expandLibraryFromCloud(lossyPattern).series[0].episodes[2].sources[0].url, 'https://v.example/ep3.mp4');
-ok('snapshot cloud compatto: un pattern per serie e link episodio ricostruiti sul dispositivo');
+ok('snapshot cloud compatto: pattern manuali ricostruiti, link AnimeWorld solo locali');
 
 // --- libreria
 const tmp = path.join(__dirname, '.test-data');

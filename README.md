@@ -1,9 +1,9 @@
 # Anime Player
 
-Anime Player **v0.5.17** is a cross-platform Electron library for anime links. It stores the
-links you provide, displays metadata from AniList and Kitsu, and opens videos
+Anime Player **v0.5.18** is a cross-platform Electron library for anime links. It stores the
+links you add or discover through AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
-episodes and it does not scrape streaming sites.
+episodes. Automatic episode-link discovery is provided for AnimeWorld.
 
 ## Features
 
@@ -18,6 +18,7 @@ episodes and it does not scrape streaming sites.
 - AniList cast and related-series metadata in a compact series panel.
 - AniSkip opening/ending availability is shown per episode after its skip data
   has been checked.
+- Automatic episode-link discovery through AnimeWorld, with exact-title matching and a manual fallback.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
 - Signed-in users privately sync their complete library, one representative
@@ -64,7 +65,7 @@ episodes and it does not scrape streaming sites.
   bundle an mpv binary: mpv is an external executable with platform-specific
   licensing and updates. First-run setup provides trusted **Detect** and
   **Browse** flows instead.
-- Node.js 20+ only when running from source or building installers.
+- Node.js 20.18.1+ only when running from source or building installers.
 
 ## Development install
 
@@ -111,13 +112,13 @@ The installed/portable application does not need Node.js, `npm install`, or
 
 ## Usage
 
-1. Choose **Add series** and search AniList, or add a title manually.
-2. Open the series and add episode links using a detected link, a pattern, a
-   list, or a playlist.
-3. Select **Watch** or **Resume**. Progress is saved from mpv playback,
+1. Choose **Add series** and search AniList, or add a title manually. Anime
+   Player searches AnimeWorld and imports links when it finds an exact title;
+   you can retry from the series page or add links manually.
+2. Select **Watch** or **Resume**. Progress is saved from mpv playback,
    including short sessions stopped before ten seconds.
-4. Open **Statistics** for totals, recent activity, and per-anime details.
-5. Open **Settings** to configure mpv, language, theme, autoplay, audio and
+3. Open **Statistics** for totals, recent activity, and per-anime details.
+4. Open **Settings** to configure mpv, language, theme, autoplay, audio and
    subtitle preferences, or extra mpv arguments. In a series' **Advanced
    options**, set opening/ending durations to expose manual skip buttons in the
    player bar.
@@ -138,8 +139,9 @@ A+A HQ, but it can be changed globally, per series, or while mpv is playing.
 
 The app keeps an offline local JSON copy of the library and can sync a private
 copy to the signed-in user's Supabase account. It contacts AniList, Kitsu, and
-IMDb for metadata and ratings. Video links are entered by the user; the app does
-not include a downloader or scraper.
+IMDb for metadata and ratings, and AnimeWorld to search titles and resolve
+episode links. Resolved episode URLs remain local and are not sent to Supabase.
+Anime Player does not download video files.
 
 ### Supabase account and sync
 
@@ -200,5 +202,9 @@ Anime4K shaders are from [bloc97/Anime4K](https://github.com/bloc97/Anime4K)
 and remain under their MIT license in `shaders\LICENSE-Anime4K.txt`.
 Metadata and ratings are obtained from [AniList](https://anilist.co/),
 [Kitsu](https://kitsu.io/), and [IMDb](https://www.imdb.com/).
+Episode discovery adapts the search and episode-link workflow documented by
+[MainKronos/AnimeWorld-API](https://github.com/MainKronos/AnimeWorld-API), an
+unofficial MIT-licensed Python library. Anime Player uses a native JavaScript
+client; it does not bundle the Python package.
 
 This is a vibe-coding project developed collaboratively with multiple AIs.

@@ -19,6 +19,15 @@ fs.mkdirSync(resourceDir, { recursive: true, mode: 0o700 });
 fs.writeFileSync(path.join(resourceDir, 'supabase-config.json'), JSON.stringify({ url: config.url, publishableKey: config.key }), { mode: 0o600 });
 
 execFileSync(process.execPath, [path.join(__dirname, 'check.js')], { cwd: root, stdio: 'inherit' });
+const distDir = path.join(root, 'dist');
+const currentVersion = require(path.join(root, 'package.json')).version;
+if (fs.existsSync(distDir)) {
+  for (const name of fs.readdirSync(distDir)) {
+    if (/^AnimePlayer-Setup-.+\.exe(?:\.blockmap)?$/.test(name) && !name.startsWith(`AnimePlayer-Setup-${currentVersion}.exe`)) {
+      fs.rmSync(path.join(distDir, name), { force: true });
+    }
+  }
+}
 const targets = { win32: '--win', darwin: '--mac', linux: '--linux' };
 const target = targets[process.platform];
 if (!target) throw new Error(`Build non configurata per la piattaforma ${process.platform}.`);
