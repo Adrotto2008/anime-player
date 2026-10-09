@@ -8,12 +8,15 @@ const A4K = require('./src/anime4k');
 const meta = require('./src/metadata');
 const { expandPattern, expandList, parseM3U, isValidSource, detectEpisodeNumber } = require('./src/patterns');
 const { AnimeWorldClient } = require('./src/animeworld');
+const { AnimeUnityClient } = require('./src/animeunity');
+const { checkSources } = require('./src/source-check');
 const { createMpvManager } = require('./src/mpv-manager');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 let win; let store; let player; let cloud; let roomSubscription;
 const animeWorld = new AnimeWorldClient();
+const animeUnity = new AnimeUnityClient();
 let mpvManager;
 
 const shaderDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'shaders') : path.join(__dirname, 'shaders'));
@@ -156,19 +159,28 @@ function register() {
   h('series:search', (text) => meta.searchAnime(text));
 
   const discoverSeriesSources = async (series, titles = [series.title]) => {
-    try {
-      const sources = (await animeWorld.findSources({ titles, year: series.year, episodeCount: series.episodeCount }))
-        .map((source) => ({ ...source, provider: 'animeworld' }));
-      if (!sources.length) return { episodesAdded: 0, unavailable: false };
-      const existing = new Map(store.getSeries(series.id).episodes.map((episode) => [episode.number, new Set(episode.sources.map((source) => source.url))]));
-      const linkedEpisodes = new Set(sources.filter((source) => !existing.get(source.number)?.has(source.url)).map((source) => source.number));
-      const added = store.addSources(series.id, sources);
-      if (added) store.updateSeries(series.id, { referer: 'https://www.animeworld.ac/' });
-      return { episodesAdded: linkedEpisodes.size, unavailable: false };
-    } catch (err) {
-      console.warn('AnimeWorld source discovery failed:', err.message);
-      return { episodesAdded: 0, unavailable: true };
+    const outcomes = {};
+    for (const [name, client, options] of [
+      ['animeunity', animeUnity, { titles, year: series.year, episodeCount: series.episodeCount }],
+      ['animeworld', animeWorld, { titles, year: series.year, episodeCount: series.episodeCount }],
+    ]) {
+      try {
+        const found = await client.findSources(options);
+        const sources = found.map((source) => ({ ...source, provider: name, ...(name === 'animeworld' ? { referer: 'https://www.animeworld.ac/' } : {}) }));
+        const before = new Map(store.getSeries(series.id).episodes.map((episode) => [episode.number, new Set(episode.sources.map((source) => source.url))]));
+        const linkedEpisodes = new Set(sources.filter((source) => !before.get(source.number)?.has(source.url)).map((source) => source.number));
+        store.addSources(series.id, sources);
+        outcomes[name] = { episodesAdded: linkedEpisodes.size, unavailable: false };
+      } catch (err) {
+        console.warn(`${name} source discovery failed:`, err.message);
+        outcomes[name] = { episodesAdded: 0, unavailable: true };
+      }
     }
+    return {
+      episodesAdded: Object.values(outcomes).reduce((sum, result) => sum + result.episodesAdded, 0),
+      unavailable: Object.values(outcomes).every((result) => result.unavailable),
+      providers: outcomes,
+    };
   };
 
   h('series:create', async ({ anilistId, title }) => {
@@ -291,6 +303,7 @@ function register() {
     return lib();
   });
   h('episodes:setSources', (sid, eid, urls) => { const items = urls.filter(Boolean).map((url) => ({ url })); items.forEach((i) => { if (!isValidSource(i.url)) throw new Error(`Link non valido: ${i.url}`); }); store.setSources(sid, eid, items.map((i) => i.url)); return lib(); });
+  h('episodes:checkSources', (urls) => checkSources(urls));
   h('episodes:delete', (sid, eid) => { store.deleteEpisode(sid, eid); return lib(); });
   h('episodes:mark', (sid, eid, watched) => { store.markWatched(sid, eid, watched); return lib(); });
 

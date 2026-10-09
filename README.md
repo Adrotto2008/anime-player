@@ -1,9 +1,9 @@
 # Anime Player
 
-Anime Player **v0.5.22** is a cross-platform Electron library for anime links. It stores the
-links you add or discover through AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
+Anime Player **v0.5.23** is a cross-platform Electron library for anime links. It stores the
+links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
-episodes. Automatic episode-link discovery is provided for AnimeWorld.
+episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
 
 ## Features
 
@@ -18,7 +18,8 @@ episodes. Automatic episode-link discovery is provided for AnimeWorld.
 - AniList cast and related-series metadata in a compact series panel.
 - AniSkip opening/ending availability is shown per episode after its skip data
   has been checked.
-- Automatic episode-link discovery through AnimeWorld, with exact-title matching and a manual fallback.
+- Automatic episode-link discovery through AnimeUnity followed by AnimeWorld, with exact-title/year/episode-count matching and a manual fallback.
+- HTTP availability checks beside each episode link; redirects and inconclusive responses are labeled separately.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
 - Signed-in users privately sync their complete library, one representative
@@ -128,8 +129,9 @@ The installed/portable application does not need Node.js, `npm install`, or
 ## Usage
 
 1. Choose **Add series** and search AniList, or add a title manually. Anime
-   Player searches AnimeWorld and imports links when it finds an exact title;
-   you can retry from the series page or add links manually.
+   Player searches AnimeUnity first and AnimeWorld next, adding exact matches;
+   you can retry from the series page or add links manually. Open an episode's
+   **Links** dialog to check whether each saved URL responds.
 2. Select **Watch** or **Resume**. Progress is saved from mpv playback,
    including short sessions stopped before ten seconds.
 3. Open **Statistics** for totals, recent activity, and per-anime details.
@@ -154,8 +156,8 @@ A+A HQ, but it can be changed globally, per series, or while mpv is playing.
 
 The app keeps an offline local JSON copy of the library and can sync a private
 copy to the signed-in user's Supabase account. It contacts AniList, Kitsu, and
-IMDb for metadata and ratings, and AnimeWorld to search titles and resolve
-episode links. Resolved episode URLs remain local and are not sent to Supabase.
+IMDb for metadata and ratings, and AnimeUnity/AnimeWorld to search titles and
+resolve episode links. Resolved episode URLs remain local and are not sent to Supabase.
 Anime Player does not download video files.
 
 ### Supabase account and sync
@@ -221,6 +223,9 @@ Metadata and ratings are obtained from [AniList](https://anilist.co/),
 Episode discovery adapts the search and episode-link workflow documented by
 [MainKronos/AnimeWorld-API](https://github.com/MainKronos/AnimeWorld-API), an
 unofficial MIT-licensed Python library. Anime Player uses a native JavaScript
-client; it does not bundle the Python package.
+client; it does not bundle the Python package. AnimeUnity discovery is an
+independent JavaScript implementation informed by the public workflow in
+[Lysagxra/AnimeUnityDownloader](https://github.com/Lysagxra/AnimeUnityDownloader)
+(GPL-3.0); no Python or GPL source code is copied or bundled.
 
 This is a vibe-coding project developed collaboratively with multiple AIs.

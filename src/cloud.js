@@ -86,7 +86,7 @@ function compressLibraryForCloud(input) {
     const episodes = series.episodes || [];
     const candidates = new Map();
     for (const episode of episodes) for (const source of episode.sources || []) {
-      if (source.provider === 'animeworld') continue;
+      if (source.provider === 'animeworld' || source.provider === 'animeunity') continue;
       const detected = detectEpisodeNumber(source.url, episode.number);
       const candidate = detected && detected.candidates.find((item) => item.number === episode.number);
       if (!candidate) continue;

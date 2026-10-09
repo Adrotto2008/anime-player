@@ -63,7 +63,9 @@ function validateLibraryData(input) {
         return {
           url: source.url,
           label: typeof source.label === 'string' && source.label ? source.label : hostLabel(source.url),
-          ...(source.provider === 'animeworld' ? { provider: 'animeworld' } : {}),
+          ...(['animeunity', 'animeworld'].includes(source.provider) ? { provider: source.provider } : {}),
+          ...(typeof source.referer === 'string' && /^https?:\/\//i.test(source.referer) ? { referer: source.referer } : {}),
+          ...(typeof source.userAgent === 'string' && source.userAgent.length <= 300 ? { userAgent: source.userAgent } : {}),
         };
       });
       const p = rawEpisode.progress || {};
@@ -294,10 +296,17 @@ class Store extends EventEmitter {
     for (const it of items) {
       const ep = this.ensureEpisode(s, it.number);
       if (it.title && !ep.title) ep.title = it.title;
-      if (!ep.sources.some((x) => x.url === it.url)) {
-        ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(it.provider === 'animeworld' ? { provider: 'animeworld' } : {}) });
+      const existing = ep.sources.find((source) => source.url === it.url);
+      if (existing) {
+        if (['animeunity', 'animeworld'].includes(it.provider)) existing.provider = it.provider;
+        if (it.referer) existing.referer = it.referer;
+        if (it.userAgent) existing.userAgent = it.userAgent;
+      } else {
+        ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(['animeunity', 'animeworld'].includes(it.provider) ? { provider: it.provider } : {}), ...(it.referer ? { referer: it.referer } : {}), ...(it.userAgent ? { userAgent: it.userAgent } : {}) });
         ep.updatedAt = Date.now(); added++;
       }
+      const priority = (source) => source.provider === 'animeunity' ? 0 : source.provider === 'animeworld' ? 1 : 2;
+      ep.sources = ep.sources.map((source, index) => ({ source, index })).sort((a, b) => priority(a.source) - priority(b.source) || a.index - b.index).map(({ source }) => source);
     }
     if (added) s.updatedAt = Date.now();
     this.save();

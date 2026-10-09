@@ -950,7 +950,29 @@ function openAddLinks(s) {
 function openEditLinks(s, e) {
   openDialog(t('editEpisodeLinks', e.number), (close) => {
     const ta = h('textarea', { class: 'input', value: e.sources.map((x) => x.url).join('\n') });
-    return [h('div', { class: 'muted small', style: { marginBottom: '8px' } }, t('oneLinkLine')), ta,
+    const statusNames = { checking: t('linkChecking'), available: t('linkAvailable'), redirect: t('linkRedirect'), missing: t('linkMissing'), unreachable: t('linkUnreachable'), unknown: t('linkUnknown'), invalid: t('linkInvalid'), unsupported: t('linkUnsupported') };
+    const statusRows = h('div', { style: { display: 'grid', gap: '7px', margin: '10px 0 14px' }, title: t('linkStatusInfo') });
+    const rows = e.sources.map((source) => {
+      const value = h('span', { class: 'muted small' }, statusNames.checking);
+      const line = h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' } },
+        h('span', { class: 'small', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: source.url }, `${source.provider ? `${source.provider} · ` : ''}${source.url}`), value);
+      statusRows.append(line);
+      return { source, value };
+    });
+    const refresh = async () => {
+      rows.forEach(({ value }) => { value.textContent = statusNames.checking; });
+      if (!rows.length) return;
+      try {
+        const results = await api.invoke('episodes:checkSources', rows.map(({ source }) => source.url));
+        rows.forEach(({ value }, index) => { value.textContent = statusNames[results[index]?.status] || statusNames.unknown; });
+      } catch {
+        rows.forEach(({ value }) => { value.textContent = statusNames.unknown; });
+      }
+    };
+    const checkButton = h('button', { class: 'btn sm', onclick: refresh }, t('checkLinks'));
+    refresh();
+    return [rows.length ? h('div', null, h('div', { class: 'muted small' }, t('linkStatusHeading')), statusRows, checkButton) : null,
+      h('div', { class: 'muted small', style: { margin: '8px 0' } }, t('oneLinkLine')), ta,
       h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')),
         h('button', { class: 'btn primary', onclick: async () => { try { await mutate('episodes:setSources', s.id, e.id, ta.value.split(/\r?\n/).map((x) => x.trim()).filter(Boolean)); close(); } catch { /* toast */ } } }, t('save')))];
   });

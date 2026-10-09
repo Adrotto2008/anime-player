@@ -5,7 +5,7 @@ const path = require('path');
 const { execFileSync } = require('child_process');
 const P = require('../src/patterns');
 const A = require('../src/anime4k');
-const { Store, DEFAULT_SETTINGS } = require('../src/store');
+const { Store, DEFAULT_SETTINGS, validateLibraryData } = require('../src/store');
 const { PlayerManager } = require('../src/player');
 const { MpvSession, pipePath } = require('../src/mpv');
 const { aniSkipUrl } = require('../src/metadata');
@@ -95,6 +95,11 @@ const animeWorldOnly = compressLibraryForCloud({ series: [{ id: 'animeworld', ti
 })) }] });
 assert.ok(!animeWorldOnly.series[0].sourcePattern, 'AnimeWorld URLs should not be inferred into a cloud pattern');
 assert.ok(animeWorldOnly.series[0].episodes.every((episode) => !Object.hasOwn(episode, 'sources')), 'AnimeWorld URLs stay local');
+const animeUnityOnly = compressLibraryForCloud({ series: [{ id: 'animeunity', title: 'AnimeUnity', episodes: [1, 2].map((number) => ({
+  id: `au-${number}`, number, sources: [{ url: `https://vixcloud.example/embed/${number}?signature=${number}`, provider: 'animeunity' }],
+})) }] });
+assert.ok(!animeUnityOnly.series[0].sourcePattern, 'gli URL AnimeUnity dinamici non vengono inferiti in pattern cloud');
+assert.ok(animeUnityOnly.series[0].episodes.every((episode) => !Object.hasOwn(episode, 'sources')), 'gli URL AnimeUnity restano locali');
 const lossyPattern = compressLibraryForCloud({ series: [{ id: 'lossy', title: 'Parziale', episodes: [
   { id: '1', number: 1, sources: [{ url: 'https://v.example/ep1.mp4' }] },
   { id: '2', number: 2, sources: [{ url: 'https://v.example/ep2.mp4' }] },
@@ -166,6 +171,24 @@ seasonLimited.addSources(limited.id, [{ number: 41, url: 'https://keep.example/s
 seasonLimited.refreshSeriesMetadata(limited.id, { episodeCount: 25 });
 assert.ok(seasonLimited.getSeries(limited.id).episodes.some((e) => e.number === 41), 'user-linked episodes beyond the count are preserved');
 ok('episodi extra di stagioni sbagliate filtrati senza perdere link utente');
+
+const ordered = store.addSeries({ title: 'Priorità sorgenti' });
+store.addSources(ordered.id, [{ number: 1, url: 'https://manual.example/ep1.mp4' }]);
+const orderedEpisodeId = store.getSeries(ordered.id).episodes[0].id;
+store.setProgress(ordered.id, orderedEpisodeId, { pos: 37, duration: 120, watched: false });
+store.addSources(ordered.id, [{ number: 1, url: 'https://aw.example/ep1.m3u8', provider: 'animeworld', referer: 'https://www.animeworld.ac/' }]);
+store.addSources(ordered.id, [{ number: 1, url: 'https://au.example/embed/ep1?token=x', provider: 'animeunity', referer: 'https://www.animeunity.so/embed/ep1' }]);
+store.addSources(ordered.id, [{ number: 1, url: 'https://aw.example/ep1.m3u8', provider: 'animeworld' }]);
+const orderedSources = store.getSeries(ordered.id).episodes[0].sources;
+assert.deepStrictEqual(orderedSources.map((source) => source.provider || 'manual'), ['animeunity', 'animeworld', 'manual']);
+assert.strictEqual(orderedSources[1].referer, 'https://www.animeworld.ac/');
+assert.strictEqual(store.getEpisode(ordered.id, orderedEpisodeId).progress.pos, 37, 'l’aggiunta di sorgenti non azzera il progresso');
+store.setProgress(ordered.id, orderedEpisodeId, { pos: 0, duration: 0, watched: false });
+assert.strictEqual(store.addSources(ordered.id, [{ number: 1, url: 'https://au.example/embed/ep1?token=x', provider: 'animeunity' }]), 0);
+assert.deepStrictEqual(store.getSeries(ordered.id).episodes[0].sources.map((source) => source.url), orderedSources.map((source) => source.url), 'scansioni ripetute non duplicano né riordinano in modo instabile');
+const sourceSnapshot = validateLibraryData(store.snapshot());
+assert.deepStrictEqual(sourceSnapshot.series.find((series) => series.id === ordered.id).episodes[0].sources.map((source) => source.provider || 'manual'), ['animeunity', 'animeworld', 'manual'], 'import/export mantiene provider e priorità');
+ok('priorità sorgenti: AnimeUnity → AnimeWorld → manuali, con duplicati evitati');
 store.setSettings({ onboardingComplete: true, theme: 'compact' });
 store.save(true);
 const reloaded = new Store(path.join(tmp, 'library.json'));
@@ -180,8 +203,10 @@ const exported = store.snapshot();
 const importedStore = new Store(path.join(tmp, 'imported.json'));
 importedStore.importData(exported);
 assert.strictEqual(importedStore.getSeries(s.id).episodes.length, 4);
+assert.deepStrictEqual(importedStore.getSeries(ordered.id).episodes[0].sources.map((source) => source.provider || 'manual'), ['animeunity', 'animeworld', 'manual'], 'importa/esporta mantiene provider e ordine sorgenti');
+const seriesBeforeInvalidImport = importedStore.data.series.length;
 assert.throws(() => importedStore.importData({ series: [{ id: 'bad', title: 'Rotta', episodes: [{ id: 'ep', number: 1, sources: [{ url: 'non-un-link' }], progress: { watched: false, pos: 0, duration: 0 } }] }] }), /Link non valido/);
-assert.strictEqual(importedStore.data.series.length, 1, 'un import non valido non deve sostituire la libreria');
+assert.strictEqual(importedStore.data.series.length, seriesBeforeInvalidImport, 'un import non valido non deve sostituire la libreria');
 ok('libreria: salvataggio, duplicati, metadati');
 ok('libreria: export/import e validazione');
 

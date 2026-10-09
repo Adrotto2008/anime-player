@@ -34,7 +34,9 @@ class PlayerManager {
     const title = `${series.title} — Ep. ${ep.number}${ep.title ? ' · ' + ep.title : ''}`;
     const resume = !ep.progress.watched && ep.progress.pos > 0 ? Math.max(0, ep.progress.pos) : 0;
     this.store.setProgress(seriesId, episodeId, {}); // aggiorna "ultima visione"
-    return this._launch({ series, ep, url: ep.sources[opts.sourceIndex || 0].url, sourceIndex: opts.sourceIndex || 0, title, start: resume, referer: series.referer, presetId: this.presetFor(series) });
+    const sourceIndex = opts.sourceIndex || 0;
+    const source = ep.sources[sourceIndex];
+    return this._launch({ series, ep, url: source.url, sourceIndex, title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });
   }
 
   async playUrl(url, presetId) {
@@ -48,7 +50,7 @@ class PlayerManager {
     await this.stop();
     this._writeInputConf();
     const pipe = pipePath();
-    const args = A4K.buildArgs({ settings, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, inputConf: this.inputConf, pipe, shaderDir: this.paths.shaderDir });
+    const args = A4K.buildArgs({ settings: { ...settings, userAgent: c.userAgent || settings.userAgent }, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, inputConf: this.inputConf, pipe, shaderDir: this.paths.shaderDir });
     const session = new MpvSession({ mpvPath: settings.mpvPath, args, pipe });
     this.cur = { ...c, session, pos: c.start || 0, dur: 0, playedSeconds: 0, lastReportedPos: c.start || 0, lastSave: 0, saveTimer: null, nav: null, stopping: false, startedAt: Date.now() };
     const cur = this.cur;
