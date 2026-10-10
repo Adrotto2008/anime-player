@@ -97,22 +97,30 @@ function compressLibraryForCloud(input) {
   const library = JSON.parse(JSON.stringify(input || EMPTY_LIBRARY()));
   library.series = (library.series || []).map((series) => {
     const episodes = series.episodes || [];
-    const candidates = new Map();
+    const groups = new Map();
     for (const episode of episodes) for (const source of episode.sources || []) {
       if (source.provider === 'animeworld' || source.provider === 'animeunity') continue;
       const detected = detectEpisodeNumber(source.url, episode.number);
       const candidate = detected && detected.candidates.find((item) => item.number === episode.number);
       if (!candidate) continue;
-      const urls = candidates.get(candidate.pattern) || new Map();
-      urls.set(episode.number, source);
-      candidates.set(candidate.pattern, urls);
+      const key = candidate.pattern.replace(/\{ep:\d+\}/g, '{ep}');
+      const group = groups.get(key) || {patterns:new Set(),samples:[]};
+      group.patterns.add(candidate.pattern); group.samples.push({number:episode.number,source});
+      groups.set(key,group);
     }
-    const ranked = [...candidates.entries()].map(([pattern, urls]) => ({ pattern, urls }))
+    // Match each observed template against the real URLs. E100..E938 match
+    // both {ep} and {ep:3}; E001 proves the minimum width for the whole group.
+    const ranked = [...groups.values()].flatMap(group => [...group.patterns].map(pattern => ({pattern,urls:new Map(group.samples
+      .filter(({number,source}) => expandPattern(pattern,number,number)[0]?.url === source.url).map(({number,source})=>[number,source]))})))
       .sort((a, b) => b.urls.size - a.urls.size);
     const best = ranked[0];
-    let sourcePattern = null;
+    let sourcePattern = null; let sourcePatternLanguage = null;
     if (best && best.urls.size) {
-      const range = episodes.map((episode) => episode.number).filter(Number.isInteger).sort((a, b) => a - b);
+      const languages = [...best.urls.values()].map(source => Language.classification(source.language));
+      if (languages.every(language => language?.origin === 'manual' && JSON.stringify(language) === JSON.stringify(languages[0]))) sourcePatternLanguage = languages[0];
+      // A classified version can end before the series (e.g. DUB E938 vs SUB E1180).
+      // Keep the legacy full-season expansion for unclassified manual templates.
+      const range = (sourcePatternLanguage ? [...best.urls.keys()] : episodes.map(episode=>episode.number)).filter(Number.isInteger).sort((a, b) => a - b);
       if (range.length) sourcePattern = { pattern: best.pattern, from: range[0], to: range[range.length - 1] };
     }
     const cleanSeries = { ...series };
@@ -120,9 +128,7 @@ function compressLibraryForCloud(input) {
     delete cleanSeries.sourcePatternLanguage;
     if (sourcePattern) {
       cleanSeries.sourcePattern = sourcePattern;
-      const languages = [...best.urls.values()].map(source => Language.classification(source.language));
-      // A template may propagate only a consistently declared manual classification.
-      if (languages.every(language => language?.origin === 'manual' && JSON.stringify(language) === JSON.stringify(languages[0]))) cleanSeries.sourcePatternLanguage = languages[0];
+      if (sourcePatternLanguage) cleanSeries.sourcePatternLanguage = sourcePatternLanguage;
     }
     cleanSeries.episodes = episodes.map(({ sources, ...episode }) => ({ ...episode }));
     return cleanSeries;

@@ -107,7 +107,11 @@ const classified = (provider, mode, id, extra = {}) => ({number:1,url:`https://m
     assert.deepStrictEqual(restored.series[0].videoPreference,deviceA.series[0].videoPreference);
     const invalid = store.snapshot(); invalid.series[0].videoPreference = {mode:'wrong'}; invalid.series[0].episodes[0].sources[0].language = {audio:'it',origin:'fake',confidence:'declared'};
     const sanitized = validateLibraryData(invalid); assert.strictEqual(sanitized.series[0].videoPreference,null); assert.strictEqual(sanitized.series[0].episodes[0].sources[0].language,undefined);
-    assert.ok(Language.trackSelection([{type:'audio',id:1,lang:'jpn'}],'it',ita).error);
+    const mislabeled = Language.trackSelection([{type:'audio',id:1,lang:'eng'}],'it',ita);
+    assert.ok(mislabeled.warning); assert.deepStrictEqual(mislabeled.commands,[['set_property','aid',1],['set_property','sid','no']]);
+    assert.deepStrictEqual(Language.modesFor({...ita,mediaTracks:{audio:[{id:1,lang:'eng'}],subtitles:[],checkedAt:1}}),['it']);
+    assert.deepStrictEqual(Language.modesFor({language:Language.manualClassification('ja-sub-it'),mediaTracks:{audio:[{id:1,lang:'ita'}],subtitles:[],checkedAt:1}}),['ja-sub-it'],'a conflicting tag does not create a second version of a single-track release');
+    assert.ok(Language.trackSelection([{type:'audio',id:1,lang:'jpn'}],'it',{language:Language.classifyProvider({}, {url:'https://media.test/Anime_ITA.mp4'})}).error,'release-name suggestions alone cannot override conflicting tags');
     assert.ok(Language.trackSelection([{type:'audio',id:1,lang:'jpn'},{type:'audio',id:2}],'it',ita).error,'mixed unknown tags cannot silently keep known wrong audio');
     assert.deepStrictEqual(Language.trackSelection([{type:'audio',id:2,lang:'ita'}],'it',ita).commands,[['set_property','aid',2],['set_property','sid','no']]);
     const imported = new Store(path.join(dir,'import.json')); imported.importData(store.snapshot());
@@ -127,8 +131,8 @@ const classified = (provider, mode, id, extra = {}) => ({number:1,url:`https://m
 
     const mpvPath = path.join(process.env.APPDATA || '', 'Anime Player','mpv',`win32-${process.arch}`,'mpv.exe');
     if (!fs.existsSync(mpvPath)) { console.log('Real mpv language playback skipped: managed executable unavailable.'); return; }
-    const media = multiaudioFixture(); fs.writeFileSync(path.join(dir,'multi.mkv'),media);
-    server = http.createServer((req,res)=>{if (req.url.startsWith('/bad')) {res.writeHead(403);res.end('Fixture failure');} else {res.writeHead(200,{'Content-Type':'video/x-matroska','Content-Length':media.length});res.end(media);}});
+    const media = multiaudioFixture(); const mislabeledMedia = multiaudioFixture({singleAudioLanguage:'eng'}); fs.writeFileSync(path.join(dir,'multi.mkv'),media);
+    server = http.createServer((req,res)=>{if (req.url.startsWith('/bad')) {res.writeHead(403);res.end('Fixture failure');} else {const body=req.url.startsWith('/mislabeled')?mislabeledMedia:media;res.writeHead(200,{'Content-Type':'video/x-matroska','Content-Length':body.length});res.end(body);}});
     await new Promise(resolve=>server.listen(0,'127.0.0.1',resolve)); const base = `http://127.0.0.1:${server.address().port}`;
     const real = store.addSeries({title:'Real language fallback'}); store.setVideoPreference(real.id,'it');
     store.addSources(real.id,[classified('animeunity','ja-sub-it',11,{url:base+'/sub.mkv'}),classified('animeunity','it',12,{url:base+'/bad?token=fixture&expires=1'}),classified('animeworld','it',13,{url:base+'/multi.mkv'})]);
@@ -154,6 +158,14 @@ const classified = (provider, mode, id, extra = {}) => ({number:1,url:`https://m
     assert.strictEqual(realEp.sources.length,1); await player.stop();
     assert.ok(realEp.progress.pos > 0); assert.strictEqual(real.videoPreference.mode,'ja-sub-it');
     console.log('Real mpv: expired URL renewal → AU HTTP 403 → AW Italian; native aid=2, then preference change aid=1/sid=1 on the same multi-track Matroska; advancing playback observed.');
+    const tagged = store.addSeries({title:'Declared ITA, wrong container tag'});store.setVideoPreference(tagged.id,'it');
+    store.addSources(tagged.id,[classified('animeworld','it',31,{url:base+'/mislabeled.mkv'})]);
+    aid=null; await player.play(tagged.id,tagged.episodes[0].id);
+    await waitFor(()=>aid===1 && tagged.episodes[0].sources[0].playbackVerifiedAt);
+    assert.ok(realEvents.some(event=>event.channel==='player:language-warning'));
+    assert.strictEqual(tagged.episodes[0].sources[0].language.audio,'it');assert.strictEqual(tagged.episodes[0].sources[0].mediaTracks.audio[0].lang,'en');
+    assert.ok(!realEvents.some(event=>event.channel==='player:language-fallback'));
+    await player.stop();console.log('Real mpv: declared ITA with one en-tagged track plays the same source, emits a metadata warning and retains both provenance fields.');
   } finally {
     if (player?.cur) await player.stop(); if (server) await new Promise(resolve=>server.close(resolve));
     clearTimeout(store._timer); fs.rmSync(dir,{recursive:true,force:true});

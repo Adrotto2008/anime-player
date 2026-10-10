@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.31** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.32** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Dubbed releases and long-series links — 0.5.32
+
+- A single audio track in a provider/manual-declared version keeps that version's classification when the container tag disagrees. The player selects the same track and shows a metadata warning; it retains both the declaration and observed tag without claiming verified spoken language. Multi-track ambiguity and release-name-only suggestions still cannot override conflicting tags automatically.
+- One Piece E1 AnimeWorld already resolved to `OnePiece_Ep_001_ITA.mp4`; the 0.5.31 failure was caused by its single audio track tagged `en`. A bounded live mpv probe now observes playback through PlayerManager with Italian selected. HEAD returned 200 for the provider's three-digit URL and 404 for the four-digit spelling. No permanent stream URL or credential is stored in tests/documentation.
+- Cloud manual templates are fitted against observed URLs, so three-digit padding does not disappear when most episodes are numbered 100 or higher. A consistently classified template uses its own observed episode range rather than the full series range, avoiding synthetic DUB links past the known DUB range; legacy unclassified templates keep their existing range behavior. Provider URLs are still copied as returned, with no padding inferred from AniList totals.
+- AnimeUnity pagination no longer stops at 500 episodes (bounded at 10,000). Fixtures cover SUB 1180/DUB 938, three versus four digits, missing DUB E939, persisted conflicting tags, cloud/manual padding and full DUB pagination. Real local mpv fixtures cover a mislabeled single track and retain the existing multi-audio/fallback tests.
 
 ## Per-season video languages — 0.5.31
 

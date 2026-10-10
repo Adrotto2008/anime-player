@@ -1,6 +1,8 @@
 const { execFileSync, execSync } = require('child_process');
 execFileSync(process.execPath, ['--check', 'src/source-language.js'], {stdio:'inherit'});
 execFileSync(process.execPath, ['test/source-language.js'], {stdio:'inherit'});
+execFileSync(process.execPath, ['--check', 'test/onepiece-sources.js'], {stdio:'inherit'});
+execFileSync(process.execPath, ['test/onepiece-sources.js'], {stdio:'inherit'});
 for (const file of ['main.js', 'preload.js', 'scripts/build.js', 'src/store.js', 'src/cloud.js', 'src/animeworld.js', 'src/animeunity.js', 'src/source-check.js', 'src/source-discovery.js', 'src/series-addition.js', 'test/source-discovery.js', 'src/player.js', 'src/mpv-manager.js', 'src/franchise.js', 'src/metadata.js', 'renderer/app.js', 'renderer/i18n.js']) execFileSync(process.execPath, ['--check', file], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/animeworld.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/animeunity.js'], { stdio: 'inherit' });

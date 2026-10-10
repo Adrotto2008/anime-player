@@ -102,6 +102,7 @@ class PlayerManager {
       clearTimeout(cur.languageTimer);
       cur.languageReady = true;
       if (selection.error) { session.error = selection.error; session.quit(); return; }
+      if (selection.warning) this.notify('player:language-warning', selection.warning);
       selection.commands.forEach(command => session.send(command));
       session.send(['set_property', 'pause', false]);
     });

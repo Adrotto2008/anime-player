@@ -42,7 +42,10 @@
   function modesFor(source) {
     const c = classification(source.language); const observed = tracks(source.mediaTracks);
     const audio = observed?.audio.map(t => t.lang).filter(Boolean) || [];
-    const supportsAudio = wanted => audio.length ? audio.includes(wanted) : c?.audio === wanted;
+    // A container tag is metadata, not speech recognition. A declared version
+    // with only one audio track remains that version even if its tag is wrong.
+    const declaredSingle = observed?.audio.length === 1 && c?.confidence === 'declared' && Boolean(c.audio);
+    const supportsAudio = wanted => declaredSingle ? c.audio === wanted : audio.length ? audio.includes(wanted) : c?.audio === wanted;
     const subIt = observed?.subtitles.some(t => t.lang === 'it') || c?.subtitles === 'it';
     return ['it', 'ja-sub-it'].filter(mode => mode === 'it' ? supportsAudio('it') : supportsAudio('ja') && subIt);
   }
@@ -77,14 +80,17 @@
     const wanted = mode === 'it' ? 'it' : 'ja';
     const audio = list.filter(track => track.type === 'audio');
     const match = audio.find(track => lang(track.lang) === wanted);
-    if (!audio.length || !match && audio.some(track => lang(track.lang))) return { error:'La traccia audio richiesta non è presente nel file' };
-    const commands = match ? [['set_property', 'aid', match.id]] : [];
+    const declared = classification(source.language);
+    const declaredSingle = audio.length === 1 && declared?.confidence === 'declared' && declared.audio === wanted;
+    if (!audio.length || !match && audio.some(track => lang(track.lang)) && !declaredSingle) return { error:'La traccia audio richiesta non è presente nel file' };
+    const selected = match || (declaredSingle ? audio[0] : null);
+    const commands = selected ? [['set_property', 'aid', selected.id]] : [];
     if (mode === 'ja-sub-it') {
       const sub = list.find(track => track.type === 'sub' && lang(track.lang) === 'it');
       if (sub) commands.push(['set_property', 'sid', sub.id]);
       else if (classification(source.language)?.subtitles !== 'it') return { error:'Sottotitoli italiani non rilevati' };
     } else commands.push(['set_property', 'sid', 'no']);
-    return { commands };
+    return { commands, ...(declaredSingle && !match && lang(audio[0].lang) ? {warning:`Versione dichiarata ${wanted}, ma tag dell’unica traccia audio ${lang(audio[0].lang)}. Uso la versione dichiarata; la lingua del contenuto non è verificata.`} : {}) };
   }
   return { MODES, lang, preference, mergePreference, classification, tracks, classifyProvider, manualClassification,
     modesFor, usable, eligible, sourceIdentity, rankSources, availability, metadata, observedTracks, trackSelection };

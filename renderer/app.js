@@ -1284,6 +1284,7 @@ function openSetup() {
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call('player:skipSegment', offer.end)));
   api.on('player:language-fallback', showLanguageFallback);
+  api.on('player:language-warning', message => toast(message));
   state.lib = await api.invoke('lib:get');
   state.presets = await api.invoke('presets:list');
   state.version = await api.invoke('app:version');

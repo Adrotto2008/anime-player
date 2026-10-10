@@ -144,7 +144,7 @@ class AnimeUnityClient {
     const response = await this._request(`/info_api/${Number(anime.id)}-${encodeURIComponent(anime.slug)}`, { referer: animeUrl });
     const info = await response.json();
     const pages = [];
-    const total = Math.min(500, Math.max(0, Number(info.episodes_count || anime.episodeCount || 0)));
+    const total = Math.min(10000, Math.max(0, Number(info.episodes_count || anime.episodeCount || 0)));
     for (let start = 0; start < total; start += 100) pages.push([start, Math.min(total, start + 100)]);
     const episodes = [];
     for (const [start, end] of pages) {
