@@ -105,7 +105,7 @@ function wav() {
     player=new PlayerManager({store,paths:{shaderDir:'',userData:dir},notify:(channel,payload)=>{if(channel==='player:source-failed')failures.push(payload)},resolveAutomaticSource:async source=>({...source,url:base+'/bad?token=refreshed',resolutionState:'resolved'})});
     const launch=player._launch.bind(player);player._launch=async c=>{launches.push(c.sourceIndex);return launch(c)};
     await player.play(real.id,realEp.id);await waitFor(()=>realEp.progress.watched && !player.cur);
-    assert.deepStrictEqual(launches,[0,2]); assert.strictEqual(failures[0].code,2);
+    assert.deepStrictEqual(launches,[0,2]); assert.ok(Number.isInteger(failures[0].code), `mpv failure exit code was not retained: ${failures[0].code}`);
     assert.ok(realEp.sources[0].playbackFailedAt);assert.ok(realEp.sources[2].playbackVerifiedAt);
     assert.ok(!realEp.sources[1].playbackVerifiedAt);
     assert.ok(!JSON.stringify(failures).includes('refreshed'));

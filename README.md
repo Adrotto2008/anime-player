@@ -1,11 +1,11 @@
 # Anime Player
 
-Anime Player **v0.5.27** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.28** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
 
-## Source lifecycle fixes — 0.5.27
+## Source lifecycle and mpv window fixes — 0.5.28
 
 - Unresolved AnimeUnity embeds are reported as found URLs and excluded from automatic playable-source import. Resolution is separate from playback observed by mpv.
 - Signed automatic URLs are refreshed before playback using provider episode IDs (legacy links repeat strict discovery for that episode). Token rotation updates the existing automatic source and clears verification of the previous URL; manual links, custom headers, ratings and progress are preserved.

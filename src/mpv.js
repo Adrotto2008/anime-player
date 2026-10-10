@@ -21,7 +21,8 @@ class MpvSession extends EventEmitter {
   start() {
     this.stderr = '';
     this.stdout = '';
-    this.proc = spawn(this.mpvPath, this.args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    // Keep the mpv video window visible on Windows; windowsHide also hides GUI child processes.
+    this.proc = spawn(this.mpvPath, this.args, { stdio: ['ignore', 'pipe', 'pipe'] });
     this.proc.stderr.on('data', data => { this.stderr = (this.stderr + data.toString()).slice(0,65536); });
     this.proc.stdout.on('data', data => { this.stdout = (this.stdout + data.toString()).slice(0,65536); });
     this.startupTimer = setTimeout(() => {
