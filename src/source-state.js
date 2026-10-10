@@ -31,19 +31,7 @@ function sourceMetadata(source) {
   };
 }
 
-function candidateDiagnostics(results, titles, options, match, titleKey) {
-  const keys = new Set(titles.map(titleKey));
-  return results.map(item => {
-    const reasons = [];
-    if (![item.title, item.name, item.altTitle, ...(item.aliases || [])].some(name => keys.has(titleKey(name)))) reasons.push('title_mismatch');
-    if (options.year && item.year != null && Number(item.year) !== Number(options.year)) reasons.push('year_mismatch');
-    const count = item.episodeCount ?? item.episodes;
-    if (options.episodeCount && count != null && Number(count) !== Number(options.episodeCount) && !(options.isAiring && Number(count) < Number(options.episodeCount))) reasons.push('episode_count_mismatch');
-    const selected = match && (item.id ? item.id === match.id : item.link === match.link);
-    if (!reasons.length && !selected) reasons.push(match ? 'alternate_candidate' : 'ambiguous');
-    return { id: item.id, title: item.title || item.name, aliases: [item.altTitle, ...(item.aliases || [])].filter(Boolean), year: item.year, episodeCount: count, selected: Boolean(selected), reasons };
-  });
-}
+const { candidateDiagnostics } = require('./source-match');
 
 module.exports = { redact, urlLifetime, sourceMetadata, candidateDiagnostics };
 

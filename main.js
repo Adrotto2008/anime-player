@@ -337,8 +337,7 @@ app.whenReady().then(async () => {
         return client._resolveEpisode({ id: source.providerEpisodeId, number: episode.number }, `${client.baseUrl}/`);
       }
       const titles = require('./src/source-state').providerTitles(series);
-      const fresh = await client.findSources({ titles, year:series.year, episodeCount:series.episodeCount,
-        isAiring:series.status === 'RELEASING', episodeNumbers:[episode.number] });
+      const fresh = await client.findSources({ titles, ...require('./src/source-match').matchOptions(series), episodeNumbers:[episode.number] });
       const selected = fresh.find(item => item.number === episode.number && item.resolutionState === 'resolved');
       return selected ? {...selected, provider:source.provider} : null;
     },

@@ -1,5 +1,6 @@
 'use strict';
 
+const { matchOptions } = require('./source-match');
 const { isValidSource } = require('./patterns');
 const { providerTitles, redact } = require('./source-state');
 
@@ -8,8 +9,8 @@ async function discoverSeriesSources(series, titles = [series.title], { store, a
   const linkedNumbers = new Set(); const foundNumbers = new Set();
   titles = providerTitles(series, titles).map(title => String(title).trim()).filter(Boolean);
   for (const [name, client, options] of [
-    ['animeunity', animeUnity, { titles, year: series.year, episodeCount: series.episodeCount, isAiring:series.status === 'RELEASING' }],
-    ['animeworld', animeWorld, { titles, year: series.year, episodeCount: series.episodeCount, isAiring:series.status === 'RELEASING' }],
+    ['animeunity', animeUnity, { titles, ...matchOptions(series) }],
+    ['animeworld', animeWorld, { titles, ...matchOptions(series) }],
   ]) {
     try {
       const found = await client.findSources(options);

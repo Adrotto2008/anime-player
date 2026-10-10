@@ -30,7 +30,8 @@ const response=body=>({ok:true,status:200,headers:{get:()=>null,getSetCookie:()=
     if(url.includes('/embed-url/'))throw new Error('HTTP 503 (fixture)');throw new Error('Unexpected request');
   }});
   assert.deepStrictEqual(await au.findSources({titles:['Monster'],year:2004,episodeCount:74}),[]);
-  assert.strictEqual(au.lastDiscovery.status,'provider_error');
+  assert.strictEqual(au.lastDiscovery.status,'media_unresolved');
+  assert.ok(au.lastDiscovery.errors.some(error=>error.phase==='episode' && error.message.includes('503')), 'resolution state must retain the provider failure cause');
   const awCalls=[];
   const aw=new AnimeWorldClient({baseUrl:'https://animeworld.test',fetchImpl:async url=>{
     awCalls.push(url);

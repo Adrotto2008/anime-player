@@ -33,7 +33,7 @@ async function main() {
       return response({ body: '<meta id="csrf-token" content="token-test">', cookies: ['sessionId=session-test; Path=/; HttpOnly'] });
     }
     if (parsed.pathname === '/api/search/v2') {
-      return response({ body: { animes: [{ name: 'Demo Show', jtitle: 'Demo Original', choseTitle: 'Demo Alias', year: '2024', episodes: '2', dub: '0', link: 'demo-show', identifier: 'abc123' }] } });
+      return response({ body: { animes: [{ name: 'Demo Show', jtitle: 'Demo Original', choseTitle: 'Demo Alias', year: '2024', episodes: '2', dub: '0', link: 'demo-show', identifier: 'abc123', anilistId: 123, malId: 456, animeTypeName: 'OVA', stateName: 'Finito' }] } });
     }
     if (parsed.pathname === '/play/demo-show.abc123') {
       return response({ body: `
@@ -58,6 +58,8 @@ async function main() {
   const client = new AnimeWorldClient({ fetchImpl, baseUrl: 'https://animeworld.test', concurrency: 2 });
   const mapped = await client.search('Demo Original');
   assert.strictEqual(mapped[0].altTitle, 'Demo Original');
+  assert.strictEqual(mapped[0].anilistId, 123); assert.strictEqual(mapped[0].malId, 456);
+  assert.strictEqual(mapped[0].format, 'OVA'); assert.strictEqual(mapped[0].status, 'Finito');
   assert.deepStrictEqual(mapped[0].aliases, ['Demo Alias']);
   const sources = await client.findSources({ titles: ['Demo Show'], year: 2024, episodeCount: 2 });
   assert.deepStrictEqual(sources.map((item) => item.number).sort(), [1, 1, 2]);

@@ -52,6 +52,8 @@ async function main() {
     await flush();
     assert.deepStrictEqual(calls.map((item) => item.provider), ['animeunity', 'animeworld']);
     assert.ok(calls[1].options.titles.includes(media.altTitle));
+    assert.strictEqual(calls[1].options.anilistId, media.anilistId);
+    assert.strictEqual(calls[0].options.format, media.format);
     assert.strictEqual(series.episodes.every((episode) => episode.sources.length === 1), true);
     assert.strictEqual(notifications[0].result.episodesFound, 2);
     assert.strictEqual(series.episodes.some((episode) => episode.number === 99), false);

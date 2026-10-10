@@ -1,46 +1,11 @@
 'use strict';
 
 const cheerio = require('cheerio');
-const { candidateDiagnostics, redact } = require('./source-state');
+const { redact } = require('./source-state');
+const { titleKey, selectExactMatch, candidateDiagnostics, searchTitles } = require('./source-match');
 
 const DEFAULT_BASE_URL = 'https://www.animeworld.ac';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
-
-function titleKey(value) {
-  return String(value || '')
-    .normalize('NFKD').replace(/[\u0300-\u036f]/g, '')
-    .toLowerCase()
-    .replace(/\((?:ita|sub\s*ita|ita\s*dub|dub)\)/g, ' ')
-    .replace(/\b(?:sub\s*ita|ita\s*dub|dub)\b/g, ' ')
-    .replace(/\b(\d+)(?:st|nd|rd|th)\s+season\b/g, 'season $1')
-    .replace(/\bseason\s*(\d+)\b/g, 'season $1')
-    .replace(/\b(s)\s*(\d+)\b/g, 'season $2')
-    .replace(/[^\p{L}\p{N}]+/gu, ' ')
-    .trim();
-}
-
-function selectExactMatch(results, titles, { year, episodeCount, isAiring } = {}) {
-  const aliases = (Array.isArray(titles) ? titles : [titles]).filter(Boolean);
-  const keys = new Set(aliases.map(titleKey).filter(Boolean));
-  const namesFor = (item) => [item.name, item.altTitle, ...(item.aliases || [])].filter(Boolean);
-  let matches = (results || []).filter((item) => namesFor(item).some((name) => keys.has(titleKey(name))));
-  if (!matches.length) return null;
-
-  if (year) matches = matches.filter(item => item.year == null || Number(item.year) === Number(year));
-  if (episodeCount) matches = matches.filter(item => item.episodes == null || Number(item.episodes) === Number(episodeCount)
-    || isAiring && Number(item.episodes) < Number(episodeCount));
-  if (!matches.length) return null;
-
-  matches.sort((a, b) => {
-    const aKey = titleKey(a.name); const bKey = titleKey(b.name);
-    const aExact = aliases.some((title) => namesFor(a).some((name) => String(name).trim().toLowerCase() === String(title).trim().toLowerCase())) ? 0 : 1;
-    const bExact = aliases.some((title) => namesFor(b).some((name) => String(name).trim().toLowerCase() === String(title).trim().toLowerCase())) ? 0 : 1;
-    return aExact - bExact || aKey.localeCompare(bKey) || Number(Boolean(a.dub)) - Number(Boolean(b.dub));
-  });
-  const preferred = matches.filter(item => item.dub === false);
-  const unique = [...new Map((preferred.length ? preferred : matches).map(item => [item.link, item])).values()];
-  return unique.length === 1 ? unique[0] : null;
-}
 
 class AnimeWorldClient {
   constructor({ fetchImpl = globalThis.fetch, baseUrl = DEFAULT_BASE_URL, timeoutMs = 12000, concurrency = 6 } = {}) {
@@ -101,7 +66,9 @@ class AnimeWorldClient {
     const data = await response.json();
     if (!Array.isArray(data.animes)) throw new Error('Formato della ricerca AnimeWorld non riconosciuto.');
     return (Array.isArray(data.animes) ? data.animes : []).map((item) => ({
-      name: item.name || '', year: item.year == null || item.year === '??' ? null : Number(item.year),
+      name: item.name || '', anilistId: Number(item.anilistId) || null, malId: Number(item.malId) || null,
+      format: item.animeTypeName === 'Movie' ? 'MOVIE' : ['OVA', 'ONA', 'Special'].includes(item.animeTypeName) ? item.animeTypeName.toUpperCase() : null,
+      status: item.stateName || null, year: item.year == null || item.year === '??' ? null : Number(item.year),
       altTitle: item.jtitle || '', aliases: [item.choseTitle].filter(Boolean),
       episodes: item.episodes == null || item.episodes === '??' ? null : Number(item.episodes),
       dub: item.dub == null ? null : item.dub !== '0',
@@ -155,6 +122,7 @@ class AnimeWorldClient {
       this.lastDiscovery.errors.push({phase:'match',message:'Numerazione episodi incompatibile con il record AniList'});return [];
     }
     const selected = episodeNumbers ? entries.filter(item => episodeNumbers.includes(item.number)) : entries;
+    this.lastDiscovery.requestedEpisodesFound = selected.length;
     const results = [];
     let cursor = 0;
     const workers = Array.from({ length: Math.min(this.concurrency, selected.length) }, async () => {
@@ -178,36 +146,36 @@ class AnimeWorldClient {
     return results;
   }
 
-  async findSources({ titles, year, episodeCount, isAiring, episodeNumbers } = {}) {
+  async findSources({ titles, episodeNumbers, ...options } = {}) {
+    const { year, episodeCount, isAiring } = options;
     this.lastDiscovery = { status:'title_not_found', errors:[], episodesFound:0 };
     const aliases = (Array.isArray(titles) ? titles : [titles]).map((value) => String(value || '').trim()).filter(Boolean);
     if (!aliases.length) return [];
     const candidates = new Map();
     let completedQueries = 0; let lastError;
-    for (const title of aliases) {
+    for (const title of searchTitles(aliases, options)) {
       try {
         for (const result of await this.search(title)) if (!candidates.has(result.link)) candidates.set(result.link, result);
         completedQueries++;
       } catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:redact(error.message)}); }
     }
     if (!completedQueries && lastError) throw lastError;
-    let match = selectExactMatch([...candidates.values()], aliases, { year, episodeCount, isAiring });
+    let match = selectExactMatch([...candidates.values()], aliases, options);
     if (!match) {
       // The quick-search endpoint is capped and can omit exact titles (Monster).
-      for (const title of aliases) {
+      for (const title of searchTitles(aliases, options)) {
         try {
           for (const result of await this.searchCatalogue(title)) if (!candidates.has(result.link)) candidates.set(result.link,result);
-          match = selectExactMatch([...candidates.values()], aliases, {year,episodeCount,isAiring});
-          if (match) break;
         } catch (error) { this.lastDiscovery.errors.push({phase:'catalogue',message:redact(error.message)}); }
       }
+      match = selectExactMatch([...candidates.values()], aliases, options);
     }
-    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, {year,episodeCount,isAiring}, match, titleKey);
-    if (!match) return [];
+    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, options, match);
+    if (!match) { this.lastDiscovery.status = candidates.size ? 'title_rejected' : 'title_not_found'; return []; }
     this.lastDiscovery.matchedTitle = match.name;
     const sources = await this._episodeSources(match.link,{year,episodeCount,isAiring,episodeNumbers});
-    this.lastDiscovery.status = sources.length ? 'found' : this.lastDiscovery.errors.some(error=>error.phase==='match') ? 'title_not_found'
-      : this.lastDiscovery.errors.length ? 'provider_error' : 'episodes_not_found';
+    this.lastDiscovery.status = sources.length ? 'found' : this.lastDiscovery.errors.some(error=>error.phase==='match') ? 'title_rejected'
+      : this.lastDiscovery.requestedEpisodesFound ? 'media_unresolved' : 'episodes_not_found';
     return sources;
   }
 }
