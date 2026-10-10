@@ -58,6 +58,10 @@ async function main() {
   assert.strictEqual(new Set(found.map((item) => item.url)).size, 3, 'episodi consecutivi non condividono lo stesso URL');
   assert.ok(found.every((item) => item.provider === 'animeunity' && item.referer.startsWith('https://player.example/')));
   assert.deepStrictEqual(calls.filter((call) => call.url.includes('/embed-url/')).map((call) => call.url.split('/').pop()).sort(), ['501', '502', '503']);
+  const partial = new AnimeUnityClient();
+  partial.search = async (title) => { if (title === 'Broken alias') throw new Error('Temporary search error'); return [{ id: 1, title: 'Yuru Yuri' }]; };
+  partial.getEpisodeSources = async () => [{ number: 1, url: 'https://media.example/one.mp4' }];
+  assert.strictEqual((await partial.findSources({ titles: ['Yuru Yuri', 'Broken alias'] })).length, 1, 'un alias fallito non cancella un risultato precedente');
   console.log('AnimeUnity: matching, CSRF/sessione, tre episodi mappati a URL distinti e riferimenti per sorgente verificati con risposte simulate.');
 }
 

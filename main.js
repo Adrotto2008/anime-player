@@ -11,6 +11,8 @@ const { AnimeWorldClient } = require('./src/animeworld');
 const { AnimeUnityClient } = require('./src/animeunity');
 const { checkSources } = require('./src/source-check');
 const { createMpvManager } = require('./src/mpv-manager');
+const { createSeriesAdder } = require('./src/series-addition');
+const { discoverSeriesSources: discoverSources, createSourceDiscoveryQueue } = require('./src/source-discovery');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
@@ -158,71 +160,33 @@ function register() {
 
   h('series:search', (text) => meta.searchAnime(text));
 
-  const discoverSeriesSources = async (series, titles = [series.title]) => {
-    const outcomes = {};
-    for (const [name, client, options] of [
-      ['animeunity', animeUnity, { titles, year: series.year, episodeCount: series.episodeCount }],
-      ['animeworld', animeWorld, { titles, year: series.year, episodeCount: series.episodeCount }],
-    ]) {
-      try {
-        const found = await client.findSources(options);
-        const sources = found.map((source) => ({ ...source, provider: name, ...(name === 'animeworld' ? { referer: 'https://www.animeworld.ac/' } : {}) }));
-        const before = new Map(store.getSeries(series.id).episodes.map((episode) => [episode.number, new Set(episode.sources.map((source) => source.url))]));
-        const linkedEpisodes = new Set(sources.filter((source) => !before.get(source.number)?.has(source.url)).map((source) => source.number));
-        store.addSources(series.id, sources);
-        outcomes[name] = { episodesAdded: linkedEpisodes.size, unavailable: false };
-      } catch (err) {
-        console.warn(`${name} source discovery failed:`, err.message);
-        outcomes[name] = { episodesAdded: 0, unavailable: true };
-      }
-    }
-    return {
-      episodesAdded: Object.values(outcomes).reduce((sum, result) => sum + result.episodesAdded, 0),
-      unavailable: Object.values(outcomes).every((result) => result.unavailable),
-      providers: outcomes,
-    };
-  };
+  const discoverSeriesSources = (series, titles = [series.title]) => discoverSources(series, titles, { store, animeUnity, animeWorld });
 
-  h('series:create', async ({ anilistId, title }) => {
-    if (!anilistId) {
-      const s = store.addSeries({ title: String(title || '').trim() || 'Senza titolo' });
-      try {
-        const imdb = await meta.fetchImdbData({ title: s.title });
-        if (imdb) {
-          const patch = { imdbId: imdb.imdbId, imdbChart: imdb };
-          if (imdb.overallRating != null) { patch.score = imdb.overallRating; patch.scoreSource = 'IMDb'; }
-          store.refreshSeriesMetadata(s.id, patch);
-        }
-      } catch { /* ignora errori imdb */ }
-      const sourceDiscovery = await discoverSeriesSources(s, [s.title]);
-      return { id: s.id, lib: lib(), sourceDiscovery };
-    }
-    const m = await meta.getAnime(anilistId, { language: store.data.settings.language });
-    const { streamingEpisodes, altTitle, ...fields } = m;
-    const s = store.addSeries(fields);
-    const { kitsuId, episodes } = await meta.fetchEpisodes({ anilistId, title: m.altTitle || m.title, streamingEpisodes, episodeCount: m.episodeCount });
-    store.updateSeries(s.id, { kitsuId });
-    if (m.episodeCount && m.episodeCount <= 300) {
-      const seriesObj = store.getSeries(s.id);
-      for (let n = 1; n <= m.episodeCount; n++) store.ensureEpisode(seriesObj, n);
-    }
-    store.mergeEpisodeMeta(s.id, episodes);
-    const sourceDiscovery = await discoverSeriesSources(s, [m.title, m.altTitle]);
-    try {
-      const imdb = await meta.fetchImdbData({ title: s.title || m.title, altTitle: m.altTitle });
-      if (imdb) {
-        const patch = { imdbId: imdb.imdbId, imdbChart: imdb };
-        if (imdb.overallRating != null) { patch.score = imdb.overallRating; patch.scoreSource = 'IMDb'; }
-        store.refreshSeriesMetadata(s.id, patch);
-      }
-    } catch { /* ignora errori imdb */ }
-    return { id: s.id, lib: lib(), sourceDiscovery };
+  const sourceQueue = createSourceDiscoveryQueue({ store, metadata: meta, discover: discoverSeriesSources,
+    onComplete: (id, sourceDiscovery) => send('series:sourcesDiscovered', { id, sourceDiscovery, lib: lib() }),
+  });
+  h('series:create', createSeriesAdder({ store, metadata: meta, sourceQueue }));
+
+  h('movie:addLink', (id, url) => {
+    const series = store.getSeries(id);
+    if (!series || series.format !== 'MOVIE') throw new Error('Film non trovato.');
+    const value = String(url || '').trim();
+    if (!isValidSource(value)) throw new Error('Link film non valido.');
+    const current = series.movieSources || [];
+    if (!current.some((item) => item.url === value)) store.updateSeries(id, { movieSources: [...current, { url: value, label: /^https?:\/\//i.test(value) ? new URL(value).hostname : 'Local file' }] });
+    return lib();
+  });
+  h('movie:play', async (id, index = 0) => {
+    const series = store.getSeries(id); const source = series?.movieSources?.[index];
+    if (!series || !source) throw new Error('Link del film non trovato.');
+    await ensureMpv();
+    return player.playUrl(source.url, series.preset || store.data.settings.defaultPreset).then(() => lib());
   });
 
   h('series:discoverSources', async (id) => {
     const series = store.getSeries(id);
     if (!series) throw new Error('Serie non trovata.');
-    const sourceDiscovery = await discoverSeriesSources(series, [series.title, series.altTitle]);
+    const sourceDiscovery = await sourceQueue.enqueue(id, [series.title, series.altTitle].filter(Boolean), { notify: false });
     return { lib: lib(), sourceDiscovery };
   });
 
@@ -238,7 +202,7 @@ function register() {
     if (s.anilistId) {
       try {
         const m = await meta.getAnime(s.anilistId, { language: store.data.settings.language });
-        const { streamingEpisodes, altTitle, ...f } = m;
+        const { streamingEpisodes, ...f } = m;
         fields = f;
         const { kitsuId: kid, episodes } = await meta.fetchEpisodes({
           anilistId: s.anilistId, kitsuId: s.kitsuId, title: m.altTitle || m.title, streamingEpisodes, episodeCount: m.episodeCount,
@@ -267,7 +231,7 @@ function register() {
       console.warn('IMDb error:', err.message);
     }
 
-    store.refreshSeriesMetadata(id, fields, kitsuEpisodes);
+    if (store.getSeries(id)) store.refreshSeriesMetadata(id, fields, kitsuEpisodes);
     return lib();
   };
 

@@ -5,6 +5,7 @@ const ANISKIP = 'https://api.aniskip.com/v2/skip-times';
 
 const stripHtml = (s) => String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
 const normalizeRating = (value) => {
+  if (value == null || value === '') return null;
   const n = Number(value);
   if (!Number.isFinite(n) || n < 0) return null;
   return n > 10 ? n / 10 : n;
@@ -35,10 +36,10 @@ async function translateDescriptionToItalian(description) {
   }
 }
 
-const FIELDS = `id idMal title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false)
+const FIELDS = `id idMal title { romaji english native } synonyms duration coverImage { extraLarge large medium } bannerImage description(asHtml: false)
   genres averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }
   characters(sort: ROLE, perPage: 8) { edges { role node { name { full } image { medium } } } }
-  relations { edges { relationType node { id title { romaji english } type format coverImage { medium large } } } }`;
+  relations { edges { relationType node { id title { romaji english } type format seasonYear coverImage { medium large } } } }`;
 
 function normalize(m) {
   return {
@@ -46,7 +47,9 @@ function normalize(m) {
     malId: m.idMal || null,
     title: (m.title && (m.title.english || m.title.romaji)) || 'Senza titolo',
     altTitle: m.title && m.title.romaji,
-    cover: m.coverImage && (m.coverImage.extraLarge || m.coverImage.large),
+    titleAliases: [...new Set([m.title?.english, m.title?.romaji, m.title?.native, ...(m.synonyms || [])].filter(Boolean))],
+    averageDuration: m.duration ? Number(m.duration) * 60 : null,
+    cover: m.coverImage && (m.coverImage.extraLarge || m.coverImage.large || m.coverImage.medium),
     banner: m.bannerImage || null,
     description: stripHtml(m.description),
     genres: m.genres || [],
@@ -54,6 +57,7 @@ function normalize(m) {
     scoreSource: m.averageScore ? 'AniList' : null,
     year: m.seasonYear || null,
     format: m.format || null,
+    type: m.type || null,
     status: m.status || null,
     nextAiringAt: m.nextAiringEpisode && m.nextAiringEpisode.airingAt ? m.nextAiringEpisode.airingAt * 1000 : null,
     nextEpisode: m.nextAiringEpisode && m.nextAiringEpisode.episode ? m.nextAiringEpisode.episode : null,
@@ -69,6 +73,8 @@ function normalize(m) {
       title: (x.node.title && (x.node.title.english || x.node.title.romaji)) || 'Senza titolo',
       relation: x.relationType || null,
       format: x.node.format || null,
+      type: x.node.type || null,
+      year: x.node.seasonYear || null,
       cover: x.node.coverImage?.large || x.node.coverImage?.medium || null,
     })),
   };
@@ -104,6 +110,17 @@ async function getAnime(id, options = {}) {
   return anime;
 }
 
+async function getAnimeBatch(ids, options = {}) {
+  const uniqueIds = [...new Set((ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 24);
+  if (!uniqueIds.length) return [];
+  const d = await anilist(`query($ids:[Int]){Page(perPage:24){media(id_in:$ids,type:ANIME){${FIELDS}}}}`, { ids: uniqueIds });
+  const results = (d.Page.media || []).map(normalize);
+  if (options.language === 'it') {
+    for (const anime of results) if (anime.description) anime.description = await translateDescriptionToItalian(anime.description);
+  }
+  return results;
+}
+
 async function kitsuJson(url) {
   const r = await fetch(url, { headers: { Accept: 'application/vnd.api+json' } });
   if (!r.ok) throw new Error(`Kitsu ha risposto ${r.status}`);
@@ -116,8 +133,11 @@ async function kitsuIdFor(anilistId, title) {
     const item = (j.included || []).find((x) => x.type === 'anime');
     if (item) return item.id;
   } catch { /* si prova la ricerca testuale */ }
-  const j = await kitsuJson(`${KITSU}/anime?filter[text]=${encodeURIComponent(title)}&page[limit]=1`);
-  return j.data && j.data[0] ? j.data[0].id : null;
+  const j = await kitsuJson(`${KITSU}/anime?filter[text]=${encodeURIComponent(title)}&page[limit]=12`);
+  const {titleKey} = require('./animeworld');
+  const matches=(j.data || []).filter(item=>[item.attributes?.canonicalTitle,...Object.values(item.attributes?.titles || {}),...(item.attributes?.abbreviatedTitles || [])]
+    .some(name=>titleKey(name)===titleKey(title)));
+  return matches.length===1 ? matches[0].id : null;
 }
 
 // Ritorna [{number, title, thumb, rating}]; se Kitsu non basta usa gli streamingEpisodes di AniList.
@@ -138,6 +158,7 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, epi
           title: a.canonicalTitle || (a.titles && (a.titles.en_us || a.titles.en_jp)) || '',
           thumb: a.thumbnail && (a.thumbnail.original || a.thumbnail.large) || null,
           duration: a.length || null,
+          durationUnit: 'minutes', durationSource: 'Kitsu',
           rating,
           ratingSource: rating == null ? null : 'Kitsu',
         });
@@ -196,11 +217,10 @@ async function searchImdbId(title, altTitle) {
       if (!res.ok) continue;
       const data = await res.json();
       if (Array.isArray(data.d) && data.d.length > 0) {
-        const tv = data.d.find((x) => x.qid === 'tvSeries' || x.q === 'TV series');
-        if (tv) return { id: tv.id, title: tv.l };
-        const mini = data.d.find((x) => x.qid === 'tvMiniSeries');
-        if (mini) return { id: mini.id, title: mini.l };
-        if (data.d[0].id) return { id: data.d[0].id, title: data.d[0].l };
+        const {titleKey}=require('./animeworld');
+        const matches=data.d.filter(x=>['tvSeries','tvMiniSeries'].includes(x.qid) || x.q==='TV series')
+          .filter(x=>candidates.some(name=>titleKey(cleanTitleForImdb(name))===titleKey(x.l)));
+        if(matches.length===1)return {id:matches[0].id,title:matches[0].l};
       }
     } catch { /* si passa al prossimo candidato */ }
   }
@@ -335,39 +355,14 @@ async function fetchImdbData({ imdbId, title, altTitle }) {
 }
 
 function applyImdbRatingsToEpisodes(episodes, imdbChart, title) {
-  if (!imdbChart || !Array.isArray(imdbChart.seasons) || !imdbChart.seasons.length) return episodes;
-  const targetSeasonNum = detectSeasonFromTitle(title);
-  const targetSeason = imdbChart.seasons.find((s) => s.season === targetSeasonNum);
-
-  const cumulativeMap = new Map();
-  let cum = 0;
-  const sorted = [...imdbChart.seasons].sort((a, b) => a.season - b.season);
-  for (const s of sorted) {
-    for (const ep of s.episodes) {
-      cum++;
-      cumulativeMap.set(cum, ep);
-    }
-  }
-
-  for (const ep of episodes) {
-    let matched = null;
-    if (targetSeason) {
-      matched = targetSeason.episodes.find((e) => e.number === ep.number);
-    }
-    if (!matched && cumulativeMap.has(ep.number)) {
-      matched = cumulativeMap.get(ep.number);
-    }
-    if (matched && matched.rating != null) {
-      ep.rating = matched.rating;
-      ep.ratingSource = 'IMDb';
-    }
-  }
-  return episodes;
+  const series = typeof title === 'object' ? title : {title};
+  return require('./episode-ratings').apply({...series,episodes},imdbChart);
 }
 
 module.exports = {
   searchAnime,
   getAnime,
+  getAnimeBatch,
   fetchEpisodes,
   fetchAniSkipTimes,
   aniSkipUrl,

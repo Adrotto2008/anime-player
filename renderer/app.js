@@ -138,7 +138,8 @@ const defaultPreset = () => state.lib.settings.defaultPreset || 'aa-hq';
 /* ---------- dialog ---------- */
 function openDialog(title, bodyBuilder, options = {}) {
   const root = $('#dialog-root');
-  const close = () => { scrim.remove(); };
+  const previousFocus = document.activeElement;
+  const close = () => { scrim.remove(); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
   const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (!options.locked && e.target === scrim) close(); } });
   const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
   const head = h('div', { class: 'dialog-head' }, h('h2', null, title),
@@ -153,6 +154,16 @@ function openDialog(title, bodyBuilder, options = {}) {
   const first = body.querySelector('input:not([type=checkbox]), textarea, select');
   if (first) first.focus();
   return close;
+}
+function confirmAction(message, action) {
+  openDialog(message, (close) => {
+    const submit = h('button', { class: 'btn danger', onclick: async () => {
+      submit.disabled = true;
+      try { await action(); close(); }
+      catch { submit.disabled = false; /* call() already displays the IPC error */ }
+    } }, t('deleteSeries'));
+    return h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')), submit);
+  });
 }
 const field = (label, input) => h('label', { class: 'field' }, h('span', null, label), input);
 
@@ -275,6 +286,9 @@ async function loadSeriesRatings(id) {
 }
 function render() {
   closeMenu();
+  if (['series', 'ratings-chart'].includes(state.view.name) && !getSeries(state.view.id)
+    || state.view.name === 'franchise' && !franchiseGroups().has(String(state.view.id))) state.view = { name: 'home' };
+  for (const series of state.lib.series || []) if (series.imdbChart) window.EpisodeRatings.apply(series,series.imdbChart);
   applyTheme();
   renderRail(); renderPlayer();
   const main = $('#main');
@@ -285,6 +299,7 @@ function render() {
   const searchSelDirection = focusedSearch ? focusedSearch.selectionDirection : 'none';
 
   main.replaceChildren(
+    state.view.name === 'franchise' ? franchiseView(state.view.id) :
     state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
     state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
     state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
@@ -421,6 +436,32 @@ function seriesMatches(s, filter) {
   if (filter === 'started') return watched.length > 0 && watched.length < episodes.length;
   return true;
 }
+function franchiseGroups() {
+  const groups = new Map();
+  for (const series of state.lib.series || []) if (series.franchiseId) {
+    const id = String(series.franchiseId);
+    if (!groups.has(id)) groups.set(id, []);
+    groups.get(id).push(series);
+  }
+  return groups;
+}
+function libraryEntries() {
+  const groups = franchiseGroups(); const emitted = new Set(); const entries = [];
+  for (const series of state.lib.series || []) {
+    const id = String(series.franchiseId || ''); const members = id ? groups.get(id) : null;
+    if (members?.length > 1) {
+      if (emitted.has(id)) continue;
+      emitted.add(id); entries.push({ kind: 'franchise', id, title: series.franchiseTitle || series.title, members });
+    } else entries.push({ kind: 'series', series, title: series.title });
+  }
+  return entries;
+}
+function franchiseRating(members, primary) {
+  const imdb = members.find((item) => item.scoreSource === 'IMDb' && item.score != null)
+    || members.find((item) => item.imdbChart?.overallRating != null);
+  if (imdb) return { score: imdb.scoreSource === 'IMDb' && imdb.score != null ? imdb.score : imdb.imdbChart.overallRating, source: 'IMDb' };
+  return { score: primary?.score ?? null, source: primary?.scoreSource || null };
+}
 
 async function exportLibrary() {
   const result = await call('library:export');
@@ -438,19 +479,24 @@ async function importLibrary() {
 
 function homeView() {
   const q = state.filter.trim().toLowerCase();
-  const list = state.lib.series
+  const visibleSeries = state.lib.series
     .filter((s) => {
       const haystack = [s.title, s.altTitle, ...(s.genres || [])].filter(Boolean).join(' ').toLowerCase();
       return (!q || haystack.includes(q)) && seriesMatches(s, state.progressFilter);
-    })
-    .sort((a, b) => {
-      if (state.sort === 'recent') return (b.addedAt || 0) - (a.addedAt || 0);
-      if (state.sort === 'rating') return (Number(b.score) || 0) - (Number(a.score) || 0);
-      return a.title.localeCompare(b.title);
     });
+  const list = libraryEntries().filter((entry) => entry.kind === 'series'
+    ? visibleSeries.some((series) => series.id === entry.series.id)
+    : (!q || [entry.title, ...entry.members.flatMap((series) => [series.title, series.altTitle, ...(series.genres || [])])].filter(Boolean).join(' ').toLowerCase().includes(q))
+      && entry.members.some((series) => seriesMatches(series, state.progressFilter)));
+  list.sort((a, b) => {
+    const left = a.kind === 'series' ? a.series : a.members[0]; const right = b.kind === 'series' ? b.series : b.members[0];
+    if (state.sort === 'recent') return (right.addedAt || 0) - (left.addedAt || 0);
+    if (state.sort === 'rating') return (Number(right.score) || 0) - (Number(left.score) || 0);
+    return a.title.localeCompare(b.title);
+  });
   const cont = q || state.progressFilter !== 'all' ? [] : continueItems();
-  const featured = !q && state.progressFilter === 'all' ? (cont[0] ? cont[0].s : list[0]) : null;
-  const recent = [...list].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)).slice(0, 8);
+  const featured = !q && state.progressFilter === 'all' ? (cont[0] ? cont[0].s : visibleSeries[0]) : null;
+  const recent = [...visibleSeries].sort((a, b) => (b.updatedAt || b.createdAt || 0) - (a.updatedAt || a.createdAt || 0)).slice(0, 8);
   const totalEps = state.lib.series.reduce((n, x) => n + episodeTotal(x), 0);
   const search = h('div', { class: 'search-shell' },
     icon('search', 16),
@@ -478,6 +524,20 @@ function homeView() {
         seenPct > 0 ? h('div', { class: 'bar' }, h('i', { style: { width: seenPct + '%' } })) : null),
       h('div', { class: 't' }, s.title),
       h('div', { class: 'poster-meta' }, [total ? t('watchedOf', seen, total) : t('noEpisodes'), personal != null ? `★ ${personal.toFixed(1)}` : null].filter(Boolean).join('  ·  ')));
+  };
+  const franchiseCard = (entry) => {
+    const seasons = entry.members.filter((item) => item.franchiseType !== 'movie' && item.format !== 'MOVIE' && item.franchiseType !== 'special');
+    const movies = entry.members.filter((item) => item.franchiseType === 'movie' || item.format === 'MOVIE');
+    const primary = [...seasons].sort((a, b) => (a.franchiseOrder || 999) - (b.franchiseOrder || 999))[0] || entry.members[0];
+    const episodes = seasons.flatMap((item) => item.episodes || []); const watched = episodes.filter((item) => item.progress.watched).length;
+    const rating = franchiseRating(entry.members, primary);
+    const cover = primary.cover || entry.members.find(item=>item.cover)?.cover;
+    return h('button', { class: 'poster franchise-poster', onclick: () => go({ name: 'franchise', id: entry.id }) },
+      h('div', { class: 'cover', style: bg(cover) }, cover ? null : entry.title.slice(0, 1).toUpperCase(),
+        h('span', { class: 'poster-badge' }, `${seasons.length} ${t('seasonsShort')} · ${movies.length} ${t('moviesShort')}`),
+        episodes.length && watched ? h('div', { class: 'bar' }, h('i', { style: { width: `${watched / episodes.length * 100}%` } })) : null),
+      h('div', { class: 't' }, entry.title),
+      h('div', { class: 'poster-meta' }, [episodes.length ? t('watchedOf', watched, episodes.length) : null, rating.score != null ? `★ ${Number(rating.score).toFixed(1)}` : null].filter(Boolean).join(' · ')));
   };
   const featuredTarget = featured && resumeTarget(featured);
   const resuming = featuredTarget && featuredTarget.progress.pos > 0 && !featuredTarget.progress.watched;
@@ -511,13 +571,13 @@ function homeView() {
     h('div', { class: 'strip' }, continueCards)) : null;
   const librarySection = list.length ? h('section', { class: 'section' },
     sectionHead(t('library'), list.length),
-    h('div', { class: 'grid' }, list.map(posterCard))) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
+    h('div', { class: 'grid' }, list.map((item) => item.kind === 'franchise' ? franchiseCard(item) : posterCard(item.series)))) : h('div', { class: 'empty' }, h('h2', null, state.lib.series.length ? t('noResults') : t('emptyLibrary')),
       state.lib.series.length ? t('noFilterMatch') : t('emptyLibraryHint'),
       state.lib.series.length ? null : h('div', null, h('button', { class: 'btn primary', onclick: openAddSeries }, icon('plus', 16), t('addFirstSeries'))));
   const recentSection = !q && state.progressFilter === 'all' && recent.length > 0
     ? h('section', { class: 'section recent-section' }, sectionHead(t('recentActivity')), h('div', { class: 'grid grid-compact' }, recent.map(posterCard)))
     : null;
-  const schedule = !q && state.progressFilter === 'all' ? airingSections(list) : null;
+  const schedule = !q && state.progressFilter === 'all' ? airingSections(visibleSeries) : null;
   return h('div', { class: 'page' },
     h('div', { class: 'head' },
       h('div', { class: 'head-main' },
@@ -606,6 +666,63 @@ function statsView() {
 }
 
 /* ---------- serie ---------- */
+function franchiseView(id) {
+  const members = franchiseGroups().get(String(id)) || [];
+  if (!members.length) return h('div', { class: 'empty' }, t('noResults'));
+  const seasons = members.filter((item) => item.franchiseType === 'season' || (!item.franchiseType && item.format !== 'MOVIE'))
+    .sort((a, b) => (a.franchiseOrder || a.franchiseSeasonNumber || 999) - (b.franchiseOrder || b.franchiseSeasonNumber || 999));
+  const movies = members.filter((item) => item.franchiseType === 'movie' || item.format === 'MOVIE')
+    .sort((a, b) => (a.franchiseOrder || 999) - (b.franchiseOrder || 999) || (a.year || 0) - (b.year || 0));
+  const specials = members.filter((item) => item.franchiseType === 'special' || ['SPECIAL', 'OVA'].includes(item.format));
+  const primary = seasons[0] || members[0];
+  const groupCover = primary.cover || members.find(item=>item.cover)?.cover;
+  const rating = franchiseRating(members, primary);
+  const episodes = seasons.flatMap((item) => item.episodes || []);
+  const watched = episodes.filter((episode) => episode.progress.watched).length;
+  const childCard = (series, label) => h('button', { class: 'poster franchise-child', onclick: () => go({ name: 'series', id: series.id }) },
+    h('div', { class: 'cover', style: bg(series.cover) }, series.cover ? null : series.title.slice(0, 1).toUpperCase(),
+      label ? h('span', { class: 'poster-badge' }, label) : null,
+      series.format === 'RELEASING' ? h('span', { class: 'poster-live' }, t('airing')) : null),
+    h('div', { class: 't' }, series.title),
+    h('div', { class: 'poster-meta' }, [series.year, series.score != null ? `★ ${Number(series.score).toFixed(1)}` : null].filter(Boolean).join(' · ')));
+  const movieCards = movies.length ? h('div', { class: 'grid' }, movies.map((movie) => h('article', { class: 'franchise-movie' },
+    h('button', { class: 'poster', onclick: () => go({ name: 'series', id: movie.id }) },
+      h('div', { class: 'cover', style: bg(movie.cover) }, movie.cover ? null : movie.title.slice(0, 1).toUpperCase(), h('span', { class: 'poster-badge' }, t('movie'))),
+      h('div', { class: 't' }, movie.title), h('div', { class: 'poster-meta' }, [movie.year, movie.score != null ? `★ ${Number(movie.score).toFixed(1)}` : null].filter(Boolean).join(' · '))),
+    h('div', { class: 'movie-sources' }, (movie.movieSources || []).map((source, index) => h('button', { class: 'btn sm', onclick: async () => {
+      try { await call('movie:play', movie.id, index); } catch (error) { if (String(error.message).includes('MPV_NOT_CONFIGURED')) openSetup(); else toast(cleanErr(error), 'error'); }
+    } }, icon('play', 13), source.label || t('playMovie'))),
+    h('button', { class: 'btn sm ghost', onclick: () => addMovieLinkDialog(movie) }, icon('plus', 13), t('addMovieLink'))))))
+    : h('div', { class: 'empty' }, t('noMovies'));
+  const chartSource = members.find((item) => item.imdbChart) || primary;
+  return h('div', { class: 'page franchise-page' },
+    h('section', { class: 'hero', style: { '--bg': primary.banner || primary.cover ? `url("${primary.banner || primary.cover}")` : 'none' } },
+      h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, icon('back', 16), t('backLibrary').replace(/^←\s*/, '')),
+      h('div', { class: 'body' }, h('div', { class: 'cover', style: bg(groupCover) }),
+        h('div', { class: 'info' }, h('h1', null, primary.franchiseTitle || primary.title),
+          h('div', { class: 'meta-row' }, rating.score != null ? scorePill(rating.score) : null,
+            h('span', { class: 'meta-item' }, t('franchiseCounts', seasons.length, movies.length)),
+            episodes.length ? h('span', { class: 'meta-item' }, t('watchedOf', watched, episodes.length)) : null),
+          h('div', { class: 'desc' }, primary.description || t('noDescription')),
+          chartSource?.imdbChart ? h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: chartSource.id }) }, icon('chart', 16), t('ratingsChart')) : null))),
+    h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('seasons'), h('span', { class: 'count' }, seasons.length))),
+      h('div', { class: 'grid' }, seasons.map((season) => childCard(season, season.franchiseSeasonNumber ? `${t('season')} ${season.franchiseSeasonNumber}` : null)))),
+    h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('movies'), h('span', { class: 'count' }, movies.length))), movieCards),
+    specials.length ? h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('specials'))), h('div', { class: 'grid' }, specials.map((item) => childCard(item, item.format)))) : null);
+}
+
+function addMovieLinkDialog(movie) {
+  openDialog(t('addMovieLink'), (close) => {
+    const input = h('input', { class: 'input', type: 'url', placeholder: 'https://…' });
+    return [field(t('movieLink'), input), h('div', { class: 'foot' },
+      h('button', { class: 'btn', onclick: close }, t('cancel')),
+      h('button', { class: 'btn primary', onclick: async () => {
+        try { state.lib = await call('movie:addLink', movie.id, input.value); close(); render(); }
+        catch (error) { toast(cleanErr(error), 'error'); }
+      } }, t('save')))];
+  });
+}
+
 function seriesView(s) {
   const eff = s.preset || defaultPreset();
   const effMode = eff === 'off' ? 'off' : (eff.split('-')[0]); const effTier = eff === 'off' ? 'fast' : eff.split('-')[1];
@@ -642,26 +759,27 @@ function seriesView(s) {
     h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', value: personal == null ? '' : personal, placeholder: s.personalRating == null && s.episodes.some((e) => e.personalRating != null) ? t('episodeAverage') : '—', onchange: (e) => mutate('series:update', s.id, { personalRating: e.target.value === '' ? null : Number(e.target.value) }) }));
   const actions = h('div', { class: 'row wrap actions' },
     target ? h('button', { class: 'btn primary lg', onclick: () => play(s.id, target.id) }, icon('play', 16), `${resuming ? t('resume') : t('watch')} · ${t('episode', target.number)}`) : null,
-    h('button', { class: target ? 'btn' : 'btn primary', onclick: () => openAddLinks(s) }, icon('plus', 16), t('addLinks')),
-    s.episodes.some((episode) => !episode.sources?.length) ? h('button', { class: 'btn ghost', onclick: async (event) => {
+    h('button', { class: target ? 'btn' : 'btn primary', onclick: () => s.format === 'MOVIE' ? addMovieLinkDialog(s) : openAddLinks(s) }, icon('plus', 16), s.format === 'MOVIE' ? t('addMovieLink') : t('addLinks')),
+    s.format !== 'MOVIE' ? h('button', { class: 'btn ghost', onclick: async (event) => {
       const button = event.currentTarget; button.disabled = true; button.textContent = t('findingSources');
       try {
         const result = await call('series:discoverSources', s.id);
         state.lib = result.lib; state.stats = null; render();
-        toast(result.sourceDiscovery.unavailable ? t('autoLinksUnavailable') : result.sourceDiscovery.episodesAdded ? t('autoLinksAdded', result.sourceDiscovery.episodesAdded) : t('autoLinksNotFound'), result.sourceDiscovery.unavailable ? 'error' : '');
+        notifySourceDiscovery(result.sourceDiscovery);
       } catch { button.disabled = false; button.textContent = t('discoverLinks'); }
     } }, icon('search', 16), t('discoverLinks')) : null,
     h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, icon('chart', 16), t('ratingsChart')),
     s.anilistId ? h('button', { class: 'btn ghost', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, icon('refresh', 16), t('updateInfo')) : null,
     h('span', { class: 'spacer' }),
-    h('button', { class: 'btn ghost danger', onclick: async () => {
-      if (!confirm(t('confirmDelete', s.title))) return;
-      try {
-        await mutate('series:delete', s.id);
+    h('button', { class: 'btn ghost danger', onclick: () => {
+      confirmAction(t('confirmDelete', s.title), async () => {
+        // Change selection before rendering the returned snapshot or lib:changed.
+        const lib = await call('series:delete', s.id);
+        state.lib = lib; state.stats = null; delete state.ratingLoads[s.id];
         state.filter = '';
         state.progressFilter = 'all';
         go({ name: 'home' });
-      } catch { /* call() displays the error; keep the series view available */ }
+      });
     } }, icon('trash', 16), t('deleteSeries')));
   const heroBody = h('div', { class: 'body' },
     h('div', { class: 'cover', style: bg(s.cover) }),
@@ -672,7 +790,13 @@ function seriesView(s) {
       total ? h('div', { class: 'series-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: (seen / total) * 100 + '%' } })), h('span', { class: 'muted small' }, t('watchedOf', seen, total))) : null,
       desc, more, rate, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
-    h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, icon('back', 16), t('backLibrary').replace(/^←\s*/, '')), heroBody);
+    h('button', { class: 'link back', onclick: () => go(s.franchiseId ? {name:'franchise',id:s.franchiseId} : { name: 'home' }) }, icon('back', 16),
+      s.franchiseId ? s.franchiseTitle || t('seasons') : t('backLibrary').replace(/^←\s*/, '')), heroBody);
+  const sourceDiagnostics = s.sourceDiscovery?.providers ? h('div', {class:'muted small',role:'status'},
+    Object.entries(s.sourceDiscovery.providers).map(([name,result])=>h('p',null,
+      `${name === 'animeunity' ? 'AnimeUnity' : 'AnimeWorld'}: ${t('providerStatus_'+result.status)}${result.linksFound ? ` · ${result.linksFound} ${t('linksFound')} · ${result.linksResolved || 0} ${t('linksResolved')}` : ''}`,
+      result.error ? ` · ${result.error}` : '', (result.errors || []).length ? ` · ${result.errors[0].message} (${result.errors.length})` : '')),
+    h('span',null,t('playbackVerifiedCount',s.episodes.flatMap(ep=>ep.sources).filter(source=>source.playbackVerifiedAt).length))) : null;
   const advanced = h('details', { class: 'adv' }, h('summary', null, t('advanced')),
     field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })),
     h('div', { class: 'two' },
@@ -685,11 +809,19 @@ function seriesView(s) {
       h('div', { class: 'ctl' }, h('span', { class: 'ctl-label' }, t('mode')), h('div', { class: 'seg', role: 'group', 'aria-label': t('mode') }, modeBtns)),
       h('div', { class: 'ctl' }, h('span', { class: 'ctl-label' }, t('quality')), h('div', { class: 'seg', role: 'group', 'aria-label': t('quality') }, tierBtns))),
     advanced);
-  const episodeContent = s.episodes.length
+  if (sourceDiagnostics) heroBody.append(sourceDiagnostics);
+  const episodeContent = s.format === 'MOVIE'
+    ? h('div', { class: 'movie-playback' }, ...(s.movieSources || []).map((source, index) => h('button', { class: 'btn primary', onclick: async () => {
+      try { await call('movie:play', s.id, index); } catch (error) { if (String(error.message).includes('MPV_NOT_CONFIGURED')) openSetup(); else toast(cleanErr(error), 'error'); }
+    } }, icon('play', 15), source.label || t('playMovie'))),
+      h('button', { class: 'btn', onclick: () => addMovieLinkDialog(s) }, icon('plus', 15), t('addMovieLink')))
+    : s.episodes.length
     ? h('div', { class: 'eps' }, s.episodes.map((e) => episodeRow(s, e)))
     : h('div', { class: 'empty' }, h('h2', null, t('noEpisodeYet')), t('addLinksHint'),
       h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, icon('plus', 16), t('addLinks'))));
-  return h('div', { class: 'page' }, hero, castRelatedSection(s), a4k, h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('episodes'), h('span', { class: 'count' }, s.episodes.length))), episodeContent));
+  return h('div', { class: 'page' }, hero, castRelatedSection(s), a4k, s.format === 'MOVIE'
+    ? h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('movie'))), episodeContent)
+    : h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('episodes'), h('span', { class: 'count' }, s.episodes.length))), episodeContent));
 }
 
 function getRatingTier(score) {
@@ -705,18 +837,19 @@ function getRatingTier(score) {
 
 function ratingsChartView(s) {
   const chart = s.imdbChart;
-  const back = h('button', { class: 'ratings-chart-back link', onclick: () => go({ name: 'series', id: s.id }) }, icon('back', 16), t('backToAnime').replace(/^←\s*/, ''));
+  const siblings = s.franchiseId ? (franchiseGroups().get(String(s.franchiseId)) || [s]) : [s];
+  const back = h('button', { class: 'ratings-chart-back link', onclick: () => go(s.franchiseId && siblings.length > 1 ? { name: 'franchise', id: s.franchiseId } : { name: 'series', id: s.id }) }, icon('back', 16), t('backToAnime').replace(/^←\s*/, ''));
 
-  const totalScoreVal = s.score != null
-    ? Number(s.score).toFixed(1)
-    : (chart && chart.overallRating != null ? Number(chart.overallRating).toFixed(1) : null);
+  const primary = siblings.find((item) => Number(item.franchiseSeasonNumber) === 1) || siblings[0] || s;
+  const imdbOverall = siblings.find((item) => item.scoreSource === 'IMDb' && item.score != null)?.score ?? chart?.overallRating;
+  const totalScoreVal = imdbOverall != null ? Number(imdbOverall).toFixed(1) : (primary.score != null ? Number(primary.score).toFixed(1) : null);
 
   const sidebar = h('aside', { class: 'ratings-chart-sidebar' },
     h('div', { class: 'ratings-chart-poster', style: bg(s.cover) }),
     h('div', { class: 'ratings-chart-total' },
       h('span', { class: 'star' }, '★'),
       h('span', { class: 'score-val' }, totalScoreVal != null ? totalScoreVal : t('unavailable')),
-      s.scoreSource ? h('span', { class: 'score-src' }, `(${s.scoreSource})`) : null,
+      imdbOverall != null ? h('span', { class: 'score-src' }, '(IMDb)') : primary.scoreSource ? h('span', { class: 'score-src' }, `(${primary.scoreSource})`) : null,
     ),
     h('h1', { class: 'ratings-chart-title' }, (chart && chart.title) || s.title),
     h('div', { class: 'ratings-chart-desc' }, s.description || t('noDescription')),
@@ -753,7 +886,6 @@ function ratingsChartView(s) {
     );
 
     const seasons = chart.seasons.filter((sn) => Number.isInteger(sn.season) && sn.season > 0);
-    const librarySeason = detectSeasonFromTitle(s.title);
     const maxEps = chart.maxEpisodes || Math.max(...seasons.map((sn) => sn.episodes.length), 0);
 
     const headerRow = h('tr', null,
@@ -770,19 +902,19 @@ function ratingsChartView(s) {
         const ep = sn.episodes.find((e) => e.number === epNum);
         if (ep && ep.rating != null) {
           const tier = getRatingTier(ep.rating);
-          const libraryEpisode = sn.season === librarySeason
-            ? s.episodes.find((item) => Number(item.number) === Number(ep.number))
-            : null;
+          const target = window.EpisodeRatings.target(siblings,chart,sn.season,ep.number);
+          const mapped = target?.series;
+          const libraryEpisode = target?.episode;
           const cell = h('td', null,
             h('div', {
               class: `ratings-cell rating-tier-${tier}${libraryEpisode ? ' is-in-library' : ''}`,
               title: `S${sn.season} E${ep.number}: ${ep.title || t('episode', ep.number)} · ${ep.rating.toFixed(1)} ★ (${tier})`,
               role: libraryEpisode ? 'button' : null,
               tabindex: libraryEpisode ? '0' : null,
-              'aria-label': libraryEpisode ? `${s.title} · ${t('episode', libraryEpisode.number)} · ${t('openEpisode')}` : null,
-              onclick: libraryEpisode ? () => go({ name: 'series', id: s.id, episodeId: libraryEpisode.id }) : null,
+              'aria-label': libraryEpisode ? `${mapped.title} · ${t('episode', libraryEpisode.number)} · ${t('openEpisode')}` : null,
+              onclick: libraryEpisode ? () => go({ name: 'series', id: mapped.id, episodeId: libraryEpisode.id }) : null,
               onkeydown: libraryEpisode ? (event) => {
-                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go({ name: 'series', id: s.id, episodeId: libraryEpisode.id }); }
+                if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go({ name: 'series', id: mapped.id, episodeId: libraryEpisode.id }); }
               } : null,
             }, ep.rating.toFixed(1)),
           );
@@ -827,7 +959,9 @@ function episodeRow(s, e) {
   const status = p.watched ? h('span', { class: 'chip ok' }, icon('check', 12), t('watched'))
     : resume ? h('span', { class: 'chip live' }, `${t('resumeStatus')}${pct(e) ? ' · ' + Math.round(pct(e)) + '%' : ''}`)
     : !has ? h('span', { class: 'chip warn' }, t('noLink')) : null;
-  const meta = [skipChip, e.duration ? formatDuration(e.duration) : null, has ? t('sources', e.sources.length) : null].filter(Boolean);
+  const measured = e.durationSource === 'mpv' ? e.duration : Number(e.progress?.duration) || 0;
+  const durationLabel = measured ? formatDuration(measured) : e.duration ? t('metadataDuration',formatDuration(e.duration)) : null;
+  const meta = [skipChip, durationLabel, has ? t('sources', e.sources.length) : null].filter(Boolean);
   const info = h('div', { class: 'ep-info' },
     h('div', { class: 'name' }, e.title || t('episode', e.number)),
     h('div', { class: 'ep-meta' }, status, ...meta.map((item) => typeof item === 'string' ? h('span', { class: 'muted small' }, item) : item),
@@ -849,17 +983,30 @@ async function play(sid, eid) {
   catch (error) { if (String(error && error.message).includes('MPV_NOT_CONFIGURED')) openSetup(); }
 }
 
+function notifySourceDiscovery(result, title) {
+  if (!result || result.cancelled) return;
+  const found = result.episodesFound || result.episodesAdded || 0;
+  const message = result.unavailable ? t('autoLinksUnavailable') : found ? t('autoLinksAdded', found) : t('autoLinksNotFound');
+  toast(title ? `${title} · ${message}` : message, result.unavailable ? 'error' : '');
+}
+
 /* ---------- dialoghi ---------- */
 function openAddSeries() {
   openDialog(t('addSeriesTitle'), (close) => {
     const q = h('input', { class: 'input', placeholder: t('animeTitlePlaceholder'), 'aria-label': t('animeTitlePlaceholder') });
     const results = h('div', { class: 'results' });
     const add = async (payload, btn) => {
+      const originalLabel = btn.textContent;
       btn.disabled = true; btn.textContent = t('adding');
       try {
-        const r = await call('series:create', payload); state.lib = r.lib; close(); go({ name: 'series', id: r.id });
-        toast(r.sourceDiscovery.unavailable ? t('autoLinksUnavailable') : r.sourceDiscovery.episodesAdded ? t('autoLinksAdded', r.sourceDiscovery.episodesAdded) : t('autoLinksNotFound'), r.sourceDiscovery.unavailable ? 'error' : '');
-      } catch { btn.disabled = false; btn.textContent = t('add'); }
+        const r = await call('series:create', payload); state.lib = r.lib; close();
+        go({ name: 'series', id: r.id });
+        const discoveries = Array.isArray(r.sourceDiscovery) ? r.sourceDiscovery.map((item) => item.sourceDiscovery).filter(Boolean) : [r.sourceDiscovery].filter(Boolean);
+        const added = discoveries.reduce((sum, item) => sum + Number(item.episodesAdded || 0), 0);
+        const unavailable = discoveries.length > 0 && discoveries.every((item) => item.unavailable);
+        if (r.ambiguous) toast(t('franchiseAmbiguous'));
+        else if (discoveries.length) toast(unavailable ? t('autoLinksUnavailable') : added ? t('autoLinksAdded', added) : t('autoLinksNotFound'), unavailable ? 'error' : '');
+      } catch { btn.disabled = false; btn.textContent = originalLabel; }
     };
     const search = async () => {
       const text = q.value.trim(); if (!text) return;
@@ -873,10 +1020,9 @@ function openAddSeries() {
       } catch { results.replaceChildren(); }
     };
     q.addEventListener('keydown', (e) => { if (e.key === 'Enter') search(); });
-    const manual = h('button', { class: 'link', onclick: async () => {
+    const manual = h('button', { class: 'link', onclick: async (event) => {
       const title = q.value.trim(); if (!title) { toast(t('writeTitleFirst'), 'error'); return; }
-      const r = await call('series:create', { title }); state.lib = r.lib; close(); go({ name: 'series', id: r.id });
-      toast(r.sourceDiscovery.unavailable ? t('autoLinksUnavailable') : r.sourceDiscovery.episodesAdded ? t('autoLinksAdded', r.sourceDiscovery.episodesAdded) : t('autoLinksNotFound'), r.sourceDiscovery.unavailable ? 'error' : '');
+      await add({ title }, event.currentTarget);
     } }, t('addWithoutSearch'));
     return [h('div', { class: 'row' }, q, h('button', { class: 'btn primary', onclick: search }, t('search'))), results, h('div', { style: { marginTop: '14px' } }, manual), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')))];
   });
@@ -955,7 +1101,8 @@ function openEditLinks(s, e) {
     const rows = e.sources.map((source) => {
       const value = h('span', { class: 'muted small' }, statusNames.checking);
       const line = h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' } },
-        h('span', { class: 'small', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: source.url }, `${source.provider ? `${source.provider} · ` : ''}${source.url}`), value);
+        h('span', { class: 'small', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: source.url },
+          `${source.provider ? `${source.provider} · ` : ''}${source.resolutionState === 'resolved' ? t('linksResolved') : t('linksFound')} · ${source.playbackVerifiedAt ? t('playbackVerified') : t('playbackUnverified')} · ${source.url}`), value);
       statusRows.append(line);
       return { source, value };
     });
@@ -1085,6 +1232,10 @@ function openSetup() {
 /* ---------- avvio ---------- */
 (async function init() {
   api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null; render(); });
+  api.on('series:sourcesDiscovered', ({ id, sourceDiscovery, lib }) => {
+    state.lib = lib; state.stats = null; render();
+    notifySourceDiscovery(sourceDiscovery, getSeries(id)?.title);
+  });
   api.on('player:state', (p) => { state.player = p; renderPlayer(); });
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });

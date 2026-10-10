@@ -1,14 +1,28 @@
 # Anime Player
 
-Anime Player **v0.5.23** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.26** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Regression audit — 0.5.26
+
+- AnimeUnity retains records whose title is only in `title_eng`; AnimeWorld uses its full search page when quick search omits an exact title, including Monster. AniList aliases include native titles and synonyms. Conflicting or ambiguous matches are rejected.
+- Provider diagnostics distinguish titles without a safe match, missing episodes, HTTP/parsing errors, found URLs, resolved URLs and playback actually observed by mpv. Discovery remains independent for both providers and keeps saved links and headers.
+- Adding an AniList result opens that exact record. Franchise grouping preserves every AniList ID and uses explicit season labels; cour/part order does not define an IMDb season.
+- IMDb ratings and chart navigation share an explicit episode mapping. Black Clover's AniList record `97940` covers episodes 1–170 across IMDb seasons 1–4; AniList sequel `195604` corresponds to IMDb season 5. Missing or uncertain episode mappings do not receive an IMDb rating.
+- Metadata refresh and cloud snapshot merging retain existing covers and measured durations. Episode duration from mpv has priority; metadata-only duration is labeled, and series average duration is stored separately.
+- Deletion uses an asynchronous renderer dialog and clears stale selections without reloading. Regression tests exercise Windows Electron keyboard input after deleting a season, the last season and a standalone title. The original reported native-dialog freeze was not reproduced, so this specific incident remains partially verified.
+- `npm run check` includes provider fixtures, metadata/cloud regression tests, mpv IPC/playback when installed, and Electron DOM/input tests. Linux without a display explicitly skips the Electron UI suite; run it under xvfb or a desktop session.
 
 ## Features
 
 - AniList search and series metadata: poster, banner, description, genres,
   year, format, episode count, and AniList score when available.
+- AniList PREQUEL/SEQUEL chains group related seasons into one franchise page;
+  linked movies remain separate playable records and do not receive synthetic episodes.
+- Grouping keeps season records, episode IDs, links, ratings, presets, and watch
+  progress independent. Ambiguous relation graphs fall back to the selected title.
 - IMDb overall anime score and episode-by-episode ratings across all seasons.
 - Visual IMDb episode rating chart/heatmap in the series view (styled after
   Series Graph tier charts: Awesome, Great, Good, Regular, Bad, Garbage),
@@ -18,7 +32,7 @@ episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWor
 - AniList cast and related-series metadata in a compact series panel.
 - AniSkip opening/ending availability is shown per episode after its skip data
   has been checked.
-- Automatic episode-link discovery through AnimeUnity followed by AnimeWorld, with exact-title/year/episode-count matching and a manual fallback.
+- Episode links are discovered automatically in the background when adding a series, including existing seasons with missing links. AnimeUnity runs first; failures and unusable results still fall back to AnimeWorld. Original AniList titles are retained for matching translated provider titles. Manual retry remains available and preserves saved links and progress.
 - HTTP availability checks beside each episode link; redirects and inconclusive responses are labeled separately.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
