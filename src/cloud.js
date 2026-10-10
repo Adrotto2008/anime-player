@@ -40,11 +40,15 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
       const newProgressAt = Number(episode.progress?.updatedAt) || 0;
       const winner = (Number(episode.updatedAt || newProgressAt) || 0) > (Number(old.updatedAt || oldProgressAt) || 0) ? episode : old;
       const sources = new Map([...(old.sources || []), ...(episode.sources || [])].map((source) => [source.url, source]));
+      const measured = [old,episode].filter(ep=>ep.durationSource==='mpv' && Number(ep.duration)>0)
+        .sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0))[0];
+      const latestProgress=newProgressAt > oldProgressAt ? episode.progress : old.progress;
       episodes.set(episode.number, {
         ...winner,
+        ...(measured ? {duration:measured.duration,durationSource:'mpv'} : {}),
         id: old.id || episode.id,
         sources: [...sources.values()],
-        progress: newProgressAt > oldProgressAt ? episode.progress : old.progress,
+        progress: {...latestProgress,duration:Number(latestProgress?.duration)>0 ? latestProgress.duration : Number(old.progress?.duration) || Number(episode.progress?.duration) || 0},
         updatedAt: Math.max(Number(old.updatedAt) || 0, Number(episode.updatedAt) || 0, oldProgressAt, newProgressAt),
       });
     }
@@ -53,7 +57,9 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
     const franchise = Object.fromEntries(['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber']
       .map((key) => [key, winner[key] != null ? winner[key] : older[key]]).filter(([, value]) => value != null));
     const movieSources = new Map([...(current.movieSources || []), ...(item.movieSources || [])].filter((source) => source?.url).map((source) => [source.url, source]));
-    series.set(item.id, { ...winner, ...franchise, movieSources: [...movieSources.values()], ...(sourcePattern ? { sourcePattern: { ...sourcePattern } } : {}), episodes: [...episodes.values()] });
+    series.set(item.id, { ...winner, ...franchise, cover:winner.cover || older.cover || null, banner:winner.banner || older.banner || null,
+      titleAliases:[...new Set([...(current.titleAliases||[]),...(item.titleAliases||[])])],
+      movieSources: [...movieSources.values()], ...(sourcePattern ? { sourcePattern: { ...sourcePattern } } : {}), episodes: [...episodes.values()] });
   }
   const resultSeries = [];
   for (const item of series.values()) {

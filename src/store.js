@@ -66,6 +66,8 @@ function validateLibraryData(input) {
           ...(['animeunity', 'animeworld'].includes(source.provider) ? { provider: source.provider } : {}),
           ...(typeof source.referer === 'string' && /^https?:\/\//i.test(source.referer) ? { referer: source.referer } : {}),
           ...(typeof source.userAgent === 'string' && source.userAgent.length <= 300 ? { userAgent: source.userAgent } : {}),
+          ...(['found','resolved'].includes(source.resolutionState) ? {resolutionState:source.resolutionState} : {}),
+          ...(Number(source.playbackVerifiedAt)>0 ? {playbackVerifiedAt:Number(source.playbackVerifiedAt)} : {}),
         };
       });
       const p = rawEpisode.progress || {};
@@ -100,6 +102,7 @@ function validateLibraryData(input) {
       title: rawSeries.title.trim() || 'Senza titolo',
       updatedAt: Math.max(0, Number(rawSeries.updatedAt) || Number(rawSeries.addedAt) || 0),
       episodes,
+      cover: rawSeries.cover || rawSeries.coverImage?.extraLarge || rawSeries.coverImage?.large || rawSeries.coverImage?.medium || rawSeries.poster || null,
       movieSources,
       introDuration: nonNegativeSeconds(rawSeries.introDuration),
       outroDuration: nonNegativeSeconds(rawSeries.outroDuration),
@@ -141,10 +144,12 @@ class Store extends EventEmitter {
       this.data.updatedAt = Math.max(0, Number(raw.updatedAt) || 0);
       this.data.cloudDirty = raw.cloudDirty == null ? this.data.series.length > 0 : Boolean(raw.cloudDirty);
       this.data.series.forEach((s) => {
+        s.cover ||= s.coverImage?.extraLarge || s.coverImage?.large || s.coverImage?.medium || s.poster || null;
         s.updatedAt = Math.max(0, Number(s.updatedAt) || Number(s.addedAt) || 0);
         s.introDuration = nonNegativeSeconds(s.introDuration);
         s.outroDuration = nonNegativeSeconds(s.outroDuration);
         for (const episode of s.episodes || []) episode.updatedAt = Math.max(0, Number(episode.updatedAt) || Number(episode.progress && episode.progress.updatedAt) || s.updatedAt || 0);
+        if (s.imdbChart) require('./episode-ratings').apply(s,s.imdbChart);
       });
       this.data.settings = { ...DEFAULT_SETTINGS, ...(raw.settings || {}) };
       if (!['default', 'compact'].includes(this.data.settings.theme)) this.data.settings.theme = DEFAULT_SETTINGS.theme;
@@ -265,7 +270,7 @@ class Store extends EventEmitter {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources'];
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     s.updatedAt = Date.now();
     s.introDuration = nonNegativeSeconds(s.introDuration);
@@ -307,7 +312,7 @@ class Store extends EventEmitter {
         if (it.referer) existing.referer = it.referer;
         if (it.userAgent) existing.userAgent = it.userAgent;
       } else {
-        ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(['animeunity', 'animeworld'].includes(it.provider) ? { provider: it.provider } : {}), ...(it.referer ? { referer: it.referer } : {}), ...(it.userAgent ? { userAgent: it.userAgent } : {}) });
+        ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(['animeunity', 'animeworld'].includes(it.provider) ? { provider: it.provider } : {}), ...(it.referer ? { referer: it.referer } : {}), ...(it.userAgent ? { userAgent: it.userAgent } : {}), ...(['found','resolved'].includes(it.resolutionState) ? {resolutionState:it.resolutionState} : {}) });
         ep.updatedAt = Date.now(); added++;
       }
       const priority = (source) => source.provider === 'animeunity' ? 0 : source.provider === 'animeworld' ? 1 : 2;
@@ -324,6 +329,14 @@ class Store extends EventEmitter {
     ep.sources = [...new Set(urls)].map((url) => ({ url, label: hostLabel(url) }));
     ep.updatedAt = Date.now();
     const series = this.getSeries(sid); if (series) series.updatedAt = ep.updatedAt;
+    this.save();
+  }
+
+  markSourcePlayback(sid, eid, url) {
+    const ep=this.getEpisode(sid,eid);
+    const source=ep?.sources.find(item=>item.url===url);
+    if(!source || source.playbackVerifiedAt) return;
+    source.playbackVerifiedAt=Date.now();ep.updatedAt=source.playbackVerifiedAt;
     this.save();
   }
 
@@ -362,6 +375,8 @@ class Store extends EventEmitter {
     if (!ep) return;
     const previous = ep.progress;
     ep.progress = { ...ep.progress, ...p, updatedAt: Date.now() };
+    if (!(Number(p.duration)>0)) ep.progress.duration = previous.duration || 0;
+    if (Number(p.duration)>0) { ep.duration=Number(p.duration); ep.durationSource='mpv'; }
     s.lastWatchedAt = Date.now();
     ep.updatedAt = ep.progress.updatedAt;
     s.updatedAt = ep.progress.updatedAt;
@@ -388,6 +403,13 @@ class Store extends EventEmitter {
   }
 
   // Unisce titoli/miniature trovati online senza toccare link e progresso
+  mergeDuration(ep, meta) {
+    if (ep.durationSource === 'mpv' || Number(ep.progress?.duration)>0) return;
+    if (Number(meta.duration)>0 && Number.isFinite(Number(meta.duration))) {
+      ep.duration = Number(meta.duration) * (meta.durationUnit === 'seconds' ? 1 : 60);
+      ep.durationSource = meta.durationSource || 'metadata';
+    }
+  }
   mergeEpisodeMeta(sid, list) {
     const s = this.getSeries(sid);
     if (!s) return;
@@ -396,14 +418,14 @@ class Store extends EventEmitter {
       const before = JSON.stringify(ep);
       if (m.title && !ep.title) ep.title = m.title;
       if (m.thumb && !ep.thumb) ep.thumb = m.thumb;
-      if (m.duration != null && Number.isFinite(Number(m.duration))) ep.duration = Math.max(0, Number(m.duration) * (Number(m.duration) < 1000 ? 60 : 1));
+      this.mergeDuration(ep,m);
       if (Array.isArray(m.skipTimes)) ep.skipTimes = m.skipTimes;
       if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'IMDb'; }
       if (JSON.stringify(ep) !== before) ep.updatedAt = Date.now();
     }
     if (s.imdbChart && Array.isArray(s.imdbChart.seasons) && s.imdbChart.seasons.length > 0) {
       const { applyImdbRatingsToEpisodes } = require('./metadata');
-      applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s.title);
+      applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s);
     }
     s.updatedAt = Date.now();
     this.save();
@@ -412,8 +434,12 @@ class Store extends EventEmitter {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
-    for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
+    for (const key of allowed) if (key in fields && fields[key] !== undefined) {
+      if (['cover','banner'].includes(key) && !fields[key]) continue;
+      if (key==='titleAliases') s[key]=[...new Set([...(s[key]||[]),...(fields[key]||[])])];
+      else s[key] = fields[key];
+    }
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);
     s.personalRating = personalRating(s.personalRating);
@@ -432,14 +458,14 @@ class Store extends EventEmitter {
       const before = JSON.stringify(ep);
       if (m.title) ep.title = m.title;
       if (m.thumb) ep.thumb = m.thumb;
-      if (m.duration != null && Number.isFinite(Number(m.duration))) ep.duration = Math.max(0, Number(m.duration) * (Number(m.duration) < 1000 ? 60 : 1));
+      this.mergeDuration(ep,m);
       if (Array.isArray(m.skipTimes)) ep.skipTimes = m.skipTimes;
       if (m.rating != null && Number.isFinite(Number(m.rating))) { ep.rating = Number(m.rating); ep.ratingSource = m.ratingSource || 'IMDb'; }
       if (JSON.stringify(ep) !== before) ep.updatedAt = Date.now();
     }
     if (s.imdbChart && Array.isArray(s.imdbChart.seasons) && s.imdbChart.seasons.length > 0) {
       const { applyImdbRatingsToEpisodes } = require('./metadata');
-      applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s.title);
+      applyImdbRatingsToEpisodes(s.episodes, s.imdbChart, s);
     }
     if (Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
       s.episodes = s.episodes.filter((ep) => ep.number <= s.episodeCount || retainEpisode(ep));

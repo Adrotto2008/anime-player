@@ -44,6 +44,9 @@ function createSeriesAdder({ store, metadata, sourceQueue }) {
         }
         // Restore aliases dropped by older versions without replacing user titles.
         if (!series.altTitle && media.altTitle) patch.altTitle = media.altTitle;
+        if (media.titleAliases?.length) patch.titleAliases = [...new Set([...(series.titleAliases || []), ...media.titleAliases])];
+        if (!series.cover && media.cover) patch.cover = media.cover;
+        if (!series.banner && media.banner) patch.banner = media.banner;
         if (Object.keys(patch).length) store.updateSeries(series.id, patch);
       } else {
         const { streamingEpisodes, ...fields } = media;
@@ -59,7 +62,7 @@ function createSeriesAdder({ store, metadata, sourceQueue }) {
       // Schedule independently of episode-count completion and of Kitsu/IMDb.
       // Re-adding a record with empty links must also retry automatically.
       if (!existing || !series.episodes.length || series.episodes.some((episode) => !episode.sources.length)) {
-        sourceQueue.enqueue(series.id, [media.title, media.altTitle].filter(Boolean));
+        sourceQueue.enqueue(series.id, [media.title, media.altTitle, ...(media.titleAliases || [])].filter(Boolean));
         sourceIds.push(series.id);
       }
       if (!existing || incomplete) {
@@ -73,6 +76,7 @@ function createSeriesAdder({ store, metadata, sourceQueue }) {
       }
       if (!existing) await addRatings(series, media);
     }
+    if (!selectedId) throw new Error('Il risultato AniList selezionato non è stato salvato.');
     return { id: selectedId, franchiseId: grouped ? String(graph.items[0].anilistId) : null,
       franchiseCount: grouped ? records.length : 1, ambiguous: Boolean(graph.ambiguous),
       sourceDiscoveryPending: sourceIds.length > 0, lib: store.snapshot() };

@@ -4,10 +4,10 @@ const assert = require('assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { resolveFranchise, applyFranchiseMetadata, planFranchiseAddition, mapRatingEpisode } = require('../src/franchise');
+const { resolveFranchise, applyFranchiseMetadata, planFranchiseAddition } = require('../src/franchise');
+const Ratings=require('../src/episode-ratings');
 const { validateLibraryData, Store } = require('../src/store');
 const { mergeLibrarySnapshots, compressLibraryForCloud, expandLibraryFromCloud } = require('../src/cloud');
-const { detectSeasonFromTitle } = require('../src/metadata');
 const { discoverSeriesSources } = require('../src/source-discovery');
 
 const media = (anilistId, title, format = 'TV', related = []) => ({
@@ -38,7 +38,7 @@ const fetchByIds = async (ids) => ids.map((id) => graph.get(String(id))).filter(
     franchiseId: 1, franchiseTitle: 'Saga', items: fromTwo.items,
   });
   assert.deepStrictEqual(selected.slice(0, 3).map((item) => item.franchiseOrder), [1, 2, 3]);
-  assert.deepStrictEqual(selected.slice(0, 3).map((item) => item.franchiseSeasonNumber), [1, 2, 3]);
+  assert.deepStrictEqual(selected.slice(0, 3).map((item) => item.franchiseSeasonNumber), [null, 2, 3]);
   assert.strictEqual(selected[3].franchiseType, 'movie');
   assert.strictEqual(selected[3].franchiseSeasonNumber, undefined, 'movies must not receive episode-season numbers');
   assert.strictEqual(selected.some((item) => [5, 6, 7, 8].includes(item.anilistId)), false, 'spin-offs, recaps, alternatives and same-universe links are excluded');
@@ -55,14 +55,15 @@ const fetchByIds = async (ids) => ids.map((id) => graph.get(String(id))).filter(
   assert.deepStrictEqual(safeFallback.items.map((item) => item.anilistId), [2]);
   assert.strictEqual(safeFallback.movies.length, 0);
 
-  const chartTarget = mapRatingEpisode([
-    { id: 'season-1', franchiseSeasonNumber: 1, episodes: [{ id: 'ep-1', number: 1 }] },
-    { id: 'season-2', franchiseSeasonNumber: 2, episodes: [{ id: 'ep-5', number: 5 }] },
-    { id: 'movie', franchiseType: 'movie', format: 'MOVIE', franchiseSeasonNumber: 3, episodes: [{ id: 'wrong', number: 5 }] },
-  ], 2, 5, detectSeasonFromTitle);
+  const chart={imdbId:'tt123',title:'Saga',seasons:[{season:2,episodes:Array.from({length:5},(_,i)=>({id:`tt10${i}`,number:i+1,rating:8}))}]};
+  const chartTarget = Ratings.target([
+    { id: 'season-1', title:'Saga',episodeCount:5, episodes: [{ id: 'ep-1', number: 1 }] },
+    { id: 'season-2', title:'Saga Season 2',episodeCount:5, episodes: [{ id: 'ep-5', number: 5 }] },
+    { id: 'movie', title:'Saga Season 2',format: 'MOVIE',episodeCount:5, episodes: [{ id: 'wrong', number: 5 }] },
+  ], chart,2,5);
   assert.strictEqual(chartTarget.series.id, 'season-2');
   assert.strictEqual(chartTarget.episode.id, 'ep-5');
-  assert.strictEqual(mapRatingEpisode([{ id: 'one', franchiseSeasonNumber: null, franchiseId: 'f', title: 'Untitled sequel', episodes: [{ id: 'ep', number: 1 }] }], 1, 1, detectSeasonFromTitle), null, 'unknown franchise order cannot make an incorrect IMDb click target');
+  assert.strictEqual(Ratings.target([{ id: 'one', franchiseId: 'f', title: 'Untitled sequel', episodes: [{ id: 'ep', number: 1 }] }], chart,1,1), null, 'unknown franchise order cannot make an incorrect IMDb click target');
 
   const base = {
     id: 'season-2', title: 'Saga Season 2', anilistId: 2, franchiseId: '1', franchiseTitle: 'Saga', franchiseOrder: 2,

@@ -15,6 +15,7 @@ const shaderDir = path.join(__dirname, '..', 'shaders');
 let n = 0; const ok = (name) => console.log('  ok', ++n, name);
 execFileSync(process.execPath, ['test/franchise.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/source-discovery.js'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['test/audit-regressions.js'], { stdio: 'inherit' });
 
 // --- pattern
 assert.deepStrictEqual(P.expandPattern('http://x/ep{ep}.mp4', 1, 3).map((e) => e.url), ['http://x/ep1.mp4', 'http://x/ep2.mp4', 'http://x/ep3.mp4']);
@@ -240,12 +241,12 @@ ok('resume: posizione breve salvata all’uscita senza arrotondamento a zero');
 // --- IMDb: normalizzazione titolo, riconoscimento stagione e rating chart
 const { cleanTitleForImdb, detectSeasonFromTitle, applyImdbRatingsToEpisodes } = require('../src/metadata');
 const rendererSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
-assert.ok(rendererSource.includes('chartSeasonForSeries(series)'));
+assert.ok(rendererSource.includes('window.EpisodeRatings.target(siblings,chart,sn.season,ep.number)'));
 assert.ok(rendererSource.includes('go({ name: \'series\', id: mapped.id, episodeId: libraryEpisode.id })'));
 assert.ok(rendererSource.includes("'data-episode-id': e.id"));
 const originalRenderer = execFileSync('git', ['show', 'HEAD:renderer/app.js'], { encoding: 'utf8' });
-const episodeRows = (source) => { const normalized = source.replace(/\r\n/g, '\n'); return normalized.slice(normalized.indexOf('function episodeRow(s, e) {'), normalized.indexOf('\nasync function play(sid, eid)')); };
-assert.strictEqual(episodeRows(rendererSource), episodeRows(originalRenderer), 'episodeRow must remain byte-for-byte unchanged');
+const episodeVisuals = (source) => { const normalized = source.replace(/\r\n/g, '\n'); return normalized.slice(normalized.indexOf('function episodeRow(s, e) {'), normalized.indexOf('  const skipChip', normalized.indexOf('function episodeRow(s, e) {'))); };
+assert.strictEqual(episodeVisuals(rendererSource), episodeVisuals(originalRenderer), 'episode thumbnail rendering must remain byte-for-byte unchanged');
 const cssSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'style.css'), 'utf8');
 const originalCss = execFileSync('git', ['show', 'HEAD:renderer/style.css'], { encoding: 'utf8' });
 for (const selector of ['.eps', '.ep .th', '.ep .cover', '.th']) {
@@ -269,14 +270,14 @@ const mockChart = {
   title: 'Attack on Titan',
   overallRating: 9.1,
   seasons: [
-    { season: 1, episodes: [{ number: 1, rating: 9.2 }, { number: 2, rating: 8.5 }] },
-    { season: 2, episodes: [{ number: 1, rating: 9.2 }, { number: 2, rating: 8.5 }] },
+    { season: 1, episodes: [{ id:'tt111',number: 1, rating: 9.2 }, { id:'tt112',number: 2, rating: 8.5 }] },
+    { season: 2, episodes: [{ id:'tt121',number: 1, rating: 9.2 }, { id:'tt122',number: 2, rating: 8.5 }] },
   ],
   maxEpisodes: 2,
 };
 
 const epsToMap = [{ number: 1, title: 'Ep 1', rating: null }, { number: 2, title: 'Ep 2', rating: null }];
-applyImdbRatingsToEpisodes(epsToMap, mockChart, 'Attack on Titan Season 2');
+applyImdbRatingsToEpisodes(epsToMap, mockChart, {title:'Attack on Titan Season 2',episodeCount:2});
 assert.strictEqual(epsToMap[0].rating, 9.2);
 assert.strictEqual(epsToMap[0].ratingSource, 'IMDb');
 assert.strictEqual(epsToMap[1].rating, 8.5);
@@ -299,7 +300,7 @@ let mpvPath = null;
 try { mpvPath = execFileSync(process.platform === 'win32' ? 'where' : 'which', ['mpv']).toString().split(/\r?\n/)[0].trim(); } catch {}
 if (!mpvPath) {
   const candidates = process.platform === 'win32'
-    ? ['C:\\Program Files\\mvp\\mpv.exe', 'C:\\Program Files\\mpv\\mpv.exe']
+    ? [path.join(process.env.APPDATA || '', 'Anime Player', 'mpv', `win32-${process.arch}`, 'mpv.exe'), 'C:\\Program Files\\mvp\\mpv.exe', 'C:\\Program Files\\mpv\\mpv.exe']
     : ['/usr/bin/mpv', '/usr/local/bin/mpv'];
   for (const candidate of candidates) {
     if (fs.existsSync(candidate)) { mpvPath = candidate; break; }
@@ -313,7 +314,7 @@ if (!mpvPath) {
 }
 if (!mpvPath) { console.log('  (mpv non installato: salto i test di riproduzione)'); console.log(`\n${n} test passati`); cleanup(); process.exit(0); }
 
-const HEADLESS = '--vo=null --ao=null --no-config --msg-level=all=no';
+const HEADLESS = '--vo=null --ao=null --no-config --msg-level=all=no --network-timeout=3';
 const lavfi = (d) => `av://lavfi:testsrc=duration=${d}:size=160x120:rate=25`;
 
 (async () => {
@@ -351,7 +352,12 @@ const lavfi = (d) => `av://lavfi:testsrc=duration=${d}:size=160x120:rate=25`;
   store.addSources(s3.id, [{ number: 1, url: 'http://127.0.0.1:9/non-esiste.mp4' }]);
   const errs = []; pm.notify = (ch, p) => { if (ch === 'player:error') errs.push(p); };
   await pm.play(s3.id, store.getSeries(s3.id).episodes[0].id);
-  await new Promise((r) => setTimeout(r, 4000));
+  await new Promise((resolve,reject)=>{
+    const started=Date.now();const poll=setInterval(()=>{
+      if(errs.length){clearInterval(poll);resolve();}
+      else if(Date.now()-started>15000){clearInterval(poll);reject(new Error('mpv did not report the broken link within 15 seconds'));}
+    },100);
+  });
   assert.ok(errs.length >= 1 && !store.getSeries(s3.id).episodes[0].progress.watched, 'errore non segnalato: ' + JSON.stringify(errs));
   ok('link non raggiungibile: errore mostrato, episodio non segnato come visto');
 

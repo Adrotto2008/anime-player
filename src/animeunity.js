@@ -15,26 +15,28 @@ function validHttpUrl(value, base) {
 
 function parseSearchRecords(data, baseUrl) {
   const records = Array.isArray(data) ? data : data && (data.records || data.animes || data.data);
-  if (!Array.isArray(records)) return [];
+  if (!Array.isArray(records)) throw new Error('Formato della ricerca AnimeUnity non riconosciuto.');
   return records.map((item) => {
-    const title = String(item.title || item.name || '').trim();
+    const title = String(item.title || item.title_eng || item.title_it || item.title_original || item.name || '').trim();
     const slug = String(item.slug || '').trim();
     const id = Number(item.id);
     const link = id > 0 && slug ? validHttpUrl(`/anime/${id}-${slug}`, `${baseUrl}/`) : null;
     const yearMatch = String(item.date || item.year || '').match(/\b(19|20)\d{2}\b/);
     const count = Number(item.episodes_count ?? item.episodes);
     return {
-      id, title, altTitle: String(item.title_eng || item.title_original || '').trim(), slug, link,
+      id, title, altTitle: String(item.title_eng || item.title_original || '').trim(),
+      aliases: [item.title, item.title_eng, item.title_it, item.title_original].filter(Boolean),
+      dub: /\(ITA\)|-ita$/i.test(`${title} ${slug}`), slug, link,
       year: yearMatch ? Number(yearMatch[0]) : null,
       episodeCount: Number.isSafeInteger(count) && count > 0 ? count : null,
     };
   }).filter((item) => item.title && item.link);
 }
 
-function selectExactMatch(results, titles, { year, episodeCount } = {}) {
+function selectExactMatch(results, titles, { year, episodeCount, isAiring } = {}) {
   const aliases = (Array.isArray(titles) ? titles : [titles]).map((value) => String(value || '').trim()).filter(Boolean);
   const keys = new Set(aliases.map(titleKey).filter(Boolean));
-  let matches = (results || []).filter((item) => keys.has(titleKey(item.title)) || keys.has(titleKey(item.altTitle)));
+  let matches = (results || []).filter((item) => [item.title, item.altTitle, ...(item.aliases || [])].some(name => keys.has(titleKey(name))));
   if (!matches.length) return null;
   if (year) {
     const knownYear = matches.filter((item) => item.year != null);
@@ -43,12 +45,16 @@ function selectExactMatch(results, titles, { year, episodeCount } = {}) {
   }
   if (episodeCount) {
     const knownCount = matches.filter((item) => item.episodeCount != null);
-    if (knownCount.length && !knownCount.some((item) => item.episodeCount === Number(episodeCount))) return null;
-    matches = matches.filter((item) => item.episodeCount == null || item.episodeCount === Number(episodeCount));
+    const compatible = item => item.episodeCount == null || item.episodeCount === Number(episodeCount)
+      || isAiring && item.episodeCount < Number(episodeCount);
+    if (knownCount.length && !knownCount.some(compatible)) return null;
+    matches = matches.filter(compatible);
   }
   const exact = matches.filter((item) => aliases.some((alias) => [item.title, item.altTitle].some((name) => name && titleKey(name) === titleKey(alias))));
   if (exact.length) matches = exact;
   const unique = [...new Map(matches.map((item) => [String(item.id), item])).values()];
+  const sub = unique.filter(item => item.dub === false);
+  if (sub.length === 1 && unique.every(item => item.year === sub[0].year && item.episodeCount === sub[0].episodeCount)) return sub[0];
   return unique.length === 1 ? unique[0] : null;
 }
 
@@ -129,7 +135,7 @@ class AnimeUnityClient {
       if (!embedUrl) {
         try { embedUrl = extractUrl(JSON.parse(value), this.baseUrl); } catch { /* response HTML/stringa */ }
       }
-      if (!embedUrl) return null;
+      if (!embedUrl) { this.lastDiscovery.errors.push({number,phase:'embed',message:'URL embed non trovato'}); return null; }
       let resolvedUrl = embedUrl;
       try {
         const embed = await this.fetch(embedUrl, { headers: { 'User-Agent': USER_AGENT, Referer: animeUrl }, signal: AbortSignal.timeout(this.timeoutMs), redirect: 'follow' });
@@ -137,12 +143,15 @@ class AnimeUnityClient {
           const html = await embed.text();
           resolvedUrl = extractUrl(html, embedUrl) || embedUrl;
         }
-      } catch { /* il link embed resta utilizzabile anche se il player non espone l'URL diretto */ }
-      return { number, url: resolvedUrl, provider: 'animeunity', referer: embedUrl };
-    } catch { return null; }
+        else this.lastDiscovery.errors.push({number,phase:'resolve',message:`Embed HTTP ${embed.status}`});
+      } catch (error) { this.lastDiscovery.errors.push({number,phase:'resolve',message:error.message}); }
+      return { number, url: resolvedUrl, provider: 'animeunity', referer: embedUrl,
+        resolutionState: resolvedUrl === embedUrl ? 'found' : 'resolved' };
+    } catch (error) { this.lastDiscovery.errors.push({number,phase:'episode',message:error.message}); return null; }
   }
 
   async getEpisodeSources(anime) {
+    this.lastDiscovery ||= {errors:[]};
     const animeUrl = validHttpUrl(anime.link || `/anime/${anime.id}-${anime.slug}`, `${this.baseUrl}/`);
     if (!animeUrl || new URL(animeUrl).origin !== new URL(this.baseUrl).origin) throw new Error('Pagina AnimeUnity non valida.');
     const response = await this._request(`/info_api/${Number(anime.id)}-${encodeURIComponent(anime.slug)}`, { referer: animeUrl });
@@ -155,9 +164,11 @@ class AnimeUnityClient {
       const page = await this._request(`/info_api/${Number(anime.id)}-${encodeURIComponent(anime.slug)}/0?start_range=${start}&end_range=${end}`, { referer: animeUrl });
       const payload = await page.json();
       const items = Array.isArray(payload) ? payload : payload && (payload.episodes || payload.data);
-      if (Array.isArray(items)) episodes.push(...items);
+      if (!Array.isArray(items)) throw new Error('Formato degli episodi AnimeUnity non riconosciuto.');
+      episodes.push(...items);
     }
     const unique = [...new Map(episodes.map((ep) => [Number(ep.id), ep]).filter(([id]) => Number.isSafeInteger(id) && id > 0)).values()];
+    this.lastDiscovery.episodesFound = unique.length;
     let cursor = 0;
     const results = [];
     await Promise.all(Array.from({ length: Math.min(this.concurrency, unique.length) }, async () => {
@@ -170,18 +181,23 @@ class AnimeUnityClient {
     return results.sort((a, b) => a.number - b.number);
   }
 
-  async findSources({ titles, year, episodeCount } = {}) {
+  async findSources({ titles, year, episodeCount, isAiring } = {}) {
+    this.lastDiscovery = { status: 'title_not_found', errors: [], episodesFound: 0 };
     const aliases = (Array.isArray(titles) ? titles : [titles]).map((value) => String(value || '').trim()).filter(Boolean);
     if (!aliases.length) return [];
     const candidates = new Map();
     let completedQueries = 0; let lastError;
     for (const alias of aliases) {
       try { for (const item of await this.search(alias)) candidates.set(item.id, item); completedQueries++; }
-      catch (error) { lastError = error; }
+      catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:error.message}); }
     }
     if (!completedQueries && lastError) throw lastError;
-    const match = selectExactMatch([...candidates.values()], aliases, { year, episodeCount });
-    return match ? this.getEpisodeSources(match) : [];
+    const match = selectExactMatch([...candidates.values()], aliases, { year, episodeCount, isAiring });
+    if (!match) return [];
+    this.lastDiscovery.matchedTitle = match.title;
+    const sources = await this.getEpisodeSources(match);
+    this.lastDiscovery.status = sources.length ? 'found' : this.lastDiscovery.errors.length ? 'provider_error' : 'episodes_not_found';
+    return sources;
   }
 }
 

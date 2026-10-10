@@ -82,8 +82,8 @@ function applyFranchiseMetadata(records, { franchiseId, franchiseTitle, items })
   const seasonNumberById = new Map(items.map((item, index) => [String(item.anilistId), index + 1]));
   return records.map((record) => {
     const number = seasonNumberById.get(String(record.anilistId));
-    const explicitSeason = String(record.title || '').match(/season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s*season|\bS(\d+)\b|\bPart\s*(\d+)\b/i);
-    const chartSeason = explicitSeason ? Number(explicitSeason.slice(1).find(Boolean)) : number === 1 ? 1 : null;
+    const explicitSeason = String(record.title || '').match(/season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s*season|\bS(\d+)\b/i);
+    const chartSeason = explicitSeason ? Number(explicitSeason.slice(1).find(Boolean)) : null;
     return {
       ...record,
       franchiseId: String(franchiseId), franchiseTitle,
@@ -107,18 +107,4 @@ function planFranchiseAddition(mediaRecords, libraryRecords) {
   return plan;
 }
 
-function mapRatingEpisode(records, chartSeason, episodeNumber, detectSeasonFromTitle) {
-  for (const series of records || []) {
-    if (series.franchiseType === 'movie' || series.format === 'MOVIE') continue;
-    const explicit = String(series.title || '').match(/season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s*season|\bS(\d+)\b|\bPart\s*(\d+)\b/i);
-    const seasonNumber = series.franchiseSeasonNumber != null
-      ? Number(series.franchiseSeasonNumber)
-      : series.franchiseId ? (explicit ? Number(explicit.slice(1).find(Boolean)) : null) : detectSeasonFromTitle(series.title);
-    if (seasonNumber !== Number(chartSeason)) continue;
-    const episode = (series.episodes || []).find((item) => Number(item.number) === Number(episodeNumber));
-    if (episode) return { series, episode };
-  }
-  return null;
-}
-
-module.exports = { resolveFranchise, applyFranchiseMetadata, planFranchiseAddition, mapRatingEpisode, SEASON_FORMATS, MOVIE_RELATIONS };
+module.exports = { resolveFranchise, applyFranchiseMetadata, planFranchiseAddition, SEASON_FORMATS, MOVIE_RELATIONS };

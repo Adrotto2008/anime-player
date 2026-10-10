@@ -99,7 +99,7 @@ async function main() {
     const renderer = fs.readFileSync(path.join(__dirname, '../renderer/app.js'), 'utf8');
     const viewCode = renderer.slice(renderer.indexOf('function seriesView(s) {'), renderer.indexOf('function getRatingTier(score) {'));
     const uiCalls = []; let notified;
-    const context = { state: { player: {} }, h: (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity) }),
+    const context = { state: { player: {} }, h: (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity), append(...nodes) {this.children.push(...nodes);} }),
       t: (key) => key, icon: () => null, defaultPreset: () => 'aa-hq', resumeTarget: () => null,
       episodeTotal: (s) => s.episodes.length, effectivePersonalRating: () => null, statusLabel: () => '',
       bg: () => ({}), field: () => null, presetLabel: () => '', castRelatedSection: () => null, episodeRow: () => null,

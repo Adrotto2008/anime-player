@@ -231,7 +231,7 @@ function register() {
       console.warn('IMDb error:', err.message);
     }
 
-    store.refreshSeriesMetadata(id, fields, kitsuEpisodes);
+    if (store.getSeries(id)) store.refreshSeriesMetadata(id, fields, kitsuEpisodes);
     return lib();
   };
 

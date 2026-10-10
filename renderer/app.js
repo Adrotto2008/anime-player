@@ -138,7 +138,8 @@ const defaultPreset = () => state.lib.settings.defaultPreset || 'aa-hq';
 /* ---------- dialog ---------- */
 function openDialog(title, bodyBuilder, options = {}) {
   const root = $('#dialog-root');
-  const close = () => { scrim.remove(); };
+  const previousFocus = document.activeElement;
+  const close = () => { scrim.remove(); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
   const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (!options.locked && e.target === scrim) close(); } });
   const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
   const head = h('div', { class: 'dialog-head' }, h('h2', null, title),
@@ -153,6 +154,16 @@ function openDialog(title, bodyBuilder, options = {}) {
   const first = body.querySelector('input:not([type=checkbox]), textarea, select');
   if (first) first.focus();
   return close;
+}
+function confirmAction(message, action) {
+  openDialog(message, (close) => {
+    const submit = h('button', { class: 'btn danger', onclick: async () => {
+      submit.disabled = true;
+      try { await action(); close(); }
+      catch { submit.disabled = false; /* call() already displays the IPC error */ }
+    } }, t('deleteSeries'));
+    return h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('cancel')), submit);
+  });
 }
 const field = (label, input) => h('label', { class: 'field' }, h('span', null, label), input);
 
@@ -275,6 +286,9 @@ async function loadSeriesRatings(id) {
 }
 function render() {
   closeMenu();
+  if (['series', 'ratings-chart'].includes(state.view.name) && !getSeries(state.view.id)
+    || state.view.name === 'franchise' && !franchiseGroups().has(String(state.view.id))) state.view = { name: 'home' };
+  for (const series of state.lib.series || []) if (series.imdbChart) window.EpisodeRatings.apply(series,series.imdbChart);
   applyTheme();
   renderRail(); renderPlayer();
   const main = $('#main');
@@ -442,12 +456,6 @@ function libraryEntries() {
   }
   return entries;
 }
-function chartSeasonForSeries(series) {
-  if (Number.isInteger(Number(series.franchiseSeasonNumber)) && series.franchiseSeasonNumber != null) return Number(series.franchiseSeasonNumber);
-  if (!series.franchiseId) return detectSeasonFromTitle(series.title);
-  const explicit = String(series.title || '').match(/season\s*(\d+)|(\d+)(?:st|nd|rd|th)\s*season|\bS(\d+)\b|\bPart\s*(\d+)\b/i);
-  return explicit ? Number(explicit.slice(1).find(Boolean)) : null;
-}
 function franchiseRating(members, primary) {
   const imdb = members.find((item) => item.scoreSource === 'IMDb' && item.score != null)
     || members.find((item) => item.imdbChart?.overallRating != null);
@@ -523,8 +531,9 @@ function homeView() {
     const primary = [...seasons].sort((a, b) => (a.franchiseOrder || 999) - (b.franchiseOrder || 999))[0] || entry.members[0];
     const episodes = seasons.flatMap((item) => item.episodes || []); const watched = episodes.filter((item) => item.progress.watched).length;
     const rating = franchiseRating(entry.members, primary);
+    const cover = primary.cover || entry.members.find(item=>item.cover)?.cover;
     return h('button', { class: 'poster franchise-poster', onclick: () => go({ name: 'franchise', id: entry.id }) },
-      h('div', { class: 'cover', style: bg(primary.cover) }, primary.cover ? null : entry.title.slice(0, 1).toUpperCase(),
+      h('div', { class: 'cover', style: bg(cover) }, cover ? null : entry.title.slice(0, 1).toUpperCase(),
         h('span', { class: 'poster-badge' }, `${seasons.length} ${t('seasonsShort')} · ${movies.length} ${t('moviesShort')}`),
         episodes.length && watched ? h('div', { class: 'bar' }, h('i', { style: { width: `${watched / episodes.length * 100}%` } })) : null),
       h('div', { class: 't' }, entry.title),
@@ -666,6 +675,7 @@ function franchiseView(id) {
     .sort((a, b) => (a.franchiseOrder || 999) - (b.franchiseOrder || 999) || (a.year || 0) - (b.year || 0));
   const specials = members.filter((item) => item.franchiseType === 'special' || ['SPECIAL', 'OVA'].includes(item.format));
   const primary = seasons[0] || members[0];
+  const groupCover = primary.cover || members.find(item=>item.cover)?.cover;
   const rating = franchiseRating(members, primary);
   const episodes = seasons.flatMap((item) => item.episodes || []);
   const watched = episodes.filter((episode) => episode.progress.watched).length;
@@ -688,7 +698,7 @@ function franchiseView(id) {
   return h('div', { class: 'page franchise-page' },
     h('section', { class: 'hero', style: { '--bg': primary.banner || primary.cover ? `url("${primary.banner || primary.cover}")` : 'none' } },
       h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, icon('back', 16), t('backLibrary').replace(/^←\s*/, '')),
-      h('div', { class: 'body' }, h('div', { class: 'cover', style: bg(primary.cover) }),
+      h('div', { class: 'body' }, h('div', { class: 'cover', style: bg(groupCover) }),
         h('div', { class: 'info' }, h('h1', null, primary.franchiseTitle || primary.title),
           h('div', { class: 'meta-row' }, rating.score != null ? scorePill(rating.score) : null,
             h('span', { class: 'meta-item' }, t('franchiseCounts', seasons.length, movies.length)),
@@ -761,14 +771,15 @@ function seriesView(s) {
     h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, icon('chart', 16), t('ratingsChart')),
     s.anilistId ? h('button', { class: 'btn ghost', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, icon('refresh', 16), t('updateInfo')) : null,
     h('span', { class: 'spacer' }),
-    h('button', { class: 'btn ghost danger', onclick: async () => {
-      if (!confirm(t('confirmDelete', s.title))) return;
-      try {
-        await mutate('series:delete', s.id);
+    h('button', { class: 'btn ghost danger', onclick: () => {
+      confirmAction(t('confirmDelete', s.title), async () => {
+        // Change selection before rendering the returned snapshot or lib:changed.
+        const lib = await call('series:delete', s.id);
+        state.lib = lib; state.stats = null; delete state.ratingLoads[s.id];
         state.filter = '';
         state.progressFilter = 'all';
         go({ name: 'home' });
-      } catch { /* call() displays the error; keep the series view available */ }
+      });
     } }, icon('trash', 16), t('deleteSeries')));
   const heroBody = h('div', { class: 'body' },
     h('div', { class: 'cover', style: bg(s.cover) }),
@@ -779,7 +790,13 @@ function seriesView(s) {
       total ? h('div', { class: 'series-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: (seen / total) * 100 + '%' } })), h('span', { class: 'muted small' }, t('watchedOf', seen, total))) : null,
       desc, more, rate, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
-    h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, icon('back', 16), t('backLibrary').replace(/^←\s*/, '')), heroBody);
+    h('button', { class: 'link back', onclick: () => go(s.franchiseId ? {name:'franchise',id:s.franchiseId} : { name: 'home' }) }, icon('back', 16),
+      s.franchiseId ? s.franchiseTitle || t('seasons') : t('backLibrary').replace(/^←\s*/, '')), heroBody);
+  const sourceDiagnostics = s.sourceDiscovery?.providers ? h('div', {class:'muted small',role:'status'},
+    Object.entries(s.sourceDiscovery.providers).map(([name,result])=>h('p',null,
+      `${name === 'animeunity' ? 'AnimeUnity' : 'AnimeWorld'}: ${t('providerStatus_'+result.status)}${result.linksFound ? ` · ${result.linksFound} ${t('linksFound')} · ${result.linksResolved || 0} ${t('linksResolved')}` : ''}`,
+      result.error ? ` · ${result.error}` : '', (result.errors || []).length ? ` · ${result.errors[0].message} (${result.errors.length})` : '')),
+    h('span',null,t('playbackVerifiedCount',s.episodes.flatMap(ep=>ep.sources).filter(source=>source.playbackVerifiedAt).length))) : null;
   const advanced = h('details', { class: 'adv' }, h('summary', null, t('advanced')),
     field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })),
     h('div', { class: 'two' },
@@ -792,6 +809,7 @@ function seriesView(s) {
       h('div', { class: 'ctl' }, h('span', { class: 'ctl-label' }, t('mode')), h('div', { class: 'seg', role: 'group', 'aria-label': t('mode') }, modeBtns)),
       h('div', { class: 'ctl' }, h('span', { class: 'ctl-label' }, t('quality')), h('div', { class: 'seg', role: 'group', 'aria-label': t('quality') }, tierBtns))),
     advanced);
+  if (sourceDiagnostics) heroBody.append(sourceDiagnostics);
   const episodeContent = s.format === 'MOVIE'
     ? h('div', { class: 'movie-playback' }, ...(s.movieSources || []).map((source, index) => h('button', { class: 'btn primary', onclick: async () => {
       try { await call('movie:play', s.id, index); } catch (error) { if (String(error.message).includes('MPV_NOT_CONFIGURED')) openSetup(); else toast(cleanErr(error), 'error'); }
@@ -884,10 +902,9 @@ function ratingsChartView(s) {
         const ep = sn.episodes.find((e) => e.number === epNum);
         if (ep && ep.rating != null) {
           const tier = getRatingTier(ep.rating);
-          const mapped = siblings.find((series) => series.franchiseType !== 'movie' && series.format !== 'MOVIE'
-            && chartSeasonForSeries(series) === Number(sn.season)
-            && series.episodes.some((item) => Number(item.number) === Number(ep.number)));
-          const libraryEpisode = mapped?.episodes.find((item) => Number(item.number) === Number(ep.number)) || null;
+          const target = window.EpisodeRatings.target(siblings,chart,sn.season,ep.number);
+          const mapped = target?.series;
+          const libraryEpisode = target?.episode;
           const cell = h('td', null,
             h('div', {
               class: `ratings-cell rating-tier-${tier}${libraryEpisode ? ' is-in-library' : ''}`,
@@ -942,7 +959,9 @@ function episodeRow(s, e) {
   const status = p.watched ? h('span', { class: 'chip ok' }, icon('check', 12), t('watched'))
     : resume ? h('span', { class: 'chip live' }, `${t('resumeStatus')}${pct(e) ? ' · ' + Math.round(pct(e)) + '%' : ''}`)
     : !has ? h('span', { class: 'chip warn' }, t('noLink')) : null;
-  const meta = [skipChip, e.duration ? formatDuration(e.duration) : null, has ? t('sources', e.sources.length) : null].filter(Boolean);
+  const measured = e.durationSource === 'mpv' ? e.duration : Number(e.progress?.duration) || 0;
+  const durationLabel = measured ? formatDuration(measured) : e.duration ? t('metadataDuration',formatDuration(e.duration)) : null;
+  const meta = [skipChip, durationLabel, has ? t('sources', e.sources.length) : null].filter(Boolean);
   const info = h('div', { class: 'ep-info' },
     h('div', { class: 'name' }, e.title || t('episode', e.number)),
     h('div', { class: 'ep-meta' }, status, ...meta.map((item) => typeof item === 'string' ? h('span', { class: 'muted small' }, item) : item),
@@ -981,7 +1000,7 @@ function openAddSeries() {
       btn.disabled = true; btn.textContent = t('adding');
       try {
         const r = await call('series:create', payload); state.lib = r.lib; close();
-        go(r.franchiseId && r.franchiseCount > 1 ? { name: 'franchise', id: r.franchiseId } : { name: 'series', id: r.id });
+        go({ name: 'series', id: r.id });
         const discoveries = Array.isArray(r.sourceDiscovery) ? r.sourceDiscovery.map((item) => item.sourceDiscovery).filter(Boolean) : [r.sourceDiscovery].filter(Boolean);
         const added = discoveries.reduce((sum, item) => sum + Number(item.episodesAdded || 0), 0);
         const unavailable = discoveries.length > 0 && discoveries.every((item) => item.unavailable);
@@ -1082,7 +1101,8 @@ function openEditLinks(s, e) {
     const rows = e.sources.map((source) => {
       const value = h('span', { class: 'muted small' }, statusNames.checking);
       const line = h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' } },
-        h('span', { class: 'small', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: source.url }, `${source.provider ? `${source.provider} · ` : ''}${source.url}`), value);
+        h('span', { class: 'small', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: source.url },
+          `${source.provider ? `${source.provider} · ` : ''}${source.resolutionState === 'resolved' ? t('linksResolved') : t('linksFound')} · ${source.playbackVerifiedAt ? t('playbackVerified') : t('playbackUnverified')} · ${source.url}`), value);
       statusRows.append(line);
       return { source, value };
     });

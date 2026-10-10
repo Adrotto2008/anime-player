@@ -6,5 +6,8 @@ execFileSync(process.execPath, ['test/source-check.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/player-sources.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/mpv-manager.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/run.js'], { stdio: 'inherit' });
+for(const file of ['src/episode-ratings.js','test/audit-regressions.js','test/renderer-electron.js','test/renderer-runner.js']) execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
+if(process.platform !== 'linux' || process.env.DISPLAY) execFileSync(process.execPath, ['test/renderer-runner.js'], { stdio: 'inherit' });
+else console.log('Electron DOM/input tests skipped: no Linux display is available. Run with xvfb or a desktop session.');
 execSync('git diff --check', { stdio: 'inherit' });
 console.log('All checks passed.');

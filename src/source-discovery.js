@@ -5,13 +5,14 @@ const { isValidSource } = require('./patterns');
 async function discoverSeriesSources(series, titles = [series.title], { store, animeUnity, animeWorld }) {
   const outcomes = {};
   const linkedNumbers = new Set(); const foundNumbers = new Set();
-  titles = [...new Set([series.title, series.altTitle, ...(titles || [])].map((title) => String(title || '').trim()).filter(Boolean))];
+  titles = [...new Set([series.title, series.altTitle, ...(series.titleAliases || []), ...(titles || [])].map((title) => String(title || '').trim()).filter(Boolean))];
   for (const [name, client, options] of [
-    ['animeunity', animeUnity, { titles, year: series.year, episodeCount: series.episodeCount }],
-    ['animeworld', animeWorld, { titles, year: series.year, episodeCount: series.episodeCount }],
+    ['animeunity', animeUnity, { titles, year: series.year, episodeCount: series.episodeCount, isAiring:series.status === 'RELEASING' }],
+    ['animeworld', animeWorld, { titles, year: series.year, episodeCount: series.episodeCount, isAiring:series.status === 'RELEASING' }],
   ]) {
     try {
       const found = await client.findSources(options);
+      if (!store.getSeries(series.id)) return {cancelled:true};
       const sources = (Array.isArray(found) ? found : []).filter((source) => Number.isSafeInteger(source?.number) && source.number >= 0
         && (!series.episodeCount || source.number <= series.episodeCount) && typeof source.url === 'string'
         && /^https?:\/\//i.test(source.url) && isValidSource(source.url))
@@ -23,18 +24,23 @@ async function discoverSeriesSources(series, titles = [series.title], { store, a
       if (missing.length) store.addSources(series.id, missing);
       sources.forEach((source) => foundNumbers.add(source.number));
       linkedEpisodes.forEach((number) => linkedNumbers.add(number));
-      outcomes[name] = { episodesAdded: linkedEpisodes.size, linksFound: sources.length, unavailable: false };
+      outcomes[name] = { ...client.lastDiscovery, episodesAdded: linkedEpisodes.size, linksFound: sources.length,
+        linksResolved: sources.filter(source=>source.resolutionState === 'resolved').length,
+        status: sources.length ? 'found' : client.lastDiscovery?.status || 'title_not_found',
+        playbackVerified:false, unavailable: client.lastDiscovery?.status === 'provider_error' };
     } catch (err) {
       console.warn(`${name} source discovery failed:`, err.message);
-      outcomes[name] = { episodesAdded: 0, unavailable: true };
+      outcomes[name] = { episodesAdded: 0, linksFound:0, status:'provider_error', error:err.message, unavailable: true };
     }
   }
-  return {
+  const result = {
     episodesAdded: linkedNumbers.size,
     episodesFound: foundNumbers.size,
     unavailable: Object.values(outcomes).every((result) => result.unavailable),
     providers: outcomes,
   };
+  if (store.getSeries(series.id)) store.updateSeries(series.id,{sourceDiscovery:{...result,checkedAt:Date.now()}});
+  return result;
 }
 
 // Both automatic addition and manual retry use this queue. Jobs are coalesced per
@@ -51,13 +57,14 @@ function createSourceDiscoveryQueue({ store, metadata, discover, onComplete = ()
       const run = tail.then(async () => {
         let series = store.getSeries(id);
         if (!series || series.format === 'MOVIE') return { cancelled: true, episodesAdded: 0, episodesFound: 0 };
-        let aliases = [...new Set([series.title, series.altTitle, ...titles].filter(Boolean))];
-        if (series.anilistId && !series.altTitle && aliases.length < 2) {
+        let aliases = [...new Set([series.title, series.altTitle, ...(series.titleAliases || []), ...titles].filter(Boolean))];
+        if (series.anilistId && !series.titleAliases?.length) {
           try {
             const media = await metadata.getAnime(series.anilistId);
             if (!store.getSeries(id)) return { cancelled: true };
             if (media.altTitle) store.updateSeries(id, { altTitle: media.altTitle });
-            aliases.push(media.title, media.altTitle);
+            if (media.titleAliases?.length) store.updateSeries(id, {titleAliases:media.titleAliases});
+            aliases.push(media.title, media.altTitle, ...(media.titleAliases || []));
           } catch (error) { console.warn('Titolo alternativo AniList non disponibile:', error.message); }
         }
         series = store.getSeries(id);

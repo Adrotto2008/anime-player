@@ -63,6 +63,10 @@ class PlayerManager {
       cur.lastSave = Date.now();
     };
     session.on('time', (t) => {
+      if(t>0 && cur.dur>0 && cur.ep && !cur.playbackVerified) {
+        cur.playbackVerified=true;
+        this.store.markSourcePlayback(cur.series.id,cur.ep.id,cur.url);
+      }
       const delta = t - cur.lastReportedPos;
       if (delta > 0 && delta <= 5) cur.playedSeconds += delta;
       cur.lastReportedPos = t;
