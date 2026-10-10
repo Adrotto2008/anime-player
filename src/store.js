@@ -5,6 +5,7 @@ const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { hostLabel, isValidSource } = require('./patterns');
 const { sourceMetadata, redact, urlLifetime } = require('./source-state');
+const Language = require('./source-language');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -101,6 +102,8 @@ function validateLibraryData(input) {
     if (!Number.isFinite(lastWatchedAt)) throw new Error(`Data di visione non valida nella serie "${rawSeries.title}".`);
     return {
       ...rawSeries,
+      videoPreference: Language.preference(rawSeries.videoPreference),
+      sourcePatternLanguage: Language.classification(rawSeries.sourcePatternLanguage),
       title: rawSeries.title.trim() || 'Senza titolo',
       updatedAt: Math.max(0, Number(rawSeries.updatedAt) || Number(rawSeries.addedAt) || 0),
       episodes,
@@ -146,6 +149,7 @@ class Store extends EventEmitter {
       this.data.updatedAt = Math.max(0, Number(raw.updatedAt) || 0);
       this.data.cloudDirty = raw.cloudDirty == null ? this.data.series.length > 0 : Boolean(raw.cloudDirty);
       this.data.series.forEach((s) => {
+        s.videoPreference = Language.preference(s.videoPreference);
         s.cover ||= s.coverImage?.extraLarge || s.coverImage?.large || s.coverImage?.medium || s.poster || null;
         s.updatedAt = Math.max(0, Number(s.updatedAt) || Number(s.addedAt) || 0);
         s.introDuration = nonNegativeSeconds(s.introDuration);
@@ -194,6 +198,7 @@ class Store extends EventEmitter {
   snapshot() { return JSON.parse(JSON.stringify(this.data)); }
   importData(input) {
     const next = validateLibraryData(input);
+    for (const series of next.series) series.videoPreference ||= Language.preference(this.getSeries(series.id)?.videoPreference);
     const previous = this.data;
     this.data = next;
     try { this.save(true, true); } catch (e) { this.data = previous; throw e; }
@@ -202,6 +207,7 @@ class Store extends EventEmitter {
 
   applyCloudData(input, updatedAt) {
     const next = validateLibraryData(input);
+    for (const series of next.series) series.videoPreference ||= Language.preference(this.getSeries(series.id)?.videoPreference);
     const previous = this.data;
     next.updatedAt = Math.max(0, Date.parse(updatedAt) || Number(input.updatedAt) || 0);
     next.cloudDirty = false;
@@ -264,6 +270,7 @@ class Store extends EventEmitter {
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);
     s.personalRating = personalRating(s.personalRating);
+    s.videoPreference = Language.preference(s.videoPreference);
     this.data.series.push(s);
     this.save();
     return s;
@@ -280,6 +287,15 @@ class Store extends EventEmitter {
     s.personalRating = personalRating(s.personalRating);
     this.save();
     return s;
+  }
+
+  setVideoPreference(id, mode) {
+    if (!Language.MODES.includes(mode)) throw new Error('Versione video non valida');
+    const series = this.getSeries(id);
+    if (!series) throw new Error('Serie non trovata');
+    series.videoPreference = { mode, updatedAt: Math.max(Date.now(), (series.videoPreference?.updatedAt || 0) + 1) };
+    series.updatedAt = series.videoPreference.updatedAt;
+    this.save();
   }
 
   deleteSeries(id) {
@@ -308,13 +324,13 @@ class Store extends EventEmitter {
     for (const it of items) {
       const ep = this.ensureEpisode(s, it.number);
       if (it.title && !ep.title) ep.title = it.title;
-      const existing = ep.sources.find((source) => source.url === it.url ||
-        it.provider === 'animeunity' && source.provider === it.provider && it.providerEpisodeId && source.providerEpisodeId === it.providerEpisodeId);
+      const identity = Language.sourceIdentity({...it, ...sourceMetadata(it)});
+      const existing = ep.sources.find(source => source.url === it.url || identity && Language.sourceIdentity(source) === identity);
       if (existing) {
         if (existing.url !== it.url) {
           this.refreshSource(sid, ep.id, existing, it);
           added++;
-        }
+        } else if (existing.language?.origin !== 'manual') Object.assign(existing, Language.metadata(it));
       } else {
         ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(['animeunity', 'animeworld'].includes(it.provider) ? { provider: it.provider } : {}), ...(it.referer ? { referer: it.referer } : {}), ...(it.userAgent ? { userAgent: it.userAgent } : {}), ...(['found','resolved'].includes(it.resolutionState) ? {resolutionState:it.resolutionState} : {}) });
         Object.assign(ep.sources.at(-1), sourceMetadata(it));
@@ -331,7 +347,7 @@ class Store extends EventEmitter {
   setSources(sid, eid, urls) {
     const ep = this.getEpisode(sid, eid);
     if (!ep) throw new Error('Episodio non trovato');
-    ep.sources = [...new Set(urls)].map((url) => ({ url, label: hostLabel(url) }));
+    ep.sources = [...new Set(urls)].map(url => ep.sources.find(source => source.url === url) || { url, label: hostLabel(url) });
     ep.updatedAt = Date.now();
     const series = this.getSeries(sid); if (series) series.updatedAt = ep.updatedAt;
     this.save();
@@ -346,12 +362,30 @@ class Store extends EventEmitter {
     this.save();
   }
 
+  setSourceLanguage(sid, eid, url, mode) {
+    if (!['unknown', 'it', 'ja-sub-it'].includes(mode)) throw new Error('Lingua non valida');
+    const ep = this.getEpisode(sid, eid); const source = ep?.sources.find(item => item.url === url);
+    if (!source || source.provider) throw new Error('Classificazione manuale consentita soltanto per link manuali');
+    const language = Language.manualClassification(mode);
+    if (language) source.language = language; else delete source.language;
+    ep.updatedAt = Date.now(); this.save();
+  }
+
+  recordSourceTracks(sid, eid, source, list) {
+    const ep = this.getEpisode(sid, eid);
+    if (!ep?.sources.includes(source)) return;
+    source.mediaTracks = Language.observedTracks(list);
+    ep.updatedAt = Date.now(); this.save();
+  }
+
   refreshSource(sid, eid, source, fresh) {
     const ep = this.getEpisode(sid, eid);
     if (!ep?.sources.includes(source) || !['animeunity', 'animeworld'].includes(source.provider) || source.provider !== fresh.provider) return false;
     const replaceReferer = !source.referer || source.referer === source.resolverReferer || !source.resolverReferer && urlLifetime(source.referer).temporary;
+    const metadata = sourceMetadata(fresh);
+    if (source.url !== fresh.url) { delete source.mediaTracks; delete metadata.mediaTracks; }
     source.url = fresh.url; source.label = hostLabel(fresh.url);
-    Object.assign(source, sourceMetadata(fresh));
+    Object.assign(source, metadata);
     // The embed Referer carries the same credentials as the resolved URL.
     if (fresh.referer && replaceReferer) source.referer = fresh.referer;
     delete source.playbackVerifiedAt; delete source.playbackFailedAt; delete source.playbackError; delete source.playbackExitCode;

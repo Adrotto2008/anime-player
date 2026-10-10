@@ -20,6 +20,12 @@ app.whenReady().then(async () => {
   const handle=(ch,fn)=>ipcMain.handle(ch,(_e,...args)=>fn(...args));
   handle('lib:get',()=>store.snapshot()); handle('presets:list',()=>[]); handle('app:version',()=>app.getVersion());
   handle('player:state',()=>({playing:false})); handle('auth:state',()=>({connected:false,configured:false}));
+  const fallbackChoices = [];
+  handle('series:videoPreference',(id,mode)=>{store.setVideoPreference(id,mode);return store.snapshot()});
+  handle('player:languageFallback',(token,mode)=>{fallbackChoices.push({token,mode});return true});
+  handle('episodes:sourceLanguage',(sid,eid,url,mode)=>{store.setSourceLanguage(sid,eid,url,mode);return store.snapshot()});
+  handle('episodes:setSources',(sid,eid,urls)=>{store.setSources(sid,eid,urls);return store.snapshot()});
+  handle('episodes:checkSources',urls=>urls.map(()=>({status:'unknown'})));
   let failDeleteOnce=!baselineRenderer;
   handle('series:ratings',()=>store.snapshot()); handle('series:delete',(id)=>{if(failDeleteOnce){failDeleteOnce=false;throw new Error('Deletion failed (IPC fixture)');}store.deleteSeries(id);return store.snapshot();});
   handle('series:search',text=>[{anilistId:195604,title:'Black Clover Season 2',format:'TV'}]);
@@ -30,6 +36,9 @@ app.whenReady().then(async () => {
     const ep=store.ensureEpisode(s,1);ep.duration=1380;ep.durationSource='Kitsu';
     ep.thumb='https://example.test/shared-thumbnail.jpg';
     store.ensureEpisode(s,2).thumb=ep.thumb;
+    store.addSources(s.id,[{number:1,url:'https://media.test/ita.mp4',provider:'animeworld',resolutionState:'resolved',language:{audio:'it',subtitles:null,origin:'provider',confidence:'declared'}},
+      {number:2,url:'https://media.test/embed',provider:'animeunity',resolutionState:'found',language:{audio:'ja',subtitles:'it',origin:'provider',confidence:'suggested'}},
+      {number:1,url:'https://manual.test/Ep_01.mp4',mediaTracks:{audio:[{id:1,lang:null}],subtitles:[],checkedAt:Date.now(),origin:'mpv'}}]);
     const first=store.ensureEpisode(base,52);first.duration=1380;first.progress.duration=2460;
     return {id:s.id,lib:store.snapshot(),franchiseId:'black',franchiseCount:2};
   });
@@ -86,6 +95,26 @@ app.whenReady().then(async () => {
   assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'Black Clover Season 2');
   assert.strictEqual(await js(`Array.from(document.querySelectorAll('.eps .th')).filter(el=>el.style.backgroundImage.includes('shared-thumbnail.jpg')).length`),2,'shared episode thumbnails must both remain visible');
   assert.ok((await js(`document.querySelector('.ep-info').textContent`)).includes('metadata'),'metadata duration must be labeled');
+  assert.strictEqual(await js(`document.querySelector('#video-version').value`),'auto');
+  assert.ok((await js(`document.querySelector('#video-version option[value="it"]').textContent`)).includes('1 episodes'));
+  assert.ok((await js(`document.querySelector('#video-version option[value="ja-sub-it"]').textContent`)).includes('not found'),'unresolved embed does not count as language availability');
+  await js(`document.querySelector('#video-version').focus()`);
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Down'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Down'});await tick();
+  const chosen = store.data.series.find(item=>item.anilistId === 195604);
+  assert.strictEqual(chosen.videoPreference.mode,'it','native keyboard selector persists the season preference');
+  await js(`document.querySelector('.ep .acts .menu-btn').click(); document.querySelector('.menu-item').click()`);await tick();
+  assert.strictEqual(await js(`document.querySelector('#dialog-root select').value`),'unknown','observed untagged audio does not imply manual classification');
+  assert.ok((await js(`document.querySelector('#dialog-root .dialog-body').textContent`)).includes('Audio: ?'));
+  await js(`const languageSelect=document.querySelector('#dialog-root select');languageSelect.value='it';languageSelect.dispatchEvent(new Event('change'))`);await tick();
+  await js(`document.querySelector('#dialog-root .foot .primary').click()`);await tick();
+  assert.strictEqual(chosen.episodes[0].sources.find(source=>!source.provider).language.origin,'manual');
+  win.webContents.send('player:language-fallback',{token:'cancel-fixture',choices:['ja-sub-it'],requested:'it'});await tick();
+  assert.strictEqual(fallbackChoices.length,0,'showing alternatives is not consent');
+  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Escape'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Escape'});await tick();
+  assert.deepStrictEqual(fallbackChoices,[{token:'cancel-fixture',mode:null}]);
+  win.webContents.send('player:language-fallback',{token:'accept-fixture',choices:['ja-sub-it'],requested:'it'});await tick();
+  await js(`document.querySelector('[data-video-choice="ja-sub-it"]').click()`);await tick();
+  assert.deepStrictEqual(fallbackChoices[1],{token:'accept-fixture',mode:'ja-sub-it'});
   await js(`Array.from(document.querySelectorAll('.actions button')).find(x=>x.textContent.includes(window.i18n.t('ratingsChart'))).click()`);await tick();
   await js(`document.querySelector('.ratings-cell[title^="S2 E1:"]').click()`);await tick();
   assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'Black Clover');
@@ -94,8 +123,9 @@ app.whenReady().then(async () => {
   await js(`Array.from(document.querySelectorAll('.actions button')).find(x=>x.textContent.includes(window.i18n.t('ratingsChart'))).click()`);await tick();
   await js(`document.querySelector('.ratings-cell[title^="S5 E1:"]').click()`);await tick();
   assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'Black Clover Season 2');
+  assert.strictEqual(await js(`document.querySelector('#video-version').value`),'it','returning to season restores its preference');
   assert.deepStrictEqual(errors,[]);
-  report({ok:true,cases:['season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration'],errors});
-  console.log('Electron Windows: deletion of season, last season, standalone; immediate keyboard/library/AniList search and selected record verified.');
+  report({ok:true,cases:['season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation'],errors});
+  console.log('Electron Windows: deletion/input/search/navigation/thumbnails; keyboard version selector, availability, explicit fallback approval and Escape cancellation verified.');
   clearTimeout(store._timer); clearTimeout(timeout); win.destroy(); app.exit(0);
 }).catch(error=>{report({ok:false,error:error.stack});console.error(error);clearTimeout(timeout);if(win)win.destroy();app.exit(1);});

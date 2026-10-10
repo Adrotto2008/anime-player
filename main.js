@@ -191,7 +191,9 @@ function register() {
   });
 
   h('series:update', (id, patch) => { store.updateSeries(id, patch); return lib(); });
-  h('series:delete', async (id) => { if (player.cur && player.cur.series && player.cur.series.id === id) await player.stop(); store.deleteSeries(id); return lib(); });
+  h('series:videoPreference', async (id, mode) => { await player.changeVideoPreference(id,mode); return lib(); });
+  h('episodes:sourceLanguage', (sid,eid,url,mode) => { store.setSourceLanguage(sid,eid,url,mode); return lib(); });
+  h('series:delete', async (id) => { await player.stopIfSeries(id); store.deleteSeries(id); return lib(); });
 
   const syncSeriesRatings = async (id) => {
     const s = store.getSeries(id);
@@ -296,6 +298,7 @@ function register() {
     return player.playUrl(String(url).trim(), preset);
   });
   h('player:stop', () => player.stop());
+  h('player:languageFallback', (token,mode) => player.acceptLanguageFallback(token,mode));
   h('player:preset', (id) => player.setPreset(id));
   h('player:seekRelative', (seconds) => player.seekRelative(seconds));
   h('player:seekAbsolute', (seconds) => player.seekAbsolute(seconds));
@@ -334,11 +337,16 @@ app.whenReady().then(async () => {
       const client = source.provider === 'animeunity' ? new AnimeUnityClient() : new AnimeWorldClient();
       if (source.provider === 'animeunity' && source.providerEpisodeId) {
         client.lastDiscovery = { errors: [] };
-        return client._resolveEpisode({ id: source.providerEpisodeId, number: episode.number }, `${client.baseUrl}/`);
+        return client._resolveEpisode({ id: source.providerEpisodeId, number: episode.number }, source.providerTitleUrl || `${client.baseUrl}/`);
       }
+      if (source.provider === 'animeworld' && source.providerSourceId) return client.renewSource(source,episode.number);
       const titles = require('./src/source-state').providerTitles(series);
       const fresh = await client.findSources({ titles, ...require('./src/source-match').matchOptions(series), episodeNumbers:[episode.number] });
-      const selected = fresh.find(item => item.number === episode.number && item.resolutionState === 'resolved');
+      const Language = require('./src/source-language');
+      const modes = Language.modesFor(source);
+      const selected = fresh.find(item => item.number === episode.number && item.resolutionState === 'resolved'
+        && (!source.providerTitleUrl || item.providerTitleUrl === source.providerTitleUrl)
+        && (!modes.length || modes.some(mode => Language.eligible(item,mode))));
       return selected ? {...selected, provider:source.provider} : null;
     },
   });

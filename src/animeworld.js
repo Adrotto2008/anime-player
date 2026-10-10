@@ -2,7 +2,8 @@
 
 const cheerio = require('cheerio');
 const { redact } = require('./source-state');
-const { titleKey, selectExactMatch, candidateDiagnostics, searchTitles } = require('./source-match');
+const { titleKey, selectExactMatch, selectVariantMatches, candidateDiagnostics, searchTitles } = require('./source-match');
+const { classifyProvider } = require('./source-language');
 
 const DEFAULT_BASE_URL = 'https://www.animeworld.ac';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -71,7 +72,7 @@ class AnimeWorldClient {
       status: item.stateName || null, year: item.year == null || item.year === '??' ? null : Number(item.year),
       altTitle: item.jtitle || '', aliases: [item.choseTitle].filter(Boolean),
       episodes: item.episodes == null || item.episodes === '??' ? null : Number(item.episodes),
-      dub: item.dub == null ? null : item.dub !== '0',
+      dub: item.dub == null ? null : !['0', 0, false].includes(item.dub), audioLanguage: item.language || null,
       link: item.link && item.identifier ? `${this.baseUrl}/play/${item.link}.${item.identifier}` : null,
     })).filter((item) => item.name && item.link);
   }
@@ -108,7 +109,7 @@ class AnimeWorldClient {
         const episodeId = element.attr('data-episode-id');
         const serverDataId = element.attr('data-id');
         if (!Number.isSafeInteger(number) || number < 0 || !episodeId || !serverDataId) return;
-        const entry = episodes.get(episodeId) || { number, serverDataIds: new Set() };
+        const entry = episodes.get(episodeId) || { number, episodeId, serverDataIds: new Set() };
         entry.serverDataIds.add(serverDataId);
         episodes.set(episodeId, entry);
       });
@@ -137,7 +138,7 @@ class AnimeWorldClient {
             if (typeof info.grabber !== 'string' || !info.grabber) continue;
             const url = new URL(info.grabber, `${this.baseUrl}/`);
             if (!['http:', 'https:'].includes(url.protocol)) continue;
-            results.push({ number: item.number, url: url.toString(), resolutionState: 'resolved' });
+            results.push({ number: item.number, url: url.toString(), providerEpisodeId: item.episodeId, providerSourceId: serverDataId, providerTitleUrl: animeUrl, resolutionState: 'resolved' });
           } catch (error) { this.lastDiscovery.errors.push({number:item.number,phase:'episode',message:redact(error.message)}); }
         }
       }
@@ -160,23 +161,46 @@ class AnimeWorldClient {
       } catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:redact(error.message)}); }
     }
     if (!completedQueries && lastError) throw lastError;
-    let match = selectExactMatch([...candidates.values()], aliases, options);
-    if (!match) {
+    let matches = selectVariantMatches([...candidates.values()], aliases, options);
+    if (!matches.some(match => match.dub === true) || !matches.some(match => match.dub === false)) {
       // The quick-search endpoint is capped and can omit exact titles (Monster).
       for (const title of searchTitles(aliases, options)) {
         try {
           for (const result of await this.searchCatalogue(title)) if (!candidates.has(result.link)) candidates.set(result.link,result);
         } catch (error) { this.lastDiscovery.errors.push({phase:'catalogue',message:redact(error.message)}); }
       }
-      match = selectExactMatch([...candidates.values()], aliases, options);
+      matches = selectVariantMatches([...candidates.values()], aliases, options);
     }
-    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, options, match);
-    if (!match) { this.lastDiscovery.status = candidates.size ? 'title_rejected' : 'title_not_found'; return []; }
-    this.lastDiscovery.matchedTitle = match.name;
-    const sources = await this._episodeSources(match.link,{year,episodeCount,isAiring,episodeNumbers});
+    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, options, matches);
+    if (!matches.length) { this.lastDiscovery.status = candidates.size ? 'title_rejected' : 'title_not_found'; return []; }
+    this.lastDiscovery.matchedTitle = matches.map(match => match.name).join(' / ');
+    const sources = []; let requested = 0; const numbers = new Set();
+    for (const match of matches) {
+      try {
+        this.lastDiscovery.requestedEpisodesFound = 0; this.lastDiscovery.episodeNumbers = [];
+        const found = await this._episodeSources(match.link,{year,episodeCount,isAiring,episodeNumbers});
+        requested += this.lastDiscovery.requestedEpisodesFound || 0;
+        (this.lastDiscovery.episodeNumbers || []).forEach(number => numbers.add(number));
+        sources.push(...found.map(source => ({ ...source, provider: 'animeworld', providerTitleUrl: match.link, language: classifyProvider(match, source) })));
+      } catch (error) { this.lastDiscovery.errors.push({phase:'variant',message:redact(error.message)}); }
+    }
+    this.lastDiscovery.requestedEpisodesFound = requested;
+    this.lastDiscovery.episodesFound = numbers.size;
+    this.lastDiscovery.episodeNumbers = [...numbers];
     this.lastDiscovery.status = sources.length ? 'found' : this.lastDiscovery.errors.some(error=>error.phase==='match') ? 'title_rejected'
+      : this.lastDiscovery.errors.some(error => error.phase === 'variant') ? 'provider_error'
       : this.lastDiscovery.requestedEpisodesFound ? 'media_unresolved' : 'episodes_not_found';
     return sources;
+  }
+
+  async renewSource(source, number) {
+    if (!/^[\w-]{1,100}$/.test(source.providerSourceId || '')) return null;
+    await this._ensureSession();
+    const response = await this._request(`/api/episode/info?id=${encodeURIComponent(source.providerSourceId)}&alt=0`, {referer:source.providerTitleUrl || `${this.baseUrl}/`,accept:'application/json'});
+    const info = await response.json();
+    if (typeof info.grabber !== 'string' || !info.grabber) return null;
+    const url = new URL(info.grabber, `${this.baseUrl}/`);
+    return ['http:', 'https:'].includes(url.protocol) ? {...source, number, url:url.toString(), resolutionState:'resolved',resolvedAt:Date.now()} : null;
   }
 }
 

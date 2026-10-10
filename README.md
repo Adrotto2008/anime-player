@@ -1,9 +1,18 @@
 # Anime Player
 
-Anime Player **v0.5.30** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.31** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Per-season video languages — 0.5.31
+
+- Each season saves Automatic, Italian, or Japanese with Italian subtitles. The compact selector counts episodes with resolved/classified links; unresolved embeds do not count. Old links remain unclassified and Automatic keeps its existing fallback behavior.
+- Both providers retain safe SUB and DUB matches as separate sources for the same library episode. Explicit preferences try AnimeUnity, AnimeWorld, then classified manual links within that version. Other versions and unknown-language links require an explicit, single-use choice for that episode; Stop, a new playback request or preference change cancels pending consent.
+- Provider declarations, release-name suggestions and manual classification remain separate from mpv's observed track tags. A release label is not verification of spoken language or subtitle content. Multi-audio files use native mpv audio/subtitle IDs and remain one source. Strict playback starts paused until track selection; contradictory audio tags reject that source. Hardcoded subtitles and tracks without language tags rely on the declared/suggested classification and are not reported as verified language.
+- Stable provider episode/server IDs coalesce signed URL rotation without conflating SUB/DUB. Editing retained links preserves metadata and custom headers; URL changes clear playback and track observations. Saved links, progress, ratings, covers, Anime4K and existing renewal remain intact.
+- Preferences carry a field timestamp for deterministic cloud conflict resolution independent of metadata refresh. Null/legacy fields cannot replace valid choices. Compact cloud snapshots retain preferences and consistent manual template classifications; automatic sources are rediscovered as before. No Supabase schema/auth change is needed.
+- Isolated fixtures cover version availability, priority, failure/consent, renewal/deduplication, migration, reopen/import and two-device cloud conflicts. Real mpv plays a locally generated multitrack Matroska over local HTTP, testing expired-URL refresh, AU 403 → AW Italian and preference switching to Japanese/Italian subtitles. Electron tests exercise the native keyboard selector, availability, consent and cancellation. No personal library or live account is used. Live provider audio content and live two-device cloud synchronization remain unverified.
 
 ## AniList request limits — 0.5.30
 

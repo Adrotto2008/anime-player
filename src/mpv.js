@@ -49,6 +49,7 @@ class MpvSession extends EventEmitter {
       this.send(['observe_property', 1, 'time-pos']);
       this.send(['observe_property', 2, 'duration']);
       this.send(['observe_property', 3, 'pause']);
+      this.send(['observe_property', 4, 'track-list']);
       this.emit('connected');
     });
     sock.on('data', (d) => this._onData(d));
@@ -72,6 +73,7 @@ class MpvSession extends EventEmitter {
       if (m.name === 'time-pos' && typeof m.data === 'number') { clearTimeout(this.startupTimer); this.emit('time', m.data); }
       else if (m.name === 'duration' && typeof m.data === 'number') this.emit('duration', m.data);
       else if (m.name === 'pause') this.emit('pause', !!m.data);
+      else if (m.name === 'track-list' && Array.isArray(m.data)) this.emit('tracks', m.data);
     } else if (m.event === 'end-file') {
       if (m.reason === 'eof') this.eof = true;
       else if (m.reason === 'error') { this.error = redact(m.file_error || 'errore di riproduzione'); this.quit(); }

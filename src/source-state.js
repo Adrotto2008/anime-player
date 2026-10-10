@@ -21,8 +21,10 @@ function urlLifetime(value) {
 
 function sourceMetadata(source) {
   return {
+    ...require('./source-language').metadata(source),
     ...(['found', 'resolved'].includes(source.resolutionState) ? { resolutionState: source.resolutionState } : {}),
     ...(source.provider === 'animeunity' && Number.isSafeInteger(source.providerEpisodeId) && source.providerEpisodeId > 0 ? { providerEpisodeId: source.providerEpisodeId } : {}),
+    ...(source.provider === 'animeworld' && /^[\w-]{1,100}$/.test(String(source.providerEpisodeId || '')) ? { providerEpisodeId: String(source.providerEpisodeId) } : {}),
     ...(Number(source.resolvedAt) > 0 ? { resolvedAt: Number(source.resolvedAt) } : {}),
     ...(Number(source.foundAt) > 0 ? { foundAt: Number(source.foundAt) } : {}),
     ...(typeof source.resolverReferer === 'string' && /^https?:\/\//i.test(source.resolverReferer) ? {resolverReferer:source.resolverReferer} : {}),

@@ -69,6 +69,7 @@ async function main() {
   assert.strictEqual(search.options.headers['csrf-token'], 'token-test');
   assert.match(search.options.headers.Cookie, /sessionId=session-test/);
   const partialSearch = new AnimeWorldClient();
+  partialSearch.searchCatalogue = async () => [];
   partialSearch.search = async (title) => { if (title === 'Broken alias') throw new Error('Temporary search error'); return [{ name: 'Demo Show', link: 'match' }]; };
   partialSearch._episodeSources = async () => [{ number: 1, url: 'https://video.test/one.mp4' }];
   assert.strictEqual((await partialSearch.findSources({ titles: ['Demo Show', 'Broken alias'] })).length, 1, 'a failing alias cannot discard an exact result from another query');

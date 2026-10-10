@@ -29,9 +29,9 @@ async function discoverSeriesSources(series, titles = [series.title], { store, a
         .map((source) => ({ ...source, provider: name, ...(name === 'animeworld' ? { referer: 'https://www.animeworld.ac/' } : {}) }));
       const before = new Map(store.getSeries(series.id).episodes.map((episode) => [episode.number, new Set(episode.sources.map((source) => source.url))]));
       const linkedEpisodes = new Set(sources.filter((source) => !before.get(source.number)?.has(source.url)).map((source) => source.number));
-      // Keep saved URLs and their custom headers untouched during a retry.
-      const missing = sources.filter((source) => !before.get(source.number)?.has(source.url));
-      if (missing.length) store.addSources(series.id, missing);
+      // Keep manual URLs/custom headers. Stable IDs coalesce automatic token rotations;
+      // unchanged automatic URLs may gain classification from this discovery.
+      if (sources.length) store.addSources(series.id, sources);
       sources.forEach((source) => foundNumbers.add(source.number));
       linkedEpisodes.forEach((number) => linkedNumbers.add(number));
       outcomes[name] = { ...client.lastDiscovery, rejectedSources, episodesAdded: linkedEpisodes.size, linksFound: (Array.isArray(found) ? found : []).length,

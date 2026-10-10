@@ -2,6 +2,10 @@
 
 const DICT = {
   en: {
+    videoVersion: 'Video version', video_auto:'Automatic', video_it:'Italian', 'video_ja-sub-it':'Japanese · Italian subtitles', video_unknown:'Unclassified language', videoMissing:'not found', videoEpisodes:n=>`${n} episodes with links`,
+    videoFallbackTitle:'Requested version unavailable', videoFallbackHint:'The requested version has no usable links left. Choose another version for this episode only, or cancel. Your season preference will stay saved.',
+    videoClassified:'Provider/release classification; audio not verified', videoObserved:'Track language tags observed by mpv', videoManual:'Manual classification',
+    videoAudio:'Audio', videoSubtitles:'Subtitles', video_declared:'declared', video_suggested:'suggested',
     featured: 'Featured', details: 'Details', navBrowse: 'Browse', navTools: 'Tools', close: 'Close', moreActions: 'More actions', yourRating: 'Your rating',
     librarySummary: (n, e) => `${n} series · ${e} episodes`,
     secPlayer: 'Player', secPlayback: 'Playback', secAppearance: 'Appearance', secAdvanced: 'Advanced',
@@ -102,6 +106,10 @@ const DICT = {
     shortcuts: 'Shortcuts', shortcutsHint: 'Customize the keys used by mpv. Leave a skip key empty to disable it.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
+    videoVersion:'Versione video', video_auto:'Automatico', video_it:'Italiano', 'video_ja-sub-it':'Giapponese · sottotitoli italiani', video_unknown:'Lingua non classificata', videoMissing:'non trovata', videoEpisodes:n=>`${n} episodi con link`,
+    videoFallbackTitle:'Versione richiesta non disponibile', videoFallbackHint:'Non restano link utilizzabili nella versione richiesta. Scegli un’altra versione soltanto per questo episodio, oppure annulla. La preferenza della stagione resta salvata.',
+    videoClassified:'Classificazione del provider/release; audio non verificato', videoObserved:'Tag linguistici delle tracce rilevati da mpv', videoManual:'Classificazione manuale',
+    videoAudio:'Audio', videoSubtitles:'Sottotitoli', video_declared:'dichiarata', video_suggested:'suggerita',
     featured: 'In evidenza', details: 'Dettagli', navBrowse: 'Esplora', navTools: 'Strumenti', close: 'Chiudi', moreActions: 'Altre azioni', yourRating: 'Il tuo voto',
     librarySummary: (n, e) => `${n} serie · ${e} episodi`,
     secPlayer: 'Player', secPlayback: 'Riproduzione', secAppearance: 'Aspetto', secAdvanced: 'Avanzate',

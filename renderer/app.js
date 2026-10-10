@@ -139,7 +139,8 @@ const defaultPreset = () => state.lib.settings.defaultPreset || 'aa-hq';
 function openDialog(title, bodyBuilder, options = {}) {
   const root = $('#dialog-root');
   const previousFocus = document.activeElement;
-  const close = () => { scrim.remove(); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; scrim.remove(); options.onClose?.(); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
   const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (!options.locked && e.target === scrim) close(); } });
   const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
   const head = h('div', { class: 'dialog-head' }, h('h2', null, title),
@@ -151,7 +152,7 @@ function openDialog(title, bodyBuilder, options = {}) {
   scrim.append(dlg);
   scrim.addEventListener('keydown', (e) => { if (!options.locked && e.key === 'Escape') close(); });
   root.append(scrim);
-  const first = body.querySelector('input:not([type=checkbox]), textarea, select');
+  const first = body.querySelector('input:not([type=checkbox]), textarea, select') || dlg.querySelector('button');
   if (first) first.focus();
   return close;
 }
@@ -723,6 +724,36 @@ function addMovieLinkDialog(movie) {
   });
 }
 
+function videoVersionControl(s) {
+  const counts = SourceLanguage.availability(s);
+  const select = h('select', {class:'input select',id:'video-version','aria-label':t('videoVersion'),onchange:async event=>{
+    try { await mutate('series:videoPreference',s.id,event.target.value); } catch { render(); }
+  }}, SourceLanguage.MODES.map(mode=>h('option',{value:mode},t('video_'+mode)+(mode==='auto' ? '' : ` · ${counts[mode] ? t('videoEpisodes',counts[mode]) : t('videoMissing')}`))));
+  select.value = SourceLanguage.preference(s.videoPreference)?.mode || 'auto';
+  return h('label',{class:'video-version'},h('span',{class:'muted small'},t('videoVersion')),select);
+}
+
+let languageFallbackDialog = null;
+function showLanguageFallback(offer) {
+  if (offer.cancelled) {
+    if (languageFallbackDialog?.token === offer.token) languageFallbackDialog.close();
+    return;
+  }
+  languageFallbackDialog?.close();
+  let handled = false;
+  const close = openDialog(t('videoFallbackTitle'),close=>[
+    h('p',null,t('videoFallbackHint')),
+    h('div',{class:'foot'},h('button',{class:'btn',onclick:close},t('cancel')),
+      offer.choices.map(mode=>h('button',{class:'btn primary','data-video-choice':mode,onclick:async()=>{
+        handled = true; close(); await call('player:languageFallback',offer.token,mode);
+      }},t('video_'+mode))))
+  ],{onClose:()=>{
+    if (!handled) call('player:languageFallback',offer.token,null);
+    if (languageFallbackDialog?.token === offer.token) languageFallbackDialog = null;
+  }});
+  languageFallbackDialog = {token:offer.token,close};
+}
+
 function seriesView(s) {
   const eff = s.preset || defaultPreset();
   const effMode = eff === 'off' ? 'off' : (eff.split('-')[0]); const effTier = eff === 'off' ? 'fast' : eff.split('-')[1];
@@ -768,6 +799,7 @@ function seriesView(s) {
         notifySourceDiscovery(result.sourceDiscovery);
       } catch { button.disabled = false; button.textContent = t('discoverLinks'); }
     } }, icon('search', 16), t('discoverLinks')) : null,
+    s.format !== 'MOVIE' && typeof SourceLanguage !== 'undefined' ? videoVersionControl(s) : null,
     h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, icon('chart', 16), t('ratingsChart')),
     s.anilistId ? h('button', { class: 'btn ghost', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, icon('refresh', 16), t('updateInfo')) : null,
     h('span', { class: 'spacer' }),
@@ -1104,6 +1136,17 @@ function openEditLinks(s, e) {
         h('span', { class: 'small', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: source.url },
           `${source.provider ? `${source.provider} · ` : ''}${source.resolutionState === 'resolved' ? t('linksResolved') : t('linksFound')} · ${source.playbackFailedAt ? t('sourceFailed') : source.playbackVerifiedAt ? t('playbackVerified') : t('playbackUnverified')} · ${source.url}`), value);
       statusRows.append(line);
+      const classification = SourceLanguage.classification(source.language);
+      if (!source.provider) {
+        const select = h('select',{class:'input select','aria-label':t('videoManual'),onchange:event=>mutate('episodes:sourceLanguage',s.id,e.id,source.url,event.target.value)},
+          ['unknown','it','ja-sub-it'].map(mode=>h('option',{value:mode},t('video_'+mode))));
+        select.value = classification?.audio === 'it' ? 'it' : classification?.audio === 'ja' && classification.subtitles === 'it' ? 'ja-sub-it' : 'unknown'; statusRows.append(select);
+      }
+      statusRows.append(h('span',{class:'muted small'},classification
+        ? `${classification.origin === 'manual' ? t('videoManual') : t('videoClassified')} · ${t('video_'+classification.confidence)} · ${t('videoAudio')}: ${classification.audio || '—'} · ${t('videoSubtitles')}: ${classification.subtitles || '—'}`
+        : t('video_unknown')));
+      const observed = SourceLanguage.tracks(source.mediaTracks);
+      if (observed) statusRows.append(h('span',{class:'muted small'},`${t('videoObserved')} · ${t('videoAudio')}: ${observed.audio.map(track=>track.lang || '?').join(', ') || '—'} · ${t('videoSubtitles')}: ${observed.subtitles.map(track=>track.lang || '?').join(', ') || '—'}`));
       return { source, value };
     });
     const refresh = async () => {
@@ -1240,6 +1283,7 @@ function openSetup() {
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call('player:skipSegment', offer.end)));
+  api.on('player:language-fallback', showLanguageFallback);
   state.lib = await api.invoke('lib:get');
   state.presets = await api.invoke('presets:list');
   state.version = await api.invoke('app:version');

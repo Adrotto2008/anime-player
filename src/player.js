@@ -4,6 +4,8 @@ const path = require('path');
 const { MpvSession, pipePath } = require('./mpv');
 const A4K = require('./anime4k');
 const { urlLifetime, redact } = require('./source-state');
+const Language = require('./source-language');
+const { randomUUID } = require('crypto');
 
 class PlayerManager {
   // paths: { shaderDir, userData }; notify(channel, payload)
@@ -31,17 +33,22 @@ class PlayerManager {
 
   async play(seriesId, episodeId, opts = {}) {
     const requestId = opts.requestId ?? ++this.playRequestId;
+    if (opts.requestId == null) this._clearLanguageFallback();
     const series = this.store.getSeries(seriesId);
     const ep = this.store.getEpisode(seriesId, episodeId);
     if (!series || !ep) throw new Error('Episodio non trovato');
     if (!ep.sources.length) throw new Error('Questo episodio non ha ancora link.');
+    this.activeRequest = {seriesId,episodeId,requestId};
     const title = `${series.title} — Ep. ${ep.number}${ep.title ? ' · ' + ep.title : ''}`;
     const resume = !ep.progress.watched && ep.progress.pos > 0 ? Math.max(0, ep.progress.pos) : 0;
-    this.store.setProgress(seriesId, episodeId, {}); // aggiorna "ultima visione"
-    const sourceIndex = opts.sourceIndex ?? 0;
+    const effectiveMode = opts.effectiveMode || Language.preference(series.videoPreference)?.mode || 'auto';
+    const attempted = new Set(opts.attempted || []);
+    const ranked = Language.rankSources(ep.sources, effectiveMode).filter(item => !attempted.has(item.source));
+    const sourceIndex = opts.sourceIndex ?? ranked[0]?.index;
     const source = ep.sources[sourceIndex];
-    if (!source) throw new Error('Sorgente non trovata');
-    const attempted = new Set(opts.attempted || []); attempted.add(source);
+    if (!source || !Language.eligible(source, effectiveMode)) return this._offerLanguageFallback({series,ep,requestId,attempted,effectiveMode});
+    this.store.setProgress(seriesId, episodeId, {}); // aggiorna "ultima visione"
+    attempted.add(source);
     if (source.provider && (urlLifetime(source.url).temporary || source.resolutionState === 'found')) {
       try {
         if (!this.resolveAutomaticSource) {
@@ -57,13 +64,16 @@ class PlayerManager {
       } catch (error) {
         if (requestId !== this.playRequestId) return;
         this.store.markSourceFailure(seriesId, episodeId, source.url, {error: error.message});
-        return this._fallback({series, ep, sourceIndex, source, attempted, requestId}, redact(error.message));
+        return this._fallback({series, ep, sourceIndex, source, attempted, requestId, effectiveMode}, redact(error.message));
       }
     }
-    return this._launch({ series, ep, url: source.url, sourceIndex:ep.sources.indexOf(source), source, attempted, requestId, title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });
+    if (!Language.eligible(source, effectiveMode)) return this._fallback({series,ep,source,sourceIndex,attempted,requestId,effectiveMode}, 'La lingua della sorgente rinnovata non corrisponde');
+    return this._launch({ series, ep, url: source.url, sourceIndex:ep.sources.indexOf(source), source, attempted, requestId, effectiveMode, title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });
   }
 
   async playUrl(url, presetId) {
+    this._clearLanguageFallback();
+    this.activeRequest = null;
     const title = url.split('/').pop() || url;
     return this._launch({ series: null, ep: null, url, sourceIndex: 0, requestId:++this.playRequestId, title, start: 0, referer: '', presetId: presetId || this.store.data.settings.defaultPreset });
   }
@@ -76,9 +86,25 @@ class PlayerManager {
     this._writeInputConf();
     const pipe = pipePath();
     const args = A4K.buildArgs({ settings: { ...settings, userAgent: c.userAgent || settings.userAgent }, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, inputConf: this.inputConf, pipe, shaderDir: this.paths.shaderDir });
+    const strictLanguage = ['it', 'ja-sub-it'].includes(c.effectiveMode);
+    if (strictLanguage) args.splice(args.length - 2, 0, '--pause=yes', `--alang=${c.effectiveMode === 'it' ? 'it,ita' : 'ja,jpn'}`, '--slang=it,ita');
     const session = new MpvSession({ mpvPath: settings.mpvPath, args, pipe });
     this.cur = { ...c, session, pos: c.start || 0, dur: 0, playedSeconds: 0, lastReportedPos: c.start || 0, lastSave: 0, saveTimer: null, nav: null, stopping: false, startedAt: Date.now() };
     const cur = this.cur;
+    if (strictLanguage) cur.languageTimer = setTimeout(() => {
+      session.error = 'Impossibile rilevare le tracce del file'; session.quit();
+    }, 15000);
+    session.on('tracks', list => {
+      if (this.cur !== cur || cur.stopping || !list.length) return;
+      if (cur.ep) this.store.recordSourceTracks(cur.series.id, cur.ep.id, cur.source, list);
+      if (!strictLanguage || cur.languageReady) return;
+      const selection = Language.trackSelection(list, c.effectiveMode, cur.source);
+      clearTimeout(cur.languageTimer);
+      cur.languageReady = true;
+      if (selection.error) { session.error = selection.error; session.quit(); return; }
+      selection.commands.forEach(command => session.send(command));
+      session.send(['set_property', 'pause', false]);
+    });
 
     const flushProgress = () => {
       if (!cur.ep || cur.ep.progress.watched) return;
@@ -121,6 +147,8 @@ class PlayerManager {
     session.on('nav', (dir) => { cur.nav = dir; session.quit(); });
     session.on('skip', (kind) => this.skipCurrentSegment(kind));
     session.on('spawn-error', (e) => {
+      clearTimeout(cur.languageTimer);
+      if (this.activeRequest?.requestId === cur.requestId) this.activeRequest = null;
       this.cur = null; this._emitState();
       this.notify('player:error', e.code === 'ENOENT' ? `mpv non trovato in "${settings.mpvPath}". Controlla il percorso in Impostazioni.` : `Impossibile avviare mpv: ${e.message}`);
     });
@@ -130,8 +158,10 @@ class PlayerManager {
   }
 
   _onExit(cur, { eof, error, code, signal, stderr, stdout }) {
+    clearTimeout(cur.languageTimer);
     if (this.cur !== cur) return; // già sostituita da un'altra sessione
     this.cur = null;
+    if (this.activeRequest?.requestId === cur.requestId) this.activeRequest = null;
     if (cur.ep) {
       clearTimeout(cur.saveTimer);
       const { pos, dur } = cur;
@@ -175,12 +205,56 @@ class PlayerManager {
     const source = cur.source || cur.ep.sources[cur.sourceIndex];
     const attempted = new Set(cur.attempted || [source]);
     const provider = source?.provider;
-    const remaining = cur.ep.sources.map((source, index) => ({source,index})).filter(item => !attempted.has(item.source));
+    const effectiveMode = cur.effectiveMode || Language.preference(cur.series.videoPreference)?.mode || 'auto';
+    const remaining = Language.rankSources(cur.ep.sources, effectiveMode).filter(item => !attempted.has(item.source));
     // Prefer the other provider over another cached token for the failed one.
-    const next = remaining.find(item => item.source.provider !== provider) || remaining[0];
-    if (!next) { this.notify('player:error', `Impossibile riprodurre il link: ${redact(error)}`); return; }
+    const next = effectiveMode === 'auto' ? remaining.find(item => item.source.provider !== provider) || remaining[0] : remaining[0];
+    if (!next) {
+      if (effectiveMode !== 'auto') return this._offerLanguageFallback({...cur,attempted,effectiveMode});
+      this.notify('player:error', `Impossibile riprodurre il link: ${redact(error)}`); return;
+    }
     this.notify('player:error', `Link non riproducibile (${redact(error)}). Provo la sorgente ${next.index + 1}…`);
-    return this.play(cur.series.id, cur.ep.id, {sourceIndex:next.index, attempted, requestId:cur.requestId});
+    return this.play(cur.series.id, cur.ep.id, {sourceIndex:next.index, attempted, requestId:cur.requestId, effectiveMode});
+  }
+
+  _clearLanguageFallback() {
+    if (this.pendingLanguageFallback) this.notify('player:language-fallback', {token:this.pendingLanguageFallback.token,cancelled:true});
+    this.pendingLanguageFallback = null;
+  }
+
+  async _offerLanguageFallback(cur) {
+    await this.stop({invalidate:false});
+    if (cur.requestId !== this.playRequestId || !this.store.getEpisode(cur.series.id,cur.ep.id)) return;
+    const remaining = cur.ep.sources.filter(source => !cur.attempted.has(source));
+    const choices = ['it','ja-sub-it','unknown'].filter(mode => mode !== cur.effectiveMode && remaining.some(source => Language.usable(source) && Language.eligible(source,mode)));
+    if (!choices.length) { this.notify('player:error','Nessuna sorgente riproducibile per la versione richiesta. Cerca nuovi link o aggiungi una sorgente.'); return; }
+    this._clearLanguageFallback();
+    const token = randomUUID();
+    this.pendingLanguageFallback = {...cur,token,choices,preferenceAt:cur.series.videoPreference?.updatedAt || 0,preferenceMode:cur.series.videoPreference?.mode || 'auto'};
+    this.notify('player:language-fallback',{token,seriesId:cur.series.id,episodeId:cur.ep.id,requested:cur.effectiveMode,choices});
+  }
+
+  acceptLanguageFallback(token, mode) {
+    const pending = this.pendingLanguageFallback;
+    if (!pending || pending.token !== token) return false;
+    this._clearLanguageFallback();
+    if (mode == null) return false;
+    const series = this.store.getSeries(pending.series.id);
+    if (pending.requestId !== this.playRequestId || !series || (series.videoPreference?.updatedAt || 0) !== pending.preferenceAt
+      || (series.videoPreference?.mode || 'auto') !== pending.preferenceMode || !pending.choices.includes(mode)) return false;
+    return this.play(series.id,pending.ep.id,{requestId:pending.requestId,attempted:pending.attempted,effectiveMode:mode});
+  }
+
+  async changeVideoPreference(seriesId, mode) {
+    const episodeId = this.cur?.series?.id === seriesId ? this.cur.ep?.id : this.activeRequest?.seriesId === seriesId ? this.activeRequest.episodeId : null;
+    this.store.setVideoPreference(seriesId,mode);
+    const stopped = this.stopIfSeries(seriesId); const requestId = this.playRequestId;
+    await stopped;
+    if (episodeId && requestId === this.playRequestId) return this.play(seriesId,episodeId);
+  }
+
+  async stopIfSeries(seriesId) {
+    if (this.cur?.series?.id === seriesId || this.pendingLanguageFallback?.series.id === seriesId || this.activeRequest?.seriesId === seriesId) await this.stop();
   }
 
   setPreset(presetId) {
@@ -239,9 +313,10 @@ class PlayerManager {
   }
 
   async stop({invalidate = true} = {}) {
-    if (invalidate) this.playRequestId++;
+    if (invalidate) { this.playRequestId++; this.activeRequest = null; this._clearLanguageFallback(); }
     const cur = this.cur;
     if (!cur) return;
+    clearTimeout(cur.languageTimer);
     await new Promise((resolve) => {
       cur.session.once('exit', resolve);
       cur.session.once('spawn-error', resolve);

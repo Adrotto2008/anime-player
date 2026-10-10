@@ -130,13 +130,22 @@ function selectExactMatch(results, titles, options = {}) {
 function candidateDiagnostics(results, titles, options, match) {
   return results.map(item => {
     const result = evaluateCandidate(item, titles, options);
-    const selected = item === match;
+    const selected = Array.isArray(match) ? match.includes(item) : item === match;
     const reasons = [...result.reasons];
-    if (!reasons.length && !selected) reasons.push(match ? 'alternate_candidate' : 'ambiguous');
+    if (!reasons.length && !selected) reasons.push((Array.isArray(match) ? match.length : match) ? 'alternate_candidate' : 'ambiguous');
     return { id: item.id, title: item.title || item.name, aliases: namesFor(item).slice(1),
       anilistId: item.anilistId, malId: item.malId, format: item.format, status: item.status,
       year: item.year, episodeCount: item.episodeCount ?? item.episodes,
       selected, reasons, evidence: result.evidence, method: result.method };
+  });
+}
+
+// Resolve ambiguity within each language variant, never by preferring SUB to DUB.
+function selectVariantMatches(results, titles, options = {}) {
+  return [false, true, null].flatMap(dub => {
+    const group = results.filter(item => (item.dub ?? null) === dub);
+    const match = selectExactMatch(group, titles, options);
+    return match ? [match] : [];
   });
 }
 
@@ -165,4 +174,4 @@ function matchOptions(series) {
     seasonNumber: series.franchiseSeasonNumber };
 }
 
-module.exports = { titleKey, parseTitle, mediaFormat, evaluateCandidate, selectExactMatch, candidateDiagnostics, searchTitles, matchOptions };
+module.exports = { titleKey, parseTitle, mediaFormat, evaluateCandidate, selectExactMatch, selectVariantMatches, candidateDiagnostics, searchTitles, matchOptions };

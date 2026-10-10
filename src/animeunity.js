@@ -1,7 +1,8 @@
 'use strict';
 
 const cheerio = require('cheerio');
-const { selectExactMatch, candidateDiagnostics, searchTitles, mediaFormat } = require('./source-match');
+const { selectExactMatch, selectVariantMatches, candidateDiagnostics, searchTitles, mediaFormat } = require('./source-match');
+const { classifyProvider } = require('./source-language');
 const { redact, readEmbedText } = require('./source-state');
 
 const DEFAULT_BASE_URL = 'https://www.animeunity.so';
@@ -181,12 +182,25 @@ class AnimeUnityClient {
       catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:redact(error.message)}); }
     }
     if (!completedQueries && lastError) throw lastError;
-    const match = selectExactMatch([...candidates.values()], aliases, options);
-    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, options, match);
-    if (!match) { this.lastDiscovery.status = candidates.size ? 'title_rejected' : 'title_not_found'; return []; }
-    this.lastDiscovery.matchedTitle = match.title;
-    const sources = await this.getEpisodeSources(match, { episodeNumbers });
+    const matches = selectVariantMatches([...candidates.values()], aliases, options);
+    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, options, matches);
+    if (!matches.length) { this.lastDiscovery.status = candidates.size ? 'title_rejected' : 'title_not_found'; return []; }
+    this.lastDiscovery.matchedTitle = matches.map(match => match.title).join(' / ');
+    const sources = []; let requested = 0; const numbers = new Set();
+    for (const match of matches) {
+      try {
+        this.lastDiscovery.requestedEpisodesFound = 0; this.lastDiscovery.episodeNumbers = [];
+        const found = await this.getEpisodeSources(match, { episodeNumbers });
+        requested += this.lastDiscovery.requestedEpisodesFound || 0;
+        (this.lastDiscovery.episodeNumbers || []).forEach(number => numbers.add(number));
+        sources.push(...found.map(source => ({ ...source, providerTitleUrl: match.link, language: classifyProvider(match, source) })));
+      } catch (error) { this.lastDiscovery.errors.push({phase:'variant',message:redact(error.message)}); }
+    }
+    this.lastDiscovery.requestedEpisodesFound = requested;
+    this.lastDiscovery.episodesFound = numbers.size;
+    this.lastDiscovery.episodeNumbers = [...numbers];
     this.lastDiscovery.status = sources.some(source => source.resolutionState === 'resolved') ? 'found'
+      : this.lastDiscovery.errors.some(error => error.phase === 'variant') ? 'provider_error'
       : sources.length || this.lastDiscovery.requestedEpisodesFound ? 'media_unresolved' : 'episodes_not_found';
     return sources;
   }

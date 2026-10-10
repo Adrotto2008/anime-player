@@ -476,3 +476,6 @@ details.adv .two { max-width: 480px; }
 .franchise-page .section + .section { margin-top: 28px; }
 /* i <button> centrano il contenuto in verticale: forziamo l'allineamento in alto */
 .poster, .resume { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }
+/* Season video preference uses the existing compact controls. */
+.video-version { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.video-version select { width: auto; max-width: 310px; }

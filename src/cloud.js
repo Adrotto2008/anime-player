@@ -7,6 +7,7 @@ const { createClient } = require('@supabase/supabase-js');
 const { PRESETS } = require('./anime4k');
 const { detectSeasonFromTitle } = require('./metadata');
 const { detectEpisodeNumber, expandPattern } = require('./patterns');
+const Language = require('./source-language');
 
 const PROJECT_REF = 'gbdcdserzrujiuacefca'; // anime-player; deliberately excludes the old haxball2 project.
 const CLOUD_SETTINGS = ['theme', 'language', 'defaultPreset', 'autoplayNext', 'skipOpening', 'skipEnding', 'alang', 'slang'];
@@ -57,7 +58,9 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
     const franchise = Object.fromEntries(['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber']
       .map((key) => [key, winner[key] != null ? winner[key] : older[key]]).filter(([, value]) => value != null));
     const movieSources = new Map([...(current.movieSources || []), ...(item.movieSources || [])].filter((source) => source?.url).map((source) => [source.url, source]));
-    series.set(item.id, { ...winner, ...franchise, cover:winner.cover || older.cover || null, banner:winner.banner || older.banner || null,
+    const patternOwner = item.sourcePattern ? item : current;
+    series.set(item.id, { ...winner, ...franchise, videoPreference:Language.mergePreference(item.videoPreference, current.videoPreference),
+      sourcePatternLanguage:Language.classification(patternOwner.sourcePatternLanguage), cover:winner.cover || older.cover || null, banner:winner.banner || older.banner || null,
       titleAliases:[...new Set([...(current.titleAliases||[]),...(item.titleAliases||[])])],
       movieSources: [...movieSources.values()], ...(sourcePattern ? { sourcePattern: { ...sourcePattern } } : {}), episodes: [...episodes.values()] });
   }
@@ -101,7 +104,7 @@ function compressLibraryForCloud(input) {
       const candidate = detected && detected.candidates.find((item) => item.number === episode.number);
       if (!candidate) continue;
       const urls = candidates.get(candidate.pattern) || new Map();
-      urls.set(episode.number, source.url);
+      urls.set(episode.number, source);
       candidates.set(candidate.pattern, urls);
     }
     const ranked = [...candidates.entries()].map(([pattern, urls]) => ({ pattern, urls }))
@@ -114,7 +117,13 @@ function compressLibraryForCloud(input) {
     }
     const cleanSeries = { ...series };
     delete cleanSeries.sourcePattern;
-    if (sourcePattern) cleanSeries.sourcePattern = sourcePattern;
+    delete cleanSeries.sourcePatternLanguage;
+    if (sourcePattern) {
+      cleanSeries.sourcePattern = sourcePattern;
+      const languages = [...best.urls.values()].map(source => Language.classification(source.language));
+      // A template may propagate only a consistently declared manual classification.
+      if (languages.every(language => language?.origin === 'manual' && JSON.stringify(language) === JSON.stringify(languages[0]))) cleanSeries.sourcePatternLanguage = languages[0];
+    }
     cleanSeries.episodes = episodes.map(({ sources, ...episode }) => ({ ...episode }));
     return cleanSeries;
   });
@@ -132,7 +141,10 @@ function expandLibraryFromCloud(input) {
       if (sourcePattern && Number.isInteger(episode.number) && episode.number >= sourcePattern.from && episode.number <= sourcePattern.to) {
         try {
           const link = expandPattern(sourcePattern.pattern, episode.number, episode.number)[0]?.url;
-          if (link) sources = [{ url: link }];
+          if (link) {
+            const language = Language.classification(series.sourcePatternLanguage);
+            sources = [{ url: link, ...(language?.origin === 'manual' ? {language} : {}) }];
+          }
         } catch { /* pattern cloud non valido: conserva eventuali sorgenti locali */ }
       }
       return { ...episode, sources };
