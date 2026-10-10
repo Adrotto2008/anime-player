@@ -21,7 +21,8 @@ function titleKey(value) {
 function selectExactMatch(results, titles, { year, episodeCount } = {}) {
   const aliases = (Array.isArray(titles) ? titles : [titles]).filter(Boolean);
   const keys = new Set(aliases.map(titleKey).filter(Boolean));
-  let matches = (results || []).filter((item) => keys.has(titleKey(item.name)));
+  const namesFor = (item) => [item.name, item.altTitle, ...(item.aliases || [])].filter(Boolean);
+  let matches = (results || []).filter((item) => namesFor(item).some((name) => keys.has(titleKey(name))));
   if (!matches.length) return null;
 
   const matchingYear = matches.filter((item) => year && Number(item.year) === Number(year));
@@ -31,8 +32,8 @@ function selectExactMatch(results, titles, { year, episodeCount } = {}) {
 
   matches.sort((a, b) => {
     const aKey = titleKey(a.name); const bKey = titleKey(b.name);
-    const aExact = aliases.some((title) => String(a.name || '').trim().toLowerCase() === String(title).trim().toLowerCase()) ? 0 : 1;
-    const bExact = aliases.some((title) => String(b.name || '').trim().toLowerCase() === String(title).trim().toLowerCase()) ? 0 : 1;
+    const aExact = aliases.some((title) => namesFor(a).some((name) => String(name).trim().toLowerCase() === String(title).trim().toLowerCase())) ? 0 : 1;
+    const bExact = aliases.some((title) => namesFor(b).some((name) => String(name).trim().toLowerCase() === String(title).trim().toLowerCase())) ? 0 : 1;
     return aExact - bExact || aKey.localeCompare(bKey) || Number(Boolean(a.dub)) - Number(Boolean(b.dub));
   });
   return matches[0];
@@ -97,6 +98,7 @@ class AnimeWorldClient {
     const data = await response.json();
     return (Array.isArray(data.animes) ? data.animes : []).map((item) => ({
       name: item.name || '', year: item.year == null || item.year === '??' ? null : Number(item.year),
+      altTitle: item.jtitle || '', aliases: [item.choseTitle].filter(Boolean),
       episodes: item.episodes == null || item.episodes === '??' ? null : Number(item.episodes),
       dub: item.dub == null ? null : item.dub !== '0',
       link: item.link && item.identifier ? `${this.baseUrl}/play/${item.link}.${item.identifier}` : null,
@@ -150,11 +152,14 @@ class AnimeWorldClient {
     const aliases = (Array.isArray(titles) ? titles : [titles]).map((value) => String(value || '').trim()).filter(Boolean);
     if (!aliases.length) return [];
     const candidates = new Map();
+    let completedQueries = 0; let lastError;
     for (const title of aliases) {
-      for (const result of await this.search(title)) {
-        if (!candidates.has(result.link)) candidates.set(result.link, result);
-      }
+      try {
+        for (const result of await this.search(title)) if (!candidates.has(result.link)) candidates.set(result.link, result);
+        completedQueries++;
+      } catch (error) { lastError = error; }
     }
+    if (!completedQueries && lastError) throw lastError;
     const match = selectExactMatch([...candidates.values()], aliases, { year, episodeCount });
     if (!match) return [];
     return this._episodeSources(match.link);

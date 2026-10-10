@@ -23,6 +23,8 @@ async function main() {
   ], ['Solo Leveling'], { year: 2024, episodeCount: 12 });
   assert.strictEqual(exact.link, 'sub');
   assert.strictEqual(selectExactMatch([{ name: 'Mob Psycho 100 III' }], ['Mob Psycho 100']), null);
+  assert.strictEqual(selectExactMatch([{ name: "L'attacco dei Giganti (ITA)", altTitle: 'Shingeki no Kyojin (ITA)', link: 'correct' },
+    { name: "L'attacco dei Giganti 2", altTitle: 'Shingeki no Kyojin Season 2', link: 'wrong-season' }], ['Shingeki no Kyojin']).link, 'correct');
 
   const requests = [];
   const fetchImpl = async (url, options) => {
@@ -31,7 +33,7 @@ async function main() {
       return response({ body: '<meta id="csrf-token" content="token-test">', cookies: ['sessionId=session-test; Path=/; HttpOnly'] });
     }
     if (parsed.pathname === '/api/search/v2') {
-      return response({ body: { animes: [{ name: 'Demo Show', year: '2024', episodes: '2', dub: '0', link: 'demo-show', identifier: 'abc123' }] } });
+      return response({ body: { animes: [{ name: 'Demo Show', jtitle: 'Demo Original', choseTitle: 'Demo Alias', year: '2024', episodes: '2', dub: '0', link: 'demo-show', identifier: 'abc123' }] } });
     }
     if (parsed.pathname === '/play/demo-show.abc123') {
       return response({ body: `
@@ -54,6 +56,9 @@ async function main() {
     throw new Error(`Unexpected AnimeWorld request: ${parsed.href}`);
   };
   const client = new AnimeWorldClient({ fetchImpl, baseUrl: 'https://animeworld.test', concurrency: 2 });
+  const mapped = await client.search('Demo Original');
+  assert.strictEqual(mapped[0].altTitle, 'Demo Original');
+  assert.deepStrictEqual(mapped[0].aliases, ['Demo Alias']);
   const sources = await client.findSources({ titles: ['Demo Show'], year: 2024, episodeCount: 2 });
   assert.deepStrictEqual(sources.map((item) => item.number).sort(), [1, 1, 2]);
   assert.ok(sources.some((item) => item.url === 'https://video.example/a2.m3u8'));
@@ -61,6 +66,10 @@ async function main() {
   assert.strictEqual(search.options.method, 'POST');
   assert.strictEqual(search.options.headers['csrf-token'], 'token-test');
   assert.match(search.options.headers.Cookie, /sessionId=session-test/);
+  const partialSearch = new AnimeWorldClient();
+  partialSearch.search = async (title) => { if (title === 'Broken alias') throw new Error('Temporary search error'); return [{ name: 'Demo Show', link: 'match' }]; };
+  partialSearch._episodeSources = async () => [{ number: 1, url: 'https://video.test/one.mp4' }];
+  assert.strictEqual((await partialSearch.findSources({ titles: ['Demo Show', 'Broken alias'] })).length, 1, 'a failing alias cannot discard an exact result from another query');
   console.log('  ok AnimeWorld exact matching, session/CSRF, episode parsing and source fallback');
 }
 

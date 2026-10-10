@@ -467,5 +467,12 @@ details.adv .two { max-width: 480px; }
 .shortcuts-page > p, .shortcuts-page > .muted { margin-bottom: 16px; }
 .chip { white-space: nowrap; }
 .nowplaying .chip { flex: 0 0 auto; }
+
+/* Franchise navigation; episode rows and their .eps thumbnail rules stay untouched. */
+.franchise-poster .cover, .franchise-child .cover { position: relative; }
+.franchise-movie { min-width: 0; }
+.movie-sources, .movie-playback { display: flex; flex-wrap: wrap; gap: 7px; margin-top: 8px; }
+.franchise-page .hero .desc { max-width: 820px; }
+.franchise-page .section + .section { margin-top: 28px; }
 /* i <button> centrano il contenuto in verticale: forziamo l'allineamento in alto */
 .poster, .resume { display: flex; flex-direction: column; justify-content: flex-start; align-items: stretch; }

@@ -1,6 +1,6 @@
 # Anime Player
 
-Anime Player **v0.5.23** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.25** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
@@ -9,6 +9,10 @@ episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWor
 
 - AniList search and series metadata: poster, banner, description, genres,
   year, format, episode count, and AniList score when available.
+- AniList PREQUEL/SEQUEL chains group related seasons into one franchise page;
+  linked movies remain separate playable records and do not receive synthetic episodes.
+- Grouping keeps season records, episode IDs, links, ratings, presets, and watch
+  progress independent. Ambiguous relation graphs fall back to the selected title.
 - IMDb overall anime score and episode-by-episode ratings across all seasons.
 - Visual IMDb episode rating chart/heatmap in the series view (styled after
   Series Graph tier charts: Awesome, Great, Good, Regular, Bad, Garbage),
@@ -18,7 +22,7 @@ episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWor
 - AniList cast and related-series metadata in a compact series panel.
 - AniSkip opening/ending availability is shown per episode after its skip data
   has been checked.
-- Automatic episode-link discovery through AnimeUnity followed by AnimeWorld, with exact-title/year/episode-count matching and a manual fallback.
+- Episode links are discovered automatically in the background when adding a series, including existing seasons with missing links. AnimeUnity runs first; failures and unusable results still fall back to AnimeWorld. Original AniList titles are retained for matching translated provider titles. Manual retry remains available and preserves saved links and progress.
 - HTTP availability checks beside each episode link; redirects and inconclusive responses are labeled separately.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.

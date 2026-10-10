@@ -49,7 +49,11 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
       });
     }
     const sourcePattern = item.sourcePattern || current.sourcePattern;
-    series.set(item.id, { ...winner, ...(sourcePattern ? { sourcePattern: { ...sourcePattern } } : {}), episodes: [...episodes.values()] });
+    const older = winner === item ? current : item;
+    const franchise = Object.fromEntries(['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber']
+      .map((key) => [key, winner[key] != null ? winner[key] : older[key]]).filter(([, value]) => value != null));
+    const movieSources = new Map([...(current.movieSources || []), ...(item.movieSources || [])].filter((source) => source?.url).map((source) => [source.url, source]));
+    series.set(item.id, { ...winner, ...franchise, movieSources: [...movieSources.values()], ...(sourcePattern ? { sourcePattern: { ...sourcePattern } } : {}), episodes: [...episodes.values()] });
   }
   const resultSeries = [];
   for (const item of series.values()) {

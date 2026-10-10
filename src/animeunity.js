@@ -174,7 +174,12 @@ class AnimeUnityClient {
     const aliases = (Array.isArray(titles) ? titles : [titles]).map((value) => String(value || '').trim()).filter(Boolean);
     if (!aliases.length) return [];
     const candidates = new Map();
-    for (const alias of aliases) for (const item of await this.search(alias)) candidates.set(item.id, item);
+    let completedQueries = 0; let lastError;
+    for (const alias of aliases) {
+      try { for (const item of await this.search(alias)) candidates.set(item.id, item); completedQueries++; }
+      catch (error) { lastError = error; }
+    }
+    if (!completedQueries && lastError) throw lastError;
     const match = selectExactMatch([...candidates.values()], aliases, { year, episodeCount });
     return match ? this.getEpisodeSources(match) : [];
   }

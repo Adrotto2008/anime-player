@@ -38,7 +38,7 @@ async function translateDescriptionToItalian(description) {
 const FIELDS = `id idMal title { romaji english } coverImage { extraLarge large } bannerImage description(asHtml: false)
   genres averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }
   characters(sort: ROLE, perPage: 8) { edges { role node { name { full } image { medium } } } }
-  relations { edges { relationType node { id title { romaji english } type format coverImage { medium large } } } }`;
+  relations { edges { relationType node { id title { romaji english } type format seasonYear coverImage { medium large } } } }`;
 
 function normalize(m) {
   return {
@@ -54,6 +54,7 @@ function normalize(m) {
     scoreSource: m.averageScore ? 'AniList' : null,
     year: m.seasonYear || null,
     format: m.format || null,
+    type: m.type || null,
     status: m.status || null,
     nextAiringAt: m.nextAiringEpisode && m.nextAiringEpisode.airingAt ? m.nextAiringEpisode.airingAt * 1000 : null,
     nextEpisode: m.nextAiringEpisode && m.nextAiringEpisode.episode ? m.nextAiringEpisode.episode : null,
@@ -69,6 +70,8 @@ function normalize(m) {
       title: (x.node.title && (x.node.title.english || x.node.title.romaji)) || 'Senza titolo',
       relation: x.relationType || null,
       format: x.node.format || null,
+      type: x.node.type || null,
+      year: x.node.seasonYear || null,
       cover: x.node.coverImage?.large || x.node.coverImage?.medium || null,
     })),
   };
@@ -102,6 +105,17 @@ async function getAnime(id, options = {}) {
   const anime = normalize(d.Media);
   if (options.language === 'it' && anime.description) anime.description = await translateDescriptionToItalian(anime.description);
   return anime;
+}
+
+async function getAnimeBatch(ids, options = {}) {
+  const uniqueIds = [...new Set((ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 24);
+  if (!uniqueIds.length) return [];
+  const d = await anilist(`query($ids:[Int]){Page(perPage:24){media(id_in:$ids,type:ANIME){${FIELDS}}}}`, { ids: uniqueIds });
+  const results = (d.Page.media || []).map(normalize);
+  if (options.language === 'it') {
+    for (const anime of results) if (anime.description) anime.description = await translateDescriptionToItalian(anime.description);
+  }
+  return results;
 }
 
 async function kitsuJson(url) {
@@ -368,6 +382,7 @@ function applyImdbRatingsToEpisodes(episodes, imdbChart, title) {
 module.exports = {
   searchAnime,
   getAnime,
+  getAnimeBatch,
   fetchEpisodes,
   fetchAniSkipTimes,
   aniSkipUrl,

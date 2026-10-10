@@ -89,6 +89,10 @@ function validateLibraryData(input) {
         },
       };
     });
+    const movieSources = Array.isArray(rawSeries.movieSources) ? rawSeries.movieSources.map((source) => {
+      if (!source || typeof source.url !== 'string' || !isValidSource(source.url)) throw new Error(`Link film non valido nella serie "${rawSeries.title}".`);
+      return { url: source.url, label: typeof source.label === 'string' && source.label ? source.label : hostLabel(source.url), ...(typeof source.referer === 'string' && /^https?:\/\//i.test(source.referer) ? { referer: source.referer } : {}) };
+    }) : [];
     const lastWatchedAt = Number(rawSeries.lastWatchedAt || 0);
     if (!Number.isFinite(lastWatchedAt)) throw new Error(`Data di visione non valida nella serie "${rawSeries.title}".`);
     return {
@@ -96,6 +100,7 @@ function validateLibraryData(input) {
       title: rawSeries.title.trim() || 'Senza titolo',
       updatedAt: Math.max(0, Number(rawSeries.updatedAt) || Number(rawSeries.addedAt) || 0),
       episodes,
+      movieSources,
       introDuration: nonNegativeSeconds(rawSeries.introDuration),
       outroDuration: nonNegativeSeconds(rawSeries.outroDuration),
       personalRating: personalRating(rawSeries.personalRating),
@@ -260,7 +265,7 @@ class Store extends EventEmitter {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
+    const allowed = ['title', 'altTitle', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     s.updatedAt = Date.now();
     s.introDuration = nonNegativeSeconds(s.introDuration);
@@ -407,7 +412,7 @@ class Store extends EventEmitter {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
+    const allowed = ['title', 'altTitle', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) s[key] = fields[key];
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);

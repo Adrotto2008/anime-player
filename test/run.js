@@ -13,6 +13,8 @@ const { CloudService, readConfig, PROJECT_REF, mergeLibrarySnapshots, compressLi
 
 const shaderDir = path.join(__dirname, '..', 'shaders');
 let n = 0; const ok = (name) => console.log('  ok', ++n, name);
+execFileSync(process.execPath, ['test/franchise.js'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['test/source-discovery.js'], { stdio: 'inherit' });
 
 // --- pattern
 assert.deepStrictEqual(P.expandPattern('http://x/ep{ep}.mp4', 1, 3).map((e) => e.url), ['http://x/ep1.mp4', 'http://x/ep2.mp4', 'http://x/ep3.mp4']);
@@ -238,9 +240,18 @@ ok('resume: posizione breve salvata all’uscita senza arrotondamento a zero');
 // --- IMDb: normalizzazione titolo, riconoscimento stagione e rating chart
 const { cleanTitleForImdb, detectSeasonFromTitle, applyImdbRatingsToEpisodes } = require('../src/metadata');
 const rendererSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
-assert.ok(rendererSource.includes('const librarySeason = detectSeasonFromTitle(s.title)'));
-assert.ok(rendererSource.includes('sn.season === librarySeason'));
+assert.ok(rendererSource.includes('chartSeasonForSeries(series)'));
+assert.ok(rendererSource.includes('go({ name: \'series\', id: mapped.id, episodeId: libraryEpisode.id })'));
 assert.ok(rendererSource.includes("'data-episode-id': e.id"));
+const originalRenderer = execFileSync('git', ['show', 'HEAD:renderer/app.js'], { encoding: 'utf8' });
+const episodeRows = (source) => { const normalized = source.replace(/\r\n/g, '\n'); return normalized.slice(normalized.indexOf('function episodeRow(s, e) {'), normalized.indexOf('\nasync function play(sid, eid)')); };
+assert.strictEqual(episodeRows(rendererSource), episodeRows(originalRenderer), 'episodeRow must remain byte-for-byte unchanged');
+const cssSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'style.css'), 'utf8');
+const originalCss = execFileSync('git', ['show', 'HEAD:renderer/style.css'], { encoding: 'utf8' });
+for (const selector of ['.eps', '.ep .th', '.ep .cover', '.th']) {
+  const rule = (source) => source.match(new RegExp(`${selector.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*\\{[^}]*\\}`, 'g')) || [];
+  assert.deepStrictEqual(rule(cssSource), rule(originalCss), `${selector} episode thumbnail rules must remain unchanged`);
+}
 
 assert.strictEqual(cleanTitleForImdb('Attack on Titan Season 2'), 'Attack on Titan');
 assert.strictEqual(cleanTitleForImdb('Attack on Titan: The Final Season Part 2'), 'Attack on Titan');
