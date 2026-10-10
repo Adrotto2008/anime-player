@@ -28,6 +28,8 @@ app.whenReady().then(async () => {
     const base=store.addSeries({title:'Black Clover',anilistId:97940,episodeCount:170,franchiseId:'black',franchiseType:'season',franchiseOrder:1,franchiseTitle:'Black Clover',imdbChart:chart});
     const s=store.addSeries({title:'Black Clover Season 2',anilistId:195604,franchiseId:'black',franchiseType:'season',imdbChart:chart});
     const ep=store.ensureEpisode(s,1);ep.duration=1380;ep.durationSource='Kitsu';
+    ep.thumb='https://example.test/shared-thumbnail.jpg';
+    store.ensureEpisode(s,2).thumb=ep.thumb;
     const first=store.ensureEpisode(base,52);first.duration=1380;first.progress.duration=2460;
     return {id:s.id,lib:store.snapshot(),franchiseId:'black',franchiseCount:2};
   });
@@ -82,6 +84,7 @@ app.whenReady().then(async () => {
     clearTimeout(store._timer);clearTimeout(timeout);win.destroy();app.exit(0);return;
   }
   assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'Black Clover Season 2');
+  assert.strictEqual(await js(`Array.from(document.querySelectorAll('.eps .th')).filter(el=>el.style.backgroundImage.includes('shared-thumbnail.jpg')).length`),2,'shared episode thumbnails must both remain visible');
   assert.ok((await js(`document.querySelector('.ep-info').textContent`)).includes('metadata'),'metadata duration must be labeled');
   await js(`Array.from(document.querySelectorAll('.actions button')).find(x=>x.textContent.includes(window.i18n.t('ratingsChart'))).click()`);await tick();
   await js(`document.querySelector('.ratings-cell[title^="S2 E1:"]').click()`);await tick();

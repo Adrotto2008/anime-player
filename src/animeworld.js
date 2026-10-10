@@ -1,6 +1,7 @@
 'use strict';
 
 const cheerio = require('cheerio');
+const { candidateDiagnostics, redact } = require('./source-state');
 
 const DEFAULT_BASE_URL = 'https://www.animeworld.ac';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -121,7 +122,8 @@ class AnimeWorldClient {
     }).get();
   }
 
-  async _episodeSources(animeUrl, {year,episodeCount,isAiring} = {}) {
+  async _episodeSources(animeUrl, {year,episodeCount,isAiring,episodeNumbers} = {}) {
+    this.lastDiscovery ||= {errors:[]};
     const response = await this._request(animeUrl, { referer: `${this.baseUrl}/` });
     const $ = cheerio.load(await response.text());
     if (!$('.info').length && !$('.servers-tabs').length) throw new Error('Pagina episodi AnimeWorld non riconosciuta.');
@@ -148,14 +150,16 @@ class AnimeWorldClient {
     const entries = [...episodes.values()];
     this.lastDiscovery ||= {errors:[]};
     this.lastDiscovery.episodesFound = entries.length;
+    this.lastDiscovery.episodeNumbers = entries.map(item => item.number);
     if(episodeCount && !isAiring && entries.some(item=>item.number>Number(episodeCount))) {
       this.lastDiscovery.errors.push({phase:'match',message:'Numerazione episodi incompatibile con il record AniList'});return [];
     }
+    const selected = episodeNumbers ? entries.filter(item => episodeNumbers.includes(item.number)) : entries;
     const results = [];
     let cursor = 0;
-    const workers = Array.from({ length: Math.min(this.concurrency, entries.length) }, async () => {
-      while (cursor < entries.length) {
-        const item = entries[cursor++];
+    const workers = Array.from({ length: Math.min(this.concurrency, selected.length) }, async () => {
+      while (cursor < selected.length) {
+        const item = selected[cursor++];
         for (const serverDataId of item.serverDataIds) {
           try {
             const infoResponse = await this._request(`/api/episode/info?id=${encodeURIComponent(serverDataId)}&alt=0`, {
@@ -166,7 +170,7 @@ class AnimeWorldClient {
             const url = new URL(info.grabber, `${this.baseUrl}/`);
             if (!['http:', 'https:'].includes(url.protocol)) continue;
             results.push({ number: item.number, url: url.toString(), resolutionState: 'resolved' });
-          } catch (error) { this.lastDiscovery.errors.push({number:item.number,phase:'episode',message:error.message}); }
+          } catch (error) { this.lastDiscovery.errors.push({number:item.number,phase:'episode',message:redact(error.message)}); }
         }
       }
     });
@@ -174,7 +178,7 @@ class AnimeWorldClient {
     return results;
   }
 
-  async findSources({ titles, year, episodeCount, isAiring } = {}) {
+  async findSources({ titles, year, episodeCount, isAiring, episodeNumbers } = {}) {
     this.lastDiscovery = { status:'title_not_found', errors:[], episodesFound:0 };
     const aliases = (Array.isArray(titles) ? titles : [titles]).map((value) => String(value || '').trim()).filter(Boolean);
     if (!aliases.length) return [];
@@ -184,7 +188,7 @@ class AnimeWorldClient {
       try {
         for (const result of await this.search(title)) if (!candidates.has(result.link)) candidates.set(result.link, result);
         completedQueries++;
-      } catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:error.message}); }
+      } catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:redact(error.message)}); }
     }
     if (!completedQueries && lastError) throw lastError;
     let match = selectExactMatch([...candidates.values()], aliases, { year, episodeCount, isAiring });
@@ -195,12 +199,13 @@ class AnimeWorldClient {
           for (const result of await this.searchCatalogue(title)) if (!candidates.has(result.link)) candidates.set(result.link,result);
           match = selectExactMatch([...candidates.values()], aliases, {year,episodeCount,isAiring});
           if (match) break;
-        } catch (error) { this.lastDiscovery.errors.push({phase:'catalogue',message:error.message}); }
+        } catch (error) { this.lastDiscovery.errors.push({phase:'catalogue',message:redact(error.message)}); }
       }
     }
+    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, {year,episodeCount,isAiring}, match, titleKey);
     if (!match) return [];
     this.lastDiscovery.matchedTitle = match.name;
-    const sources = await this._episodeSources(match.link,{year,episodeCount,isAiring});
+    const sources = await this._episodeSources(match.link,{year,episodeCount,isAiring,episodeNumbers});
     this.lastDiscovery.status = sources.length ? 'found' : this.lastDiscovery.errors.some(error=>error.phase==='match') ? 'title_not_found'
       : this.lastDiscovery.errors.length ? 'provider_error' : 'episodes_not_found';
     return sources;

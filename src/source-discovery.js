@@ -1,11 +1,12 @@
 'use strict';
 
 const { isValidSource } = require('./patterns');
+const { providerTitles, redact } = require('./source-state');
 
 async function discoverSeriesSources(series, titles = [series.title], { store, animeUnity, animeWorld }) {
   const outcomes = {};
   const linkedNumbers = new Set(); const foundNumbers = new Set();
-  titles = [...new Set([series.title, series.altTitle, ...(series.titleAliases || []), ...(titles || [])].map((title) => String(title || '').trim()).filter(Boolean))];
+  titles = providerTitles(series, titles).map(title => String(title).trim()).filter(Boolean);
   for (const [name, client, options] of [
     ['animeunity', animeUnity, { titles, year: series.year, episodeCount: series.episodeCount, isAiring:series.status === 'RELEASING' }],
     ['animeworld', animeWorld, { titles, year: series.year, episodeCount: series.episodeCount, isAiring:series.status === 'RELEASING' }],
@@ -13,9 +14,17 @@ async function discoverSeriesSources(series, titles = [series.title], { store, a
     try {
       const found = await client.findSources(options);
       if (!store.getSeries(series.id)) return {cancelled:true};
+      const rejectedSources = (Array.isArray(found) ? found : []).flatMap(source => {
+        const reasons = [];
+        if (!Number.isSafeInteger(source?.number) || source.number < 0) reasons.push('invalid_episode_number');
+        else if (series.episodeCount && source.number > series.episodeCount) reasons.push('episode_out_of_range');
+        if (typeof source?.url !== 'string' || !/^https?:\/\//i.test(source.url) || !isValidSource(source.url)) reasons.push('invalid_url');
+        if (source?.resolutionState === 'found') reasons.push('media_unresolved');
+        return reasons.length ? [{ number: source?.number, reasons }] : [];
+      });
       const sources = (Array.isArray(found) ? found : []).filter((source) => Number.isSafeInteger(source?.number) && source.number >= 0
         && (!series.episodeCount || source.number <= series.episodeCount) && typeof source.url === 'string'
-        && /^https?:\/\//i.test(source.url) && isValidSource(source.url))
+        && /^https?:\/\//i.test(source.url) && isValidSource(source.url) && source.resolutionState !== 'found')
         .map((source) => ({ ...source, provider: name, ...(name === 'animeworld' ? { referer: 'https://www.animeworld.ac/' } : {}) }));
       const before = new Map(store.getSeries(series.id).episodes.map((episode) => [episode.number, new Set(episode.sources.map((source) => source.url))]));
       const linkedEpisodes = new Set(sources.filter((source) => !before.get(source.number)?.has(source.url)).map((source) => source.number));
@@ -24,13 +33,13 @@ async function discoverSeriesSources(series, titles = [series.title], { store, a
       if (missing.length) store.addSources(series.id, missing);
       sources.forEach((source) => foundNumbers.add(source.number));
       linkedEpisodes.forEach((number) => linkedNumbers.add(number));
-      outcomes[name] = { ...client.lastDiscovery, episodesAdded: linkedEpisodes.size, linksFound: sources.length,
+      outcomes[name] = { ...client.lastDiscovery, rejectedSources, episodesAdded: linkedEpisodes.size, linksFound: (Array.isArray(found) ? found : []).length,
         linksResolved: sources.filter(source=>source.resolutionState === 'resolved').length,
-        status: sources.length ? 'found' : client.lastDiscovery?.status || 'title_not_found',
+        status: sources.length ? 'found' : rejectedSources.some(item => item.reasons.includes('media_unresolved')) ? 'media_unresolved' : client.lastDiscovery?.status || 'title_not_found',
         playbackVerified:false, unavailable: client.lastDiscovery?.status === 'provider_error' };
     } catch (err) {
-      console.warn(`${name} source discovery failed:`, err.message);
-      outcomes[name] = { episodesAdded: 0, linksFound:0, status:'provider_error', error:err.message, unavailable: true };
+      console.warn(`${name} source discovery failed:`, redact(err.message));
+      outcomes[name] = { episodesAdded: 0, linksFound:0, status:'provider_error', error:redact(err.message), unavailable: true };
     }
   }
   const result = {

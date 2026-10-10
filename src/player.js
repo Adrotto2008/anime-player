@@ -3,11 +3,14 @@ const fs = require('fs');
 const path = require('path');
 const { MpvSession, pipePath } = require('./mpv');
 const A4K = require('./anime4k');
+const { urlLifetime, redact } = require('./source-state');
 
 class PlayerManager {
   // paths: { shaderDir, userData }; notify(channel, payload)
-  constructor({ store, paths, notify }) {
+  constructor({ store, paths, notify, resolveAutomaticSource }) {
     this.store = store; this.paths = paths; this.notify = notify; this.cur = null;
+    this.resolveAutomaticSource = resolveAutomaticSource;
+    this.playRequestId = 0;
     this.inputConf = path.join(paths.userData, 'input.conf');
   }
 
@@ -27,6 +30,7 @@ class PlayerManager {
   _emitState() { this.notify('player:state', this.state()); }
 
   async play(seriesId, episodeId, opts = {}) {
+    const requestId = opts.requestId ?? ++this.playRequestId;
     const series = this.store.getSeries(seriesId);
     const ep = this.store.getEpisode(seriesId, episodeId);
     if (!series || !ep) throw new Error('Episodio non trovato');
@@ -34,20 +38,41 @@ class PlayerManager {
     const title = `${series.title} — Ep. ${ep.number}${ep.title ? ' · ' + ep.title : ''}`;
     const resume = !ep.progress.watched && ep.progress.pos > 0 ? Math.max(0, ep.progress.pos) : 0;
     this.store.setProgress(seriesId, episodeId, {}); // aggiorna "ultima visione"
-    const sourceIndex = opts.sourceIndex || 0;
+    const sourceIndex = opts.sourceIndex ?? 0;
     const source = ep.sources[sourceIndex];
-    return this._launch({ series, ep, url: source.url, sourceIndex, title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });
+    if (!source) throw new Error('Sorgente non trovata');
+    const attempted = new Set(opts.attempted || []); attempted.add(source);
+    if (source.provider && (urlLifetime(source.url).temporary || source.resolutionState === 'found')) {
+      try {
+        if (!this.resolveAutomaticSource) {
+          const expiry = urlLifetime(source.url).expiresAt;
+          if (source.resolutionState === 'found' || expiry && expiry <= Date.now()) throw new Error('Sorgente temporanea scaduta o URL multimediale non risolto');
+        } else {
+          const fresh = await this.resolveAutomaticSource(source, series, ep);
+          if (requestId !== this.playRequestId) return;
+          if (!fresh || fresh.resolutionState !== 'resolved') throw new Error('URL multimediale non risolto');
+          if (!this.store.getEpisode(seriesId, episodeId)?.sources.includes(source)) return;
+          if (!this.store.refreshSource(seriesId, episodeId, source, fresh)) throw new Error('Aggiornamento della sorgente non riuscito');
+        }
+      } catch (error) {
+        if (requestId !== this.playRequestId) return;
+        this.store.markSourceFailure(seriesId, episodeId, source.url, {error: error.message});
+        return this._fallback({series, ep, sourceIndex, source, attempted, requestId}, redact(error.message));
+      }
+    }
+    return this._launch({ series, ep, url: source.url, sourceIndex:ep.sources.indexOf(source), source, attempted, requestId, title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });
   }
 
   async playUrl(url, presetId) {
     const title = url.split('/').pop() || url;
-    return this._launch({ series: null, ep: null, url, sourceIndex: 0, title, start: 0, referer: '', presetId: presetId || this.store.data.settings.defaultPreset });
+    return this._launch({ series: null, ep: null, url, sourceIndex: 0, requestId:++this.playRequestId, title, start: 0, referer: '', presetId: presetId || this.store.data.settings.defaultPreset });
   }
 
   async _launch(c) {
     const settings = this.store.data.settings;
     if (!settings.mpvPath) throw new Error('mpv non configurato: imposta il percorso in Impostazioni.');
-    await this.stop();
+    await this.stop({invalidate:false});
+    if (c.requestId != null && c.requestId !== this.playRequestId) return;
     this._writeInputConf();
     const pipe = pipePath();
     const args = A4K.buildArgs({ settings: { ...settings, userAgent: c.userAgent || settings.userAgent }, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, inputConf: this.inputConf, pipe, shaderDir: this.paths.shaderDir });
@@ -63,10 +88,11 @@ class PlayerManager {
       cur.lastSave = Date.now();
     };
     session.on('time', (t) => {
-      if(t>0 && cur.dur>0 && cur.ep && !cur.playbackVerified) {
+      if(cur.observedTime != null && t > cur.observedTime && cur.dur>0 && cur.ep && !cur.playbackVerified) {
         cur.playbackVerified=true;
         this.store.markSourcePlayback(cur.series.id,cur.ep.id,cur.url);
       }
+      cur.observedTime = t;
       const delta = t - cur.lastReportedPos;
       if (delta > 0 && delta <= 5) cur.playedSeconds += delta;
       cur.lastReportedPos = t;
@@ -103,13 +129,13 @@ class PlayerManager {
     this._emitState();
   }
 
-  _onExit(cur, { eof, error }) {
+  _onExit(cur, { eof, error, code, signal, stderr, stdout }) {
     if (this.cur !== cur) return; // già sostituita da un'altra sessione
     this.cur = null;
     if (cur.ep) {
       clearTimeout(cur.saveTimer);
       const { pos, dur } = cur;
-      const watched = eof || (dur > 0 && pos / dur >= 0.92);
+      const watched = !error && (eof || (dur > 0 && pos / dur >= 0.92));
       if (cur.ep.progress.watched) this.store.setProgress(cur.series.id, cur.ep.id, { watched: true, pos: 0, duration: dur }, { forceSync: true });
       else this.store.setProgress(cur.series.id, cur.ep.id, watched ? { watched: true, pos: 0, duration: dur } : { watched: false, pos: Math.max(0, pos), duration: Math.max(0, dur) }, { forceSync: true });
       if (typeof this.onWatchSession === 'function') {
@@ -130,11 +156,9 @@ class PlayerManager {
     if (cur.stopping) return;
 
     if (cur.ep && error && !eof) {
-      const next = cur.sourceIndex + 1;
-      if (next < cur.ep.sources.length) {
-        this.notify('player:error', `Link non riproducibile (${error}). Provo la sorgente ${next + 1}…`);
-        this.play(cur.series.id, cur.ep.id, { sourceIndex: next }).catch((e) => this.notify('player:error', e.message));
-      } else this.notify('player:error', `Impossibile riprodurre il link: ${error}`);
+      this.store.markSourceFailure(cur.series.id, cur.ep.id, cur.url, {error, code});
+      this.notify('player:source-failed', { seriesId:cur.series.id, episodeId:cur.ep.id, provider:(cur.source || cur.ep.sources[cur.sourceIndex])?.provider, code, signal, error:redact(error), stderr:redact(stderr), stdout:redact(stdout) });
+      this._fallback(cur, error).catch(e => this.notify('player:error', redact(e.message)));
       return;
     }
     if (!cur.ep) return;
@@ -144,6 +168,19 @@ class PlayerManager {
     if (cur.nav === 'next' || (eof && this.store.data.settings.autoplayNext)) target = eps.slice(i + 1).find((e) => e.sources.length);
     else if (cur.nav === 'prev') target = eps.slice(0, i).reverse().find((e) => e.sources.length);
     if (target) this.play(cur.series.id, target.id).catch((e) => this.notify('player:error', e.message));
+  }
+
+  async _fallback(cur, error) {
+    if (cur.requestId != null && cur.requestId !== this.playRequestId) return;
+    const source = cur.source || cur.ep.sources[cur.sourceIndex];
+    const attempted = new Set(cur.attempted || [source]);
+    const provider = source?.provider;
+    const remaining = cur.ep.sources.map((source, index) => ({source,index})).filter(item => !attempted.has(item.source));
+    // Prefer the other provider over another cached token for the failed one.
+    const next = remaining.find(item => item.source.provider !== provider) || remaining[0];
+    if (!next) { this.notify('player:error', `Impossibile riprodurre il link: ${redact(error)}`); return; }
+    this.notify('player:error', `Link non riproducibile (${redact(error)}). Provo la sorgente ${next.index + 1}…`);
+    return this.play(cur.series.id, cur.ep.id, {sourceIndex:next.index, attempted, requestId:cur.requestId});
   }
 
   setPreset(presetId) {
@@ -201,7 +238,8 @@ class PlayerManager {
     return kind === 'intro' ? this.skipIntro() : this.skipEnding();
   }
 
-  async stop() {
+  async stop({invalidate = true} = {}) {
+    if (invalidate) this.playRequestId++;
     const cur = this.cur;
     if (!cur) return;
     await new Promise((resolve) => {

@@ -4,6 +4,7 @@ const path = require('path');
 const crypto = require('crypto');
 const { EventEmitter } = require('events');
 const { hostLabel, isValidSource } = require('./patterns');
+const { sourceMetadata, redact, urlLifetime } = require('./source-state');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -68,6 +69,7 @@ function validateLibraryData(input) {
           ...(typeof source.userAgent === 'string' && source.userAgent.length <= 300 ? { userAgent: source.userAgent } : {}),
           ...(['found','resolved'].includes(source.resolutionState) ? {resolutionState:source.resolutionState} : {}),
           ...(Number(source.playbackVerifiedAt)>0 ? {playbackVerifiedAt:Number(source.playbackVerifiedAt)} : {}),
+          ...sourceMetadata(source),
         };
       });
       const p = rawEpisode.progress || {};
@@ -306,13 +308,16 @@ class Store extends EventEmitter {
     for (const it of items) {
       const ep = this.ensureEpisode(s, it.number);
       if (it.title && !ep.title) ep.title = it.title;
-      const existing = ep.sources.find((source) => source.url === it.url);
+      const existing = ep.sources.find((source) => source.url === it.url ||
+        it.provider === 'animeunity' && source.provider === it.provider && it.providerEpisodeId && source.providerEpisodeId === it.providerEpisodeId);
       if (existing) {
-        if (['animeunity', 'animeworld'].includes(it.provider)) existing.provider = it.provider;
-        if (it.referer) existing.referer = it.referer;
-        if (it.userAgent) existing.userAgent = it.userAgent;
+        if (existing.url !== it.url) {
+          this.refreshSource(sid, ep.id, existing, it);
+          added++;
+        }
       } else {
         ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(['animeunity', 'animeworld'].includes(it.provider) ? { provider: it.provider } : {}), ...(it.referer ? { referer: it.referer } : {}), ...(it.userAgent ? { userAgent: it.userAgent } : {}), ...(['found','resolved'].includes(it.resolutionState) ? {resolutionState:it.resolutionState} : {}) });
+        Object.assign(ep.sources.at(-1), sourceMetadata(it));
         ep.updatedAt = Date.now(); added++;
       }
       const priority = (source) => source.provider === 'animeunity' ? 0 : source.provider === 'animeworld' ? 1 : 2;
@@ -335,9 +340,30 @@ class Store extends EventEmitter {
   markSourcePlayback(sid, eid, url) {
     const ep=this.getEpisode(sid,eid);
     const source=ep?.sources.find(item=>item.url===url);
-    if(!source || source.playbackVerifiedAt) return;
+    if(!source) return;
+    delete source.playbackFailedAt; delete source.playbackError; delete source.playbackExitCode;
     source.playbackVerifiedAt=Date.now();ep.updatedAt=source.playbackVerifiedAt;
     this.save();
+  }
+
+  refreshSource(sid, eid, source, fresh) {
+    const ep = this.getEpisode(sid, eid);
+    if (!ep?.sources.includes(source) || !['animeunity', 'animeworld'].includes(source.provider) || source.provider !== fresh.provider) return false;
+    const replaceReferer = !source.referer || source.referer === source.resolverReferer || !source.resolverReferer && urlLifetime(source.referer).temporary;
+    source.url = fresh.url; source.label = hostLabel(fresh.url);
+    Object.assign(source, sourceMetadata(fresh));
+    // The embed Referer carries the same credentials as the resolved URL.
+    if (fresh.referer && replaceReferer) source.referer = fresh.referer;
+    delete source.playbackVerifiedAt; delete source.playbackFailedAt; delete source.playbackError; delete source.playbackExitCode;
+    ep.updatedAt = Date.now(); this.save(); return true;
+  }
+
+  markSourceFailure(sid, eid, url, { error, code } = {}) {
+    const ep = this.getEpisode(sid, eid); const source = ep?.sources.find(item => item.url === url);
+    if (!source) return;
+    source.playbackFailedAt = Date.now(); source.playbackError = redact(error).slice(0,1000);
+    source.playbackExitCode = Number.isInteger(code) ? code : null;
+    ep.updatedAt = source.playbackFailedAt; this.save();
   }
 
   deleteEpisode(sid, eid) {

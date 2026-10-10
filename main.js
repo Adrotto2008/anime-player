@@ -328,7 +328,21 @@ app.whenReady().then(async () => {
   const userDataPath = app.getPath('userData');
   store = new Store(path.join(userDataPath, 'library.json'));
   mpvManager = createMpvManager({ userDataPath, installDirectory: store.data.settings.mpvInstallDirectory || '' });
-  player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: userDataPath }, notify: send });
+  player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: userDataPath }, notify: send,
+    resolveAutomaticSource: async (source, series, episode) => {
+      // Separate sessions keep refresh diagnostics/cookies independent of background discovery.
+      const client = source.provider === 'animeunity' ? new AnimeUnityClient() : new AnimeWorldClient();
+      if (source.provider === 'animeunity' && source.providerEpisodeId) {
+        client.lastDiscovery = { errors: [] };
+        return client._resolveEpisode({ id: source.providerEpisodeId, number: episode.number }, `${client.baseUrl}/`);
+      }
+      const titles = require('./src/source-state').providerTitles(series);
+      const fresh = await client.findSources({ titles, year:series.year, episodeCount:series.episodeCount,
+        isAiring:series.status === 'RELEASING', episodeNumbers:[episode.number] });
+      const selected = fresh.find(item => item.number === episode.number && item.resolutionState === 'resolved');
+      return selected ? {...selected, provider:source.provider} : null;
+    },
+  });
   cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
   register();

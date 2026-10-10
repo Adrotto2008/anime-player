@@ -2,6 +2,7 @@
 
 const cheerio = require('cheerio');
 const { titleKey } = require('./animeworld');
+const { redact, candidateDiagnostics, readEmbedText } = require('./source-state');
 
 const DEFAULT_BASE_URL = 'https://www.animeunity.so';
 const USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36';
@@ -136,21 +137,29 @@ class AnimeUnityClient {
         try { embedUrl = extractUrl(JSON.parse(value), this.baseUrl); } catch { /* response HTML/stringa */ }
       }
       if (!embedUrl) { this.lastDiscovery.errors.push({number,phase:'embed',message:'URL embed non trovato'}); return null; }
-      let resolvedUrl = embedUrl;
+      let resolvedUrl = null;
       try {
         const embed = await this.fetch(embedUrl, { headers: { 'User-Agent': USER_AGENT, Referer: animeUrl }, signal: AbortSignal.timeout(this.timeoutMs), redirect: 'follow' });
         if (embed.ok) {
-          const html = await embed.text();
-          resolvedUrl = extractUrl(html, embedUrl) || embedUrl;
+          const contentType = embed.headers.get('content-type') || '';
+          if (/^(video\/|audio\/)|mpegurl/i.test(contentType) || /octet-stream/i.test(contentType) && /\.(mp4|mkv|webm|m3u8)(?:\?|$)/i.test(embed.url || embedUrl)) {
+            resolvedUrl = embed.url || embedUrl;
+            await embed.body?.cancel();
+          } else {
+            const html = await readEmbedText(embed);
+            resolvedUrl = extractUrl(html, embedUrl);
+            if (!resolvedUrl) this.lastDiscovery.errors.push({number,phase:'resolve',message:'URL multimediale non estratto dall’embed'});
+          }
         }
         else this.lastDiscovery.errors.push({number,phase:'resolve',message:`Embed HTTP ${embed.status}`});
-      } catch (error) { this.lastDiscovery.errors.push({number,phase:'resolve',message:error.message}); }
-      return { number, url: resolvedUrl, provider: 'animeunity', referer: embedUrl,
-        resolutionState: resolvedUrl === embedUrl ? 'found' : 'resolved' };
-    } catch (error) { this.lastDiscovery.errors.push({number,phase:'episode',message:error.message}); return null; }
+      } catch (error) { this.lastDiscovery.errors.push({number,phase:'resolve',message:redact(error.message)}); }
+      this.lastDiscovery.urlsFound = (this.lastDiscovery.urlsFound || 0) + 1;
+      return { number, url: resolvedUrl || embedUrl, provider: 'animeunity', referer: embedUrl, resolverReferer: embedUrl,
+        providerEpisodeId: id, foundAt: Date.now(), ...(resolvedUrl ? {resolvedAt:Date.now()} : {}), resolutionState: resolvedUrl ? 'resolved' : 'found' };
+    } catch (error) { this.lastDiscovery.errors.push({number,phase:'episode',message:redact(error.message)}); return null; }
   }
 
-  async getEpisodeSources(anime) {
+  async getEpisodeSources(anime, { episodeNumbers } = {}) {
     this.lastDiscovery ||= {errors:[]};
     const animeUrl = validHttpUrl(anime.link || `/anime/${anime.id}-${anime.slug}`, `${this.baseUrl}/`);
     if (!animeUrl || new URL(animeUrl).origin !== new URL(this.baseUrl).origin) throw new Error('Pagina AnimeUnity non valida.');
@@ -169,11 +178,13 @@ class AnimeUnityClient {
     }
     const unique = [...new Map(episodes.map((ep) => [Number(ep.id), ep]).filter(([id]) => Number.isSafeInteger(id) && id > 0)).values()];
     this.lastDiscovery.episodesFound = unique.length;
+    this.lastDiscovery.episodeNumbers = unique.map(ep => Number(ep.number));
+    const selected = episodeNumbers ? unique.filter(ep => episodeNumbers.includes(Number(ep.number))) : unique;
     let cursor = 0;
     const results = [];
-    await Promise.all(Array.from({ length: Math.min(this.concurrency, unique.length) }, async () => {
-      while (cursor < unique.length) {
-        const episode = unique[cursor++];
+    await Promise.all(Array.from({ length: Math.min(this.concurrency, selected.length) }, async () => {
+      while (cursor < selected.length) {
+        const episode = selected[cursor++];
         const resolved = await this._resolveEpisode(episode, animeUrl);
         if (resolved) results.push(resolved);
       }
@@ -181,7 +192,7 @@ class AnimeUnityClient {
     return results.sort((a, b) => a.number - b.number);
   }
 
-  async findSources({ titles, year, episodeCount, isAiring } = {}) {
+  async findSources({ titles, year, episodeCount, isAiring, episodeNumbers } = {}) {
     this.lastDiscovery = { status: 'title_not_found', errors: [], episodesFound: 0 };
     const aliases = (Array.isArray(titles) ? titles : [titles]).map((value) => String(value || '').trim()).filter(Boolean);
     if (!aliases.length) return [];
@@ -189,13 +200,14 @@ class AnimeUnityClient {
     let completedQueries = 0; let lastError;
     for (const alias of aliases) {
       try { for (const item of await this.search(alias)) candidates.set(item.id, item); completedQueries++; }
-      catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:error.message}); }
+      catch (error) { lastError = error; this.lastDiscovery.errors.push({phase:'search',message:redact(error.message)}); }
     }
     if (!completedQueries && lastError) throw lastError;
     const match = selectExactMatch([...candidates.values()], aliases, { year, episodeCount, isAiring });
+    this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, {year,episodeCount,isAiring}, match, titleKey);
     if (!match) return [];
     this.lastDiscovery.matchedTitle = match.title;
-    const sources = await this.getEpisodeSources(match);
+    const sources = await this.getEpisodeSources(match, { episodeNumbers });
     this.lastDiscovery.status = sources.length ? 'found' : this.lastDiscovery.errors.length ? 'provider_error' : 'episodes_not_found';
     return sources;
   }

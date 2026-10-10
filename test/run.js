@@ -246,7 +246,8 @@ assert.ok(rendererSource.includes('go({ name: \'series\', id: mapped.id, episode
 assert.ok(rendererSource.includes("'data-episode-id': e.id"));
 const originalRenderer = execFileSync('git', ['show', 'HEAD:renderer/app.js'], { encoding: 'utf8' });
 const episodeVisuals = (source) => { const normalized = source.replace(/\r\n/g, '\n'); return normalized.slice(normalized.indexOf('function episodeRow(s, e) {'), normalized.indexOf('  const skipChip', normalized.indexOf('function episodeRow(s, e) {'))); };
-assert.strictEqual(episodeVisuals(rendererSource), episodeVisuals(originalRenderer), 'episode thumbnail rendering must remain byte-for-byte unchanged');
+const allowRepeatedThumbs = source => source.replace(/  const priorThumbs = [^\n]+\n  const distinctThumb = e\.thumb && !priorThumbs\.has\(e\.thumb\);/, '  const distinctThumb = Boolean(e.thumb);');
+assert.strictEqual(episodeVisuals(rendererSource), allowRepeatedThumbs(episodeVisuals(originalRenderer)), 'thumbnail design must remain unchanged apart from allowing repeated images');
 const cssSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'style.css'), 'utf8');
 const originalCss = execFileSync('git', ['show', 'HEAD:renderer/style.css'], { encoding: 'utf8' });
 for (const selector of ['.eps', '.ep .th', '.ep .cover', '.th']) {

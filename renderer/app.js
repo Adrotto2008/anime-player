@@ -796,7 +796,7 @@ function seriesView(s) {
     Object.entries(s.sourceDiscovery.providers).map(([name,result])=>h('p',null,
       `${name === 'animeunity' ? 'AnimeUnity' : 'AnimeWorld'}: ${t('providerStatus_'+result.status)}${result.linksFound ? ` · ${result.linksFound} ${t('linksFound')} · ${result.linksResolved || 0} ${t('linksResolved')}` : ''}`,
       result.error ? ` · ${result.error}` : '', (result.errors || []).length ? ` · ${result.errors[0].message} (${result.errors.length})` : '')),
-    h('span',null,t('playbackVerifiedCount',s.episodes.flatMap(ep=>ep.sources).filter(source=>source.playbackVerifiedAt).length))) : null;
+    h('span',null,t('playbackVerifiedCount',s.episodes.flatMap(ep=>ep.sources).filter(source=>source.playbackVerifiedAt && !source.playbackFailedAt).length))) : null;
   const advanced = h('details', { class: 'adv' }, h('summary', null, t('advanced')),
     field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })),
     h('div', { class: 'two' },
@@ -941,8 +941,7 @@ function ratingsChartView(s) {
 
 function episodeRow(s, e) {
   const has = e.sources.length > 0; const p = e.progress; const resume = !p.watched && p.pos > 10;
-  const priorThumbs = new Set(s.episodes.filter((item) => item.number < e.number).map((item) => item.thumb).filter(Boolean));
-  const distinctThumb = e.thumb && !priorThumbs.has(e.thumb);
+  const distinctThumb = Boolean(e.thumb);
   const image = distinctThumb ? e.thumb : (s.banner || null);
   const seed = (Number(e.number) * 47 + String(e.title || '').length * 13) % 360;
   const visualStyle = { ...bg(image), '--ep-hue': `${seed}deg`, '--ep-pos': `${20 + (seed % 61)}%` };
@@ -1102,7 +1101,7 @@ function openEditLinks(s, e) {
       const value = h('span', { class: 'muted small' }, statusNames.checking);
       const line = h('div', { style: { display: 'flex', justifyContent: 'space-between', gap: '12px', alignItems: 'center' } },
         h('span', { class: 'small', style: { overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }, title: source.url },
-          `${source.provider ? `${source.provider} · ` : ''}${source.resolutionState === 'resolved' ? t('linksResolved') : t('linksFound')} · ${source.playbackVerifiedAt ? t('playbackVerified') : t('playbackUnverified')} · ${source.url}`), value);
+          `${source.provider ? `${source.provider} · ` : ''}${source.resolutionState === 'resolved' ? t('linksResolved') : t('linksFound')} · ${source.playbackFailedAt ? t('sourceFailed') : source.playbackVerifiedAt ? t('playbackVerified') : t('playbackUnverified')} · ${source.url}`), value);
       statusRows.append(line);
       return { source, value };
     });

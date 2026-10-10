@@ -1,9 +1,18 @@
 # Anime Player
 
-Anime Player **v0.5.26** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.27** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Source lifecycle fixes — 0.5.27
+
+- Unresolved AnimeUnity embeds are reported as found URLs and excluded from automatic playable-source import. Resolution is separate from playback observed by mpv.
+- Signed automatic URLs are refreshed before playback using provider episode IDs (legacy links repeat strict discovery for that episode). Token rotation updates the existing automatic source and clears verification of the previous URL; manual links, custom headers, ratings and progress are preserved.
+- Failed source state and redacted mpv diagnostics retain exit codes. IPC end-file errors trigger fallback even when mpv exits with code 0; a 30-second loading timeout prevents indefinite startup. Another provider is tried before duplicate cached tokens, and Stop cancels pending refresh.
+- Verified aliases for specific AniList IDs resolve Black Clover 2 and Re:Zero 2/2 Part 2/3/4; exact-title, year, episode-count and ambiguity checks remain in force. Diagnostics retain candidates and exclusion reasons.
+- Repeated episode thumbnails remain visible without changing their design. Live Re:Zero Season 2 has only one Kitsu thumbnail; AniList returns episodes 51–66, which cannot safely fill this season.
+- Tests include real mpv HTTP 403 → alternative-source playback, URL rotation/import, strict matching, protected user data, and an Electron check that duplicate thumbnails remain visible. Live bounded probes observed E1 playback on both providers for Monster, Black Clover 2 and Re:Zero 2, 2 Part 2 and 4. Other episodes and the original intermittent Monster failure remain unverified.
 
 ## Regression audit — 0.5.26
 

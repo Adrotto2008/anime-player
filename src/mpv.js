@@ -4,6 +4,7 @@ const net = require('net');
 const os = require('os');
 const path = require('path');
 const { EventEmitter } = require('events');
+const { redact } = require('./source-state');
 
 function pipePath() {
   const name = `anime-player-mpv-${process.pid}-${Date.now()}`;
@@ -18,14 +19,22 @@ class MpvSession extends EventEmitter {
   }
 
   start() {
-    this.proc = spawn(this.mpvPath, this.args, { stdio: 'ignore' });
-    this.proc.on('error', (e) => { this.closed = true; this.emit('spawn-error', e); });
-    this.proc.on('exit', (code) => {
+    this.stderr = '';
+    this.stdout = '';
+    this.proc = spawn(this.mpvPath, this.args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true });
+    this.proc.stderr.on('data', data => { this.stderr = (this.stderr + data.toString()).slice(0,65536); });
+    this.proc.stdout.on('data', data => { this.stdout = (this.stdout + data.toString()).slice(0,65536); });
+    this.startupTimer = setTimeout(() => {
+      this.error = 'Timeout durante il caricamento della sorgente'; this.quit();
+    }, 30000);
+    this.proc.on('error', (e) => { this.closed = true; clearTimeout(this.startupTimer); this.emit('spawn-error', e); });
+    this.proc.on('exit', (code, signal) => {
       this.closed = true;
+      clearTimeout(this.startupTimer);
       if (this.sock) this.sock.destroy();
       // Se il link fallisce subito mpv esce prima che l'IPC sia connesso: si usa il codice di uscita (2 = file non riproducibile)
-      const error = this.error || (code === 2 ? 'impossibile aprire il link o il file' : code === 1 ? 'errore di avvio di mpv' : null);
-      this.emit('exit', { code, eof: this.eof, error });
+      const error = this.error || (code === 2 || code === 3 ? 'impossibile aprire il link o il file' : code === 1 ? 'errore di avvio di mpv' : code != null && ![0,4].includes(code) ? `mpv terminato con codice ${code}` : null);
+      this.emit('exit', { code, signal, eof: this.eof, error: error ? redact(error) : null, stderr: redact(this.stderr).slice(-4000), stdout: redact(this.stdout).slice(-4000) });
     });
     this._connect(0);
   }
@@ -57,13 +66,14 @@ class MpvSession extends EventEmitter {
   }
 
   _onMessage(m) {
+    if (m.event === 'file-loaded') { clearTimeout(this.startupTimer); this.emit('loaded'); }
     if (m.event === 'property-change') {
-      if (m.name === 'time-pos' && typeof m.data === 'number') this.emit('time', m.data);
+      if (m.name === 'time-pos' && typeof m.data === 'number') { clearTimeout(this.startupTimer); this.emit('time', m.data); }
       else if (m.name === 'duration' && typeof m.data === 'number') this.emit('duration', m.data);
       else if (m.name === 'pause') this.emit('pause', !!m.data);
     } else if (m.event === 'end-file') {
       if (m.reason === 'eof') this.eof = true;
-      else if (m.reason === 'error') this.error = m.file_error || 'errore di riproduzione';
+      else if (m.reason === 'error') { this.error = redact(m.file_error || 'errore di riproduzione'); this.quit(); }
     } else if (m.event === 'client-message' && Array.isArray(m.args)) {
       if (m.args[0] === 'ap-next') this.emit('nav', 'next');
       else if (m.args[0] === 'ap-prev') this.emit('nav', 'prev');
@@ -93,6 +103,7 @@ class MpvSession extends EventEmitter {
   }
 
   quit() {
+    clearTimeout(this.startupTimer);
     this.send(['quit']);
     setTimeout(() => { if (!this.closed && this.proc) this.proc.kill(); }, 1500);
   }

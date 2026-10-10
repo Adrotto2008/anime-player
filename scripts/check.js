@@ -4,6 +4,8 @@ execFileSync(process.execPath, ['test/animeworld.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/animeunity.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/source-check.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/player-sources.js'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['--check', 'src/source-state.js'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['test/source-lifecycle.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/mpv-manager.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/run.js'], { stdio: 'inherit' });
 for(const file of ['src/episode-ratings.js','test/audit-regressions.js','test/renderer-electron.js','test/renderer-runner.js']) execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
