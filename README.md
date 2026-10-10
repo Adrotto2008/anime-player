@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.29** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.30** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## AniList request limits — 0.5.30
+
+- Search, franchise traversal and metadata refresh share a paced queue. HTTP/GraphQL 429 responses respect Retry-After and X-RateLimit-Reset, with bounded retries and a useful retry time when the service remains unavailable.
+- Identical requests share in-flight work; successful search results and media records are cached briefly in memory. Adding a search result reuses its metadata instead of fetching the same record again. Errors are never cached as valid metadata.
+- If franchise discovery stays rate limited, the selected cached anime can still be added; the app explains that related seasons require a later retry. A missing cached record fails before writing the library.
+- Tests simulate rate limits and check preserved user data; the fix does not require resetting the library.
 
 ## Season recognition — 0.5.29
 

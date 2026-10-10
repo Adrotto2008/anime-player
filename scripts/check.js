@@ -4,6 +4,8 @@ execFileSync(process.execPath, ['test/animeworld.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/animeunity.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['--check', 'src/source-match.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/source-match.js'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['--check', 'src/anilist-client.js'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['test/anilist-client.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/source-check.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/player-sources.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['--check', 'src/source-state.js'], { stdio: 'inherit' });

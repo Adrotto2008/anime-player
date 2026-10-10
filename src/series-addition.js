@@ -24,8 +24,13 @@ function createSeriesAdder({ store, metadata, sourceQueue }) {
     try { graph = await resolveFranchise(anilistId, (ids) => metadata.getAnimeBatch(ids, { language })); }
     catch (error) {
       console.warn('AniList franchise lookup failed; adding the selected title only:', error.message);
-      const seed = await metadata.getAnime(anilistId, { language });
-      graph = { seed, items: [seed], movies: [], ambiguous: true };
+      // A search result already contains the selected record. A throttled
+      // franchise traversal must not issue another request into the same limit.
+      const seed = error.status === 429 && metadata.getCachedAnime
+        ? await metadata.getCachedAnime(anilistId, { language })
+        : await metadata.getAnime(anilistId, { language });
+      if (!seed) throw error;
+      graph = { seed, items: [seed], movies: [], ambiguous: true, deferred: error.status === 429 };
     }
     const allTitles = [...graph.items, ...graph.movies];
     const grouped = !graph.ambiguous && allTitles.length > 1;
@@ -79,6 +84,7 @@ function createSeriesAdder({ store, metadata, sourceQueue }) {
     if (!selectedId) throw new Error('Il risultato AniList selezionato non è stato salvato.');
     return { id: selectedId, franchiseId: grouped ? String(graph.items[0].anilistId) : null,
       franchiseCount: grouped ? records.length : 1, ambiguous: Boolean(graph.ambiguous),
+      franchiseDeferred: Boolean(graph.deferred),
       sourceDiscoveryPending: sourceIds.length > 0, lib: store.snapshot() };
   };
 }

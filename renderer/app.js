@@ -1003,7 +1003,8 @@ function openAddSeries() {
         const discoveries = Array.isArray(r.sourceDiscovery) ? r.sourceDiscovery.map((item) => item.sourceDiscovery).filter(Boolean) : [r.sourceDiscovery].filter(Boolean);
         const added = discoveries.reduce((sum, item) => sum + Number(item.episodesAdded || 0), 0);
         const unavailable = discoveries.length > 0 && discoveries.every((item) => item.unavailable);
-        if (r.ambiguous) toast(t('franchiseAmbiguous'));
+        if (r.franchiseDeferred) toast(t('anilistLimitedSelectedAdded'));
+        else if (r.ambiguous) toast(t('franchiseAmbiguous'));
         else if (discoveries.length) toast(unavailable ? t('autoLinksUnavailable') : added ? t('autoLinksAdded', added) : t('autoLinksNotFound'), unavailable ? 'error' : '');
       } catch { btn.disabled = false; btn.textContent = originalLabel; }
     };

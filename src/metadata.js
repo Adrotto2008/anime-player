@@ -1,5 +1,5 @@
 // Metadati: AniList (serie) + Kitsu (titoli e miniature degli episodi). Solo API pubbliche.
-const ANILIST = 'https://graphql.anilist.co';
+const anilistClient = require('./anilist-client').createAniListClient();
 const KITSU = 'https://kitsu.io/api/edge';
 const ANISKIP = 'https://api.aniskip.com/v2/skip-times';
 
@@ -12,11 +12,7 @@ const normalizeRating = (value) => {
 };
 
 async function anilist(query, variables) {
-  const r = await fetch(ANILIST, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json' }, body: JSON.stringify({ query, variables }) });
-  if (!r.ok) throw new Error(`AniList ha risposto ${r.status}`);
-  const j = await r.json();
-  if (j.errors) throw new Error(j.errors[0].message);
-  return j.data;
+  return anilistClient.request(query, variables);
 }
 
 async function translateDescriptionToItalian(description) {
@@ -104,8 +100,17 @@ async function searchAnime(text) {
 }
 
 async function getAnime(id, options = {}) {
-  const d = await anilist(`query($id:Int){Media(id:$id,type:ANIME){${FIELDS}}}`, { id });
-  const anime = normalize(d.Media);
+  const cached = anilistClient.getMedia(id);
+  const media = cached || (await anilist(`query($id:Int){Media(id:$id,type:ANIME){${FIELDS}}}`, { id: Number(id) })).Media;
+  const anime = normalize(media);
+  if (options.language === 'it' && anime.description) anime.description = await translateDescriptionToItalian(anime.description);
+  return anime;
+}
+
+async function getCachedAnime(id, options = {}) {
+  const cached = anilistClient.getMedia(id);
+  if (!cached) return null;
+  const anime = normalize(cached);
   if (options.language === 'it' && anime.description) anime.description = await translateDescriptionToItalian(anime.description);
   return anime;
 }
@@ -113,8 +118,11 @@ async function getAnime(id, options = {}) {
 async function getAnimeBatch(ids, options = {}) {
   const uniqueIds = [...new Set((ids || []).map(Number).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 24);
   if (!uniqueIds.length) return [];
-  const d = await anilist(`query($ids:[Int]){Page(perPage:24){media(id_in:$ids,type:ANIME){${FIELDS}}}}`, { ids: uniqueIds });
-  const results = (d.Page.media || []).map(normalize);
+  const cached = new Map(uniqueIds.map(id => [id, anilistClient.getMedia(id)]));
+  const missing = uniqueIds.filter(id => !cached.get(id));
+  const fetched = missing.length ? (await anilist(`query($ids:[Int]){Page(perPage:24){media(id_in:$ids,type:ANIME){${FIELDS}}}}`, { ids: missing.sort((a, b) => a - b) })).Page.media || [] : [];
+  for (const media of fetched) cached.set(Number(media.id), media);
+  const results = uniqueIds.map(id => cached.get(id)).filter(Boolean).map(normalize);
   if (options.language === 'it') {
     for (const anime of results) if (anime.description) anime.description = await translateDescriptionToItalian(anime.description);
   }
@@ -362,6 +370,7 @@ function applyImdbRatingsToEpisodes(episodes, imdbChart, title) {
 module.exports = {
   searchAnime,
   getAnime,
+  getCachedAnime,
   getAnimeBatch,
   fetchEpisodes,
   fetchAniSkipTimes,
