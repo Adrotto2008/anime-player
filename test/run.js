@@ -14,6 +14,7 @@ const { CloudService, readConfig, PROJECT_REF, mergeLibrarySnapshots, compressLi
 const shaderDir = path.join(__dirname, '..', 'shaders');
 let n = 0; const ok = (name) => console.log('  ok', ++n, name);
 execFileSync(process.execPath, ['test/franchise.js'], { stdio: 'inherit' });
+execFileSync(process.execPath, ['test/onepiece-franchise.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/source-discovery.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/audit-regressions.js'], { stdio: 'inherit' });
 

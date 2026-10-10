@@ -1,0 +1,80 @@
+{
+  "source": "Minimized AniList public GraphQL graph, 2026-10-10; titles, formats, counts and anime relations only",
+  "records": [
+    {
+      "anilistId": 21,
+      "title": "ONE PIECE",
+      "altTitle": "ONE PIECE",
+      "format": "TV",
+      "episodeCount": null,
+      "year": 1999,
+      "type": "ANIME",
+      "related": [
+        {
+          "id": 466,
+          "title": "One Piece: Defeat the Pirate Ganzack!",
+          "relation": "SIDE_STORY",
+          "format": "OVA",
+          "type": "ANIME"
+        },
+        {
+          "id": 459,
+          "title": "ONE PIECE: The Movie",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME"
+        },
+        {
+          "id": 2107,
+          "title": "One Piece: The Desert Princess and the Pirates, Adventures in Alabasta",
+          "relation": "SUMMARY",
+          "format": "MOVIE",
+          "type": "ANIME"
+        },
+        {
+          "id": 167404,
+          "title": "MONSTERS: 103 Mercies Dragon Damnation",
+          "relation": "PREQUEL",
+          "format": "ONA",
+          "type": "ANIME"
+        }
+      ]
+    },
+    {
+      "anilistId": 167404,
+      "title": "MONSTERS: 103 Mercies Dragon Damnation",
+      "altTitle": "MONSTERS: Ippaku Sanjou Hiryuu Jigoku",
+      "format": "ONA",
+      "episodeCount": 1,
+      "year": 2024,
+      "type": "ANIME",
+      "related": [
+        {
+          "id": 21,
+          "title": "ONE PIECE",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME"
+        }
+      ]
+    },
+    {
+      "anilistId": 459,
+      "title": "ONE PIECE: The Movie",
+      "altTitle": "ONE PIECE (Movie)",
+      "format": "MOVIE",
+      "episodeCount": 1,
+      "year": 2000,
+      "type": "ANIME",
+      "related": [
+        {
+          "id": 21,
+          "title": "ONE PIECE",
+          "relation": "PARENT",
+          "format": "TV",
+          "type": "ANIME"
+        }
+      ]
+    }
+  ]
+}

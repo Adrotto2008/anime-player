@@ -6,6 +6,7 @@ const { EventEmitter } = require('events');
 const { hostLabel, isValidSource } = require('./patterns');
 const { sourceMetadata, redact, urlLifetime } = require('./source-state');
 const Language = require('./source-language');
+const { legacyFranchiseRepairs } = require('./franchise');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -170,6 +171,17 @@ class Store extends EventEmitter {
         this.data.settings.onboardingComplete = Boolean(configured);
       }
     } catch { /* primo avvio o file rovinato: si parte da zero */ }
+    if (this.repairFranchiseGroups()) this.save();
+  }
+
+  repairFranchiseGroups() {
+    const repairs = legacyFranchiseRepairs(this.data.series);
+    const now = Date.now();
+    for (const { record, patch } of repairs) {
+      Object.assign(record, patch);
+      record.updatedAt = Math.max(now, (Number(record.updatedAt) || 0) + 1);
+    }
+    return repairs.length > 0;
   }
 
   save(now = false, throwOnError = false, { cloud = false, emit = true } = {}) {
@@ -201,6 +213,7 @@ class Store extends EventEmitter {
     for (const series of next.series) series.videoPreference ||= Language.preference(this.getSeries(series.id)?.videoPreference);
     const previous = this.data;
     this.data = next;
+    this.repairFranchiseGroups();
     try { this.save(true, true); } catch (e) { this.data = previous; throw e; }
     return this.snapshot();
   }
@@ -212,7 +225,8 @@ class Store extends EventEmitter {
     next.updatedAt = Math.max(0, Date.parse(updatedAt) || Number(input.updatedAt) || 0);
     next.cloudDirty = false;
     this.data = next;
-    try { this.save(true, true, { cloud: true, emit: false }); } catch (error) { this.data = previous; throw error; }
+    const repaired = this.repairFranchiseGroups();
+    try { this.save(true, true, { cloud: !repaired, emit: false }); } catch (error) { this.data = previous; throw error; }
     return this.snapshot();
   }
 
@@ -239,7 +253,8 @@ class Store extends EventEmitter {
     const previousData = this.data;
     this.file = file;
     this.data = validateLibraryData(data);
-    try { this.save(true, true, { cloud: true, emit: false }); }
+    const repaired = this.repairFranchiseGroups();
+    try { this.save(true, true, { cloud: !repaired, emit: false }); }
     catch (error) { this.file = previousFile; this.data = previousData; throw error; }
     this.file = previousFile;
     this.data = previousData;

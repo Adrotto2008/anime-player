@@ -1,9 +1,15 @@
 # Anime Player
 
-Anime Player **v0.5.32** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.33** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Franchise roots and one-shot prequels — 0.5.33
+
+- AniList's PREQUEL/SEQUEL relations describe story chronology. A known single-episode work no longer counts as a season or leads traversal into another series. Adding One Piece keeps AniList ID 21 as the main record and franchise root; Monsters (ONA, one episode) is not automatically imported as its first season. Episodic ONA seasons, including unknown episode counts, remain supported. Missing, truncated, cyclic or branched season graphs fall back to the selected title.
+- Existing groups rooted in a one-shot are repaired on load, import and cloud application only when saved relations prove one unambiguous remaining season chain. The series and its movies receive the proper root; the saved one-shot remains a standalone record. Only grouping fields and their timestamps change; saved IDs, links, headers, progress, ratings, covers, video preferences and Anime4K presets are retained. No provider resolver or playback changes are needed.
+- Tests use a sanitized real AniList graph and isolated libraries for exact selection, one-shot boundaries, ONA seasons, uncertain graphs, startup/reopen/import/cloud repair and preserved user data. Personal library files are read only for diagnosis and integrity verification; live cloud synchronization is not exercised.
 
 ## Dubbed releases and long-series links — 0.5.32
 

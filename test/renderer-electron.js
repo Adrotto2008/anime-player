@@ -124,8 +124,21 @@ app.whenReady().then(async () => {
   await js(`document.querySelector('.ratings-cell[title^="S5 E1:"]').click()`);await tick();
   assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'Black Clover Season 2');
   assert.strictEqual(await js(`document.querySelector('#video-version').value`),'it','returning to season restores its preference');
+  const legacy = require('./onepiece-franchise.fixture.json').records.filter(s => [167404,21,459].includes(s.anilistId))
+    .map(s => ({...s,id:`legacy-${s.anilistId}`,episodes:[],franchiseId:'167404',franchiseTitle:'MONSTERS: 103 Mercies Dragon Damnation',
+      franchiseType:s.format==='MOVIE'?'movie':'season',franchiseOrder:s.anilistId===167404?1:s.anilistId===21?2:null}));
+  store.importData({settings:store.data.settings,series:legacy}); await tick();
+  await js(`Array.from(document.querySelectorAll('#rail button')).find(x=>x.textContent.includes(window.i18n.t('library'))).click()`);await tick();
+  assert.strictEqual(await js(`document.querySelector('.franchise-poster .t').textContent`),'ONE PIECE');
+  await js(`document.querySelector('.franchise-poster').click()`);await tick();
+  assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'ONE PIECE');
+  assert.deepStrictEqual(await js(`Array.from(document.querySelectorAll('.franchise-child .t')).map(x=>x.textContent)`),['ONE PIECE'],
+    'the one-shot must not appear among the series seasons');
+  await js(`document.querySelector('.back').click()`);await tick();
+  await js(`Array.from(document.querySelectorAll('button.poster')).find(x=>x.textContent.includes('MONSTERS')).click()`);await tick();
+  assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'MONSTERS: 103 Mercies Dragon Damnation');
   assert.deepStrictEqual(errors,[]);
-  report({ok:true,cases:['season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation'],errors});
+  report({ok:true,cases:['season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation','repaired One Piece group title and seasons','saved Monsters standalone navigation'],errors});
   console.log('Electron Windows: deletion/input/search/navigation/thumbnails; keyboard version selector, availability, explicit fallback approval and Escape cancellation verified.');
   clearTimeout(store._timer); clearTimeout(timeout); win.destroy(); app.exit(0);
 }).catch(error=>{report({ok:false,error:error.stack});console.error(error);clearTimeout(timeout);if(win)win.destroy();app.exit(1);});

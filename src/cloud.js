@@ -55,8 +55,10 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
     }
     const sourcePattern = item.sourcePattern || current.sourcePattern;
     const older = winner === item ? current : item;
+    // A newer explicit detach must not resurrect the old group through fallback.
     const franchise = Object.fromEntries(['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber']
-      .map((key) => [key, winner[key] != null ? winner[key] : older[key]]).filter(([, value]) => value != null));
+      .map((key) => [key, winner.franchiseId === null ? null : winner[key] != null ? winner[key] : older[key]])
+      .filter(([, value]) => winner.franchiseId === null || value != null));
     const movieSources = new Map([...(current.movieSources || []), ...(item.movieSources || [])].filter((source) => source?.url).map((source) => [source.url, source]));
     const patternOwner = item.sourcePattern ? item : current;
     series.set(item.id, { ...winner, ...franchise, videoPreference:Language.mergePreference(item.videoPreference, current.videoPreference),
