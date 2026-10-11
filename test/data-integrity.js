@@ -22,6 +22,7 @@ function film(store,format='MOVIE') {
   return {s,part:s.mediaParts[0]};
 }
 function ipc(store,player) {
+  if(!player.beginRequest)player=Object.assign(new PlayerManager({store,paths:{userData:path.dirname(store.file),shaderDir:''},notify:()=>{}}),player);
   const handlers={},repo=path.join(__dirname,'..'),req=require('module').createRequire(path.join(repo,'main.js'));
   const electron={app:{requestSingleInstanceLock:()=>true,whenReady:()=>({then:()=>{}}),on:()=>{},quit:()=>{}},
     ipcMain:{handle:(ch,fn)=>handlers[ch]=(...args)=>fn(null,...args)}};

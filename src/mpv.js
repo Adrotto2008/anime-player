@@ -3,19 +3,23 @@ const { spawn } = require('child_process');
 const net = require('net');
 const os = require('os');
 const path = require('path');
+const {randomUUID}=require('crypto');
 const { EventEmitter } = require('events');
 const { redact } = require('./source-state');
 
 function pipePath() {
-  const name = `anime-player-mpv-${process.pid}-${Date.now()}`;
+  const name = `anime-player-mpv-${process.pid}-${randomUUID()}`;
   return process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : path.join(os.tmpdir(), name + '.sock');
 }
 
 class MpvSession extends EventEmitter {
-  constructor({ mpvPath, args, pipe }) {
+  constructor({ mpvPath, args, pipe, ipcTimeoutMs=10000, loadTimeoutMs=30000, quitTimeoutMs=1500, heartbeatMs=5000, responseTimeoutMs=5000 }) {
     super();
     this.mpvPath = mpvPath; this.args = args; this.pipe = pipe;
     this.closed = false; this.eof = false; this.error = null; this.sock = null; this.buf = '';
+    this.ipcTimeoutMs=ipcTimeoutMs;this.loadTimeoutMs=loadTimeoutMs;this.quitTimeoutMs=quitTimeoutMs;
+    this.connected=false;this.loaded=false;this.endReason=null;this.requestedReason=null;this.forced=false;
+    this.heartbeatMs=heartbeatMs;this.responseTimeoutMs=responseTimeoutMs;this.nextCommandId=100;
   }
 
   start() {
@@ -23,37 +27,64 @@ class MpvSession extends EventEmitter {
     this.stdout = '';
     // Keep the mpv video window visible on Windows; windowsHide also hides GUI child processes.
     this.proc = spawn(this.mpvPath, this.args, { stdio: ['ignore', 'pipe', 'pipe'] });
-    this.proc.stderr.on('data', data => { this.stderr = (this.stderr + data.toString()).slice(0,65536); });
-    this.proc.stdout.on('data', data => { this.stdout = (this.stdout + data.toString()).slice(0,65536); });
+    this.proc.stderr.on('data', data => { this.stderr = (this.stderr + data.toString()).slice(-65536); });
+    this.proc.stdout.on('data', data => { this.stdout = (this.stdout + data.toString()).slice(-65536); });
+    this.ipcTimer=setTimeout(()=>{this.error='Timeout della connessione IPC con mpv';this.quit('ipc-timeout');},this.ipcTimeoutMs);
     this.startupTimer = setTimeout(() => {
-      this.error = 'Timeout durante il caricamento della sorgente'; this.quit();
-    }, 30000);
-    this.proc.on('error', (e) => { this.closed = true; clearTimeout(this.startupTimer); this.emit('spawn-error', e); });
-    this.proc.on('exit', (code, signal) => {
+      this.error = 'Timeout durante il caricamento della sorgente'; this.quit('load-timeout');
+    }, this.loadTimeoutMs);
+    this.proc.on('error', (e) => { this.closed = true; this._cleanup(); this.emit('spawn-error', e); });
+    this.proc.on('exit',()=>{this.processExited=true;clearTimeout(this.startupTimer);clearTimeout(this.ipcTimer);clearInterval(this.heartbeatTimer);clearTimeout(this.responseTimer);});
+    // close follows exit after stdout/stderr have drained; retain the final loading/crash evidence.
+    this.proc.on('close', (code, signal) => {
+      if(this.closed)return;
       this.closed = true;
-      clearTimeout(this.startupTimer);
-      if (this.sock) this.sock.destroy();
+      this._cleanup();
       // Se il link fallisce subito mpv esce prima che l'IPC sia connesso: si usa il codice di uscita (2 = file non riproducibile)
-      const error = this.error || (code === 2 || code === 3 ? 'impossibile aprire il link o il file' : code === 1 ? 'errore di avvio di mpv' : code != null && ![0,4].includes(code) ? `mpv terminato con codice ${code}` : null);
-      this.emit('exit', { code, signal, eof: this.eof, error: error ? redact(error) : null, stderr: redact(this.stderr).slice(-4000), stdout: redact(this.stdout).slice(-4000) });
+      const networkEvidence=redact(((this.stderr || '')+'\n'+(this.stdout || '')).match(/[^\r\n]*(?:HTTP error \d{3}|Server returned \d{3}|Connection refused|Connection timed out|Failed to resolve|TLS handshake failed)[^\r\n]*/i)?.[0] || '').slice(-1000);
+      let reason=this.requestedReason || (this.endReason==='error' || code===2 || code===3 ? 'source-error'
+        : this.eof ? 'eof' : (this.endReason==='quit' || this.endReason==='stop') && !signal && code===0 ? 'user-close'
+        : signal || code!==0 ? 'abnormal' : 'unknown-exit');
+      if(reason==='source-error' && networkEvidence)reason='network-error';
+      const expected=['app-stop','replaced','account-change','deleted','shutdown','navigation','user-close','eof'].includes(reason);
+      const error = this.error || (!expected ? code===2 || code===3 ? 'impossibile aprire il link o il file'
+        : code===1 ? 'errore di avvio di mpv' : `mpv terminato${signal?' dal segnale '+signal:code?' con codice '+code:' senza motivo comunicato'}` : null);
+      this.emit('exit', { code, signal, eof: this.eof, reason,requestedReason:this.requestedReason,endReason:this.endReason,
+        connected:this.connected,loaded:this.loaded,forced:this.forced,networkEvidence,error: error ? redact(error) : null,
+        stderr: redact(this.stderr).slice(-4000), stdout: redact(this.stdout).slice(-4000) });
     });
     this._connect(0);
   }
 
   _connect(tries) {
-    if (this.closed) return;
+    if (this.closed || this.requestedReason) return;
     const sock = net.connect(this.pipe);
+    this.connectingSocket=sock;
     let connected = false;
     sock.on('connect', () => {
-      connected = true; this.sock = sock;
+      if(this.closed || this.requestedReason) {sock.destroy();return;}
+      connected = true; this.connected=true;this.sock = sock;clearTimeout(this.ipcTimer);
       this.send(['observe_property', 1, 'time-pos']);
       this.send(['observe_property', 2, 'duration']);
       this.send(['observe_property', 3, 'pause']);
       this.send(['observe_property', 4, 'track-list']);
+      this.heartbeatTimer=setInterval(()=>{
+        if(this.closed || this.requestedReason || this.pendingCommandId)return;
+        this.pendingCommandId=++this.nextCommandId;
+        this.send(['get_property','time-pos'],this.pendingCommandId);
+        this.responseTimer=setTimeout(()=>{this.error='Timeout della risposta IPC di mpv';this.quit('ipc-timeout');},this.responseTimeoutMs);
+      },this.heartbeatMs);
       this.emit('connected');
     });
     sock.on('data', (d) => this._onData(d));
-    sock.on('error', () => { if (!connected && tries < 60) setTimeout(() => this._connect(tries + 1), 150); });
+    sock.on('error', () => {sock.destroy();if (!connected && !this.closed && !this.requestedReason) this.connectTimer=setTimeout(() => this._connect(tries + 1),150);});
+    sock.on('close',()=>{
+      if(connected && !this.closed && !this.requestedReason && !this.endReason) {
+        this.disconnectTimer=setTimeout(()=>{if(!this.closed && !this.endReason && !this.requestedReason) {
+          this.error='La connessione IPC con mpv è stata interrotta';this.quit('ipc-disconnected');
+        }},150);
+      }
+    });
   }
 
   _onData(d) {
@@ -68,15 +99,19 @@ class MpvSession extends EventEmitter {
   }
 
   _onMessage(m) {
-    if (m.event === 'file-loaded') { clearTimeout(this.startupTimer); this.emit('loaded'); }
+    if(m.request_id===this.pendingCommandId) {clearTimeout(this.responseTimer);this.pendingCommandId=null;}
+    if (m.event === 'file-loaded') { this.loaded=true;clearTimeout(this.startupTimer); this.emit('loaded'); }
+    if(m.event==='seek')this.emit('seek');
+    if(m.event==='playback-restart')this.emit('seeked');
     if (m.event === 'property-change') {
-      if (m.name === 'time-pos' && typeof m.data === 'number') { clearTimeout(this.startupTimer); this.emit('time', m.data); }
+      if (m.name === 'time-pos' && typeof m.data === 'number') { this.loaded=true;clearTimeout(this.startupTimer); this.emit('time', m.data); }
       else if (m.name === 'duration' && typeof m.data === 'number') this.emit('duration', m.data);
       else if (m.name === 'pause') this.emit('pause', !!m.data);
       else if (m.name === 'track-list' && Array.isArray(m.data)) this.emit('tracks', m.data);
     } else if (m.event === 'end-file') {
+      this.endReason=m.reason;
       if (m.reason === 'eof') this.eof = true;
-      else if (m.reason === 'error') { this.error = redact(m.file_error || 'errore di riproduzione'); this.quit(); }
+      else if (m.reason === 'error') { this.error = redact(m.file_error || 'errore di riproduzione'); this.quit('source-error'); }
     } else if (m.event === 'client-message' && Array.isArray(m.args)) {
       if (m.args[0] === 'ap-next') this.emit('nav', 'next');
       else if (m.args[0] === 'ap-prev') this.emit('nav', 'prev');
@@ -85,8 +120,8 @@ class MpvSession extends EventEmitter {
     }
   }
 
-  send(command) {
-    if (this.sock && !this.sock.destroyed) this.sock.write(JSON.stringify({ command }) + '\n');
+  send(command,requestId) {
+    if (this.sock && !this.sock.destroyed) this.sock.write(JSON.stringify({ command,...(requestId ? {request_id:requestId} : {}) }) + '\n');
   }
 
   setShaders(chainString, label) {
@@ -105,10 +140,21 @@ class MpvSession extends EventEmitter {
     if (Number.isFinite(value) && value >= 0) this.send(['seek', value, 'absolute']);
   }
 
-  quit() {
+  _cleanup() {
     clearTimeout(this.startupTimer);
+    clearTimeout(this.ipcTimer);clearTimeout(this.connectTimer);clearTimeout(this.killTimer);
+    clearInterval(this.heartbeatTimer);clearTimeout(this.responseTimer);clearTimeout(this.disconnectTimer);
+    this.connectingSocket?.destroy();
+    this.sock?.destroy();
+  }
+
+  quit(reason='app-stop') {
+    if(this.closed || this.processExited || this.requestedReason)return;
+    this.requestedReason=reason;
+    clearTimeout(this.startupTimer);clearTimeout(this.ipcTimer);clearTimeout(this.connectTimer);
+    clearInterval(this.heartbeatTimer);clearTimeout(this.responseTimer);clearTimeout(this.disconnectTimer);
     this.send(['quit']);
-    setTimeout(() => { if (!this.closed && this.proc) this.proc.kill(); }, 1500);
+    this.killTimer=setTimeout(() => { if (!this.closed && this.proc) {this.forced=true;this.proc.kill();} },this.quitTimeoutMs);
   }
 }
 

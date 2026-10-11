@@ -3,9 +3,12 @@
 // Diagnostics must never retain query credentials, including URLs printed by mpv.
 function redact(value) {
   return String(value || '').replace(/https?:\/\/[^\s"'<>]+/gi, text => {
-    try { const url = new URL(text); return `${url.origin}${url.pathname}${url.search ? '?[redacted]' : ''}`; }
+    try { const url = new URL(text); return `${url.origin}/[redacted-path]${url.search ? '?[redacted]' : ''}`; }
     catch { return '[URL redacted]'; }
-  }).replace(/\b(token|signature|sig|expires|authorization)=([^\s&]+)/gi, '$1=[redacted]');
+  }).replace(/\b(?:set-cookie|cookie|authorization|proxy-authorization)\s*[:=]\s*[^\r\n]*/gi, '[HTTP credentials redacted]')
+    .replace(/\b(Bearer|Basic)\s+[^\s"',;]+/gi, '$1 [redacted]')
+    .replace(/\b(token|access_token|refresh_token|api[_-]?key|password|passwd|secret|credential|signature|sig|expires|authorization)\s*[:=]\s*(?:"[^"]*"|'[^']*'|[^\s&,;]+)/gi, '$1=[redacted]')
+    .replace(/\beyJ[\w-]+\.[\w-]+\.[\w-]+\b/g,'[JWT redacted]');
 }
 
 function urlLifetime(value) {

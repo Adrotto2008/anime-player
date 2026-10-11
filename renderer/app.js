@@ -1302,6 +1302,13 @@ function openSettings() {
           h('button', { class: 'btn', onclick: async () => { const r = await call('mpv:detect'); if (r.ok) { mpv.value = r.path; state.lib = r.lib; render(); toast(t('detectMpv')); } else toast(r.error || t('detectMpvMissing'), 'error'); } }, t('find')),
           h('button', { class: 'btn', onclick: async () => { const l = await call('mpv:browse'); state.lib = l; mpv.value = l.settings.mpvPath || ''; render(); } }, t('browse')))),
         h('div', { class: 'muted small setup-note' }, t('mpvExternalNote')),
+        h('button',{class:'btn',onclick:async()=>{
+          const records=await call('player:diagnostics');
+          openDialog(t('playerDiagnostics'),closeDiagnostics=>[
+            h('p',{class:'muted small'},t('playerDiagnosticsHint')),
+            h('pre',{style:'white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto;user-select:text'},records.length?JSON.stringify(records,null,2):t('playerDiagnosticsEmpty')),
+            h('div',{class:'foot'},h('button',{class:'btn',onclick:closeDiagnostics},t('close')))]);
+        }},t('playerDiagnostics')),
         field(t('defaultAnime4K'), preset)),
       sec(t('secPlayback'),
         toggle(auto, t('autoplay')), toggle(skipOpening, t('autoSkipOpening')), toggle(skipEnding, t('autoSkipEnding')),

@@ -21,6 +21,7 @@ app.whenReady().then(async () => {
   const handle=(ch,fn)=>ipcMain.handle(ch,(_e,...args)=>fn(...args));
   handle('lib:get',()=>store.snapshot()); handle('presets:list',()=>[]); handle('app:version',()=>app.getVersion());
   handle('player:state',()=>({playing:false})); handle('auth:state',()=>({connected:false,configured:false}));
+  handle('player:diagnostics',()=>[{reason:'ipc-timeout',error:'Synthetic timeout',code:0}]);
   const fallbackChoices = [];
   handle('series:videoPreference',(id,mode)=>{store.setVideoPreference(id,mode);return store.snapshot()});
   handle('player:languageFallback',(token,mode)=>{fallbackChoices.push({token,mode});return true});
@@ -216,7 +217,14 @@ app.whenReady().then(async () => {
   win.webContents.sendInputEvent({type:'char',keyCode:'m'});await tick();
   assert.ok((await js(`document.querySelector('input[placeholder="'+window.i18n.t('filterLibrary')+'"]').value`)).includes('m'));
   assert.deepStrictEqual(errors,[]);
-  report({ok:true,cases:['season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation','repaired One Piece group title and seasons','saved Monsters standalone navigation','empty categories hidden','manual franchise title','franchise deletion warning and Escape cancellation','management menu survives background saves','manual season attachment and reclassification','manual film attachment and links','film sources and video preference without synthetic episodes','franchise merge preview with explicit duplicate preservation','complete group deletion and immediate keyboard search'],errors});
+  if(!baselineRenderer) {
+    win.webContents.send('player:error','mpv non risponde alla connessione di controllo.');await tick();
+    assert.ok((await js('document.body.textContent')).includes('mpv non risponde alla connessione di controllo.'));
+    await js(`Array.from(document.querySelectorAll('#rail .nav')).find(x=>x.textContent===window.i18n.t('settings')).click()`);await tick();
+    await js(`Array.from(document.querySelectorAll('#dialog-root button')).find(x=>x.textContent===window.i18n.t('playerDiagnostics')).click()`);await tick();
+    assert.ok((await js(`document.querySelector('#dialog-root pre').textContent`)).includes('ipc-timeout'));
+  }
+  report({ok:true,cases:['season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation','repaired One Piece group title and seasons','saved Monsters standalone navigation','empty categories hidden','manual franchise title','franchise deletion warning and Escape cancellation','management menu survives background saves','manual season attachment and reclassification','manual film attachment and links','film sources and video preference without synthetic episodes','franchise merge preview with explicit duplicate preservation','complete group deletion and immediate keyboard search','player error notification and diagnostics dialog'],errors});
   console.log('Electron Windows: deletion/input/search/navigation/thumbnails; keyboard version selector, availability, explicit fallback approval and Escape cancellation verified.');
   clearTimeout(store._timer); clearTimeout(timeout); win.destroy(); app.exit(0);
 }).catch(error=>{report({ok:false,error:error.stack});console.error(error);clearTimeout(timeout);if(win)win.destroy();app.exit(1);});

@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.35** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.36** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## mpv playback reliability — 0.5.36
+
+- Play is cancelled from the IPC entry point through mpv checks, AniSkip and URL renewal. Stop, newer Play, requested-content deletion and account switching invalidate older requests while active source fallbacks retain their generation.
+- Playback progress is saved every five seconds, on pause/seek and at exit. Electron waits for the final bounded player stop and library flush; checkpoints preserve Phase 2A local revisions and pending cloud edits.
+- Settings → Player diagnostics shows the last 50 redacted session records, including observed EOF/quit, app intent, IPC/loading timeouts, source/network evidence and abnormal exits. An unknown termination stays unknown until evidence is available.
+- Regression tests include real headless mpv and Electron shutdown with synthetic data. See [the Phase 2B technical notes](docs/mpv-reliability-2b.md) for timing, diagnostics, limits and rollback.
 
 ## Data integrity and concurrent cloud synchronization — 0.5.35
 

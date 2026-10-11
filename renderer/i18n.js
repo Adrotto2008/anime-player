@@ -2,6 +2,7 @@
 
 const DICT = {
   en: {
+    playerDiagnostics:'Player diagnostics',playerDiagnosticsHint:'Last 50 mpv sessions. Credentials and signed URL parameters are hidden. Technical exit reasons describe observed events; an unknown reason needs further investigation.',playerDiagnosticsEmpty:'No playback diagnostics yet.',
     contentLayout:'File structure',completeContent:'Complete work · alternate links',multipartContent:'One part of a split release',
     mergeDestinationMetadata:'The destination title, cover and banner will be used. Source group custom metadata stays archived inside the merged franchise.',
     videoFiles:n=>`${n} files with links`, autoContentLinksAdded:n=>`Found links for ${n} files/parts. Playback has not yet been verified.`,
@@ -147,6 +148,7 @@ const DICT = {
     shortcuts: 'Shortcuts', shortcutsHint: 'Customize the keys used by mpv. Leave a skip key empty to disable it.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
+    playerDiagnostics:'Diagnostica player',playerDiagnosticsHint:'Ultime 50 sessioni mpv. Credenziali e parametri degli URL firmati sono oscurati. I motivi tecnici descrivono gli eventi osservati; un motivo sconosciuto richiede ulteriori verifiche.',playerDiagnosticsEmpty:'Nessuna diagnostica di riproduzione disponibile.',
     contentLayout:'Struttura dei file',completeContent:'Opera completa · link alternativi',multipartContent:'Una parte di un’edizione divisa in file',
     mergeDestinationMetadata:'Saranno usati titolo, copertina e banner della destinazione. I metadati personalizzati del gruppo di origine restano archiviati nel franchise unito.',
     videoFiles:n=>`${n} file con link`, autoContentLinksAdded:n=>`Trovati link per ${n} file/parti. Riproduzione ancora da verificare.`,

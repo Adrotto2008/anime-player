@@ -193,11 +193,13 @@ function register() {
     return addContentLink(id,{url});
   });
   h('movie:play', async (id, index = 0) => {
+    const request = player.beginRequest(id, store.getSeries(id)?.mediaParts?.[0]?.id);
     const series = store.getSeries(id); const source = series?.movieSources?.[index];
     const part=series?.mediaParts?.find(p=>source && p.sources.some(s=>s.url===source.url)) || series?.mediaParts?.[0];
     if (!series || !part) throw new Error('Link del film non trovato.');
-    await ensureMpv();
-    return player.play(id,part.id,source ? {sourceIndex:part.sources.findIndex(s=>s.url===source.url)} : {}).then(() => lib());
+    request.episodeId = part.id;
+    return preparePlay(request, async () => player.play(id,part.id,{...request,
+      ...(source ? {sourceId:part.sources.find(s=>s.url===source.url)?.id} : {})}));
   });
 
   h('series:discoverSources', async (id) => {
@@ -289,40 +291,50 @@ function register() {
   });
   h('episodes:setSources', (sid, eid, urls) => { const items = urls.filter(Boolean).map((url) => ({ url })); items.forEach((i) => { if (!isValidSource(i.url)) throw new Error(`Link non valido: ${i.url}`); }); store.setSources(sid, eid, items.map((i) => i.url)); return lib(); });
   h('episodes:checkSources', (urls) => checkSources(urls));
-  h('episodes:delete', (sid, eid) => { store.deleteEpisode(sid, eid); return lib(); });
+  h('episodes:delete', async (sid, eid) => { await player.stopIfUnit(sid,eid); store.deleteEpisode(sid, eid); return lib(); });
   h('episodes:mark', (sid, eid, watched) => { store.markWatched(sid, eid, watched); return lib(); });
 
-  const ensureMpv = async () => {
+  const ensureMpv = async (request) => {
     const current = store.data.settings.mpvPath;
     if (current) {
       const result = await mpvManager.validate(current);
+      if (!player.isRequestActive(request)) return;
       if (result.ok) return result.path;
     }
     const result = await mpvManager.find(current);
+    if (!player.isRequestActive(request)) return;
     if (result.ok) { store.setSettings({ mpvPath: result.path }); return result.path; }
     throw new Error(`MPV_NOT_CONFIGURED: ${result.error || 'mpv non trovato.'}`);
   };
+  const preparePlay = async (request, launch) => {
+    if(!player.isRequestActive(request))return lib();
+    try {
+      await ensureMpv(request);
+      if (player.isRequestActive(request)) await launch();
+    } catch (error) { if (player.isRequestActive(request)) throw error; }
+    return lib();
+  };
   h('player:play', async (sid, eid) => {
-    const scope=store.scope;
+    const request=player.beginRequest(sid,eid);
     const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
     if (!s || !ep) throw new Error('Episodio non trovato');
-    await ensureMpv();
-    if(scope!==store.scope)return lib();
-    if (ep.kind !== 'part' && s.malId && (!Array.isArray(ep.skipTimes) || !ep.skipTimes.length)) {
-      try {
-        const skipTimes=await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration);
-        if(scope===store.scope)store.setUnitSkipTimes(sid,eid,skipTimes);
-      } catch (err) { console.warn('AniSkip error:', err.message); }
-    }
-    if(scope!==store.scope)return lib();
-    return player.play(sid, eid).then(() => lib());
+    return preparePlay(request, async () => {
+      if (ep.kind !== 'part' && s.malId && (!Array.isArray(ep.skipTimes) || !ep.skipTimes.length)) {
+        try {
+          const skipTimes=await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration);
+          if(player.isRequestActive(request))store.setUnitSkipTimes(sid,eid,skipTimes);
+        } catch (err) { if(player.isRequestActive(request))console.warn('AniSkip error:', require('./src/source-state').redact(err.message)); }
+      }
+      if(player.isRequestActive(request))await player.play(sid, eid, request);
+    });
   });
   h('player:playUrl', async (url, preset) => {
+    const request=player.beginRequest();
     if (!isValidSource(String(url).trim())) throw new Error('Link non valido.');
-    await ensureMpv();
-    return player.playUrl(String(url).trim(), preset);
+    return preparePlay(request, () => player.playUrl(String(url).trim(), preset, request));
   });
   h('player:stop', () => player.stop());
+  h('player:diagnostics', () => player.diagnostics.read());
   h('player:languageFallback', (token,mode) => player.acceptLanguageFallback(token,mode));
   h('player:preset', (id) => player.setPreset(id));
   h('player:seekRelative', (seconds) => player.seekRelative(seconds));
@@ -378,7 +390,7 @@ app.whenReady().then(async () => {
     },
   });
   cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send,
-    beforeLibrarySwitch: () => player.stop(), isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+    beforeLibrarySwitch: () => player.stop({reason:'account-change'}), isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
   register();
   const detected = await mpvManager.find(store.data.settings.mpvPath);
@@ -389,5 +401,5 @@ app.whenReady().then(async () => {
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-app.on('before-quit', () => { if (cloud) cloud.stop(); store && store.save(true); if (player) player.stop(); });
+require('./src/shutdown').installShutdown(app,()=>({cloud,store,player}));
 app.on('window-all-closed', () => app.quit());

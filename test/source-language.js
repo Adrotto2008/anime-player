@@ -166,6 +166,10 @@ const classified = (provider, mode, id, extra = {}) => ({number:1,url:`https://m
     assert.strictEqual(tagged.episodes[0].sources[0].language.audio,'it');assert.strictEqual(tagged.episodes[0].sources[0].mediaTracks.audio[0].lang,'en');
     assert.ok(!realEvents.some(event=>event.channel==='player:language-fallback'));
     await player.stop();console.log('Real mpv: declared ITA with one en-tagged track plays the same source, emits a metadata warning and retains both provenance fields.');
+  } catch(error) {
+    console.error('Language playback diagnostics:',JSON.stringify(player?.diagnostics?.read() || []));
+    console.error('Language player state:',JSON.stringify(player?.state() || {}));
+    throw error;
   } finally {
     if (player?.cur) await player.stop(); if (server) await new Promise(resolve=>server.close(resolve));
     clearTimeout(store._timer); fs.rmSync(dir,{recursive:true,force:true});
