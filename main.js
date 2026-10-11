@@ -258,17 +258,18 @@ function register() {
   h('series:ratings', (id) => syncSeriesRatings(id));
   h('episodes:rate', (sid, eid, rating) => { store.rateEpisode(sid, eid, rating); return lib(); });
   h('episodes:skipTimes', async (sid, eid) => {
+    const scope=store.scope;
     const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
     if (!s || !ep) throw new Error('Episodio non trovato');
     if (ep.kind === 'part') return {skipTimes:ep.skipTimes || [],lib:lib()};
     if (!s.malId || !s.anilistId) return { skipTimes: ep.skipTimes || [], lib: lib() };
     try {
       const skipTimes = await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration);
-      store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes }]);
+      if(scope===store.scope)store.setUnitSkipTimes(sid, eid, skipTimes);
     } catch (err) {
       console.warn('AniSkip error:', err.message);
     }
-    return { skipTimes: store.getEpisode(sid, eid).skipTimes || [], lib: lib() };
+    return { skipTimes: store.getEpisode(sid, eid)?.skipTimes || [], lib: lib() };
   });
 
   const checkItems = (items) => {
@@ -302,12 +303,18 @@ function register() {
     throw new Error(`MPV_NOT_CONFIGURED: ${result.error || 'mpv non trovato.'}`);
   };
   h('player:play', async (sid, eid) => {
+    const scope=store.scope;
     const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
     if (!s || !ep) throw new Error('Episodio non trovato');
     await ensureMpv();
-    if (s && ep && s.malId && (!Array.isArray(ep.skipTimes) || !ep.skipTimes.length)) {
-      try { store.mergeEpisodeMeta(sid, [{ number: ep.number, skipTimes: await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration) }]); } catch (err) { console.warn('AniSkip error:', err.message); }
+    if(scope!==store.scope)return lib();
+    if (ep.kind !== 'part' && s.malId && (!Array.isArray(ep.skipTimes) || !ep.skipTimes.length)) {
+      try {
+        const skipTimes=await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration);
+        if(scope===store.scope)store.setUnitSkipTimes(sid,eid,skipTimes);
+      } catch (err) { console.warn('AniSkip error:', err.message); }
     }
+    if(scope!==store.scope)return lib();
     return player.play(sid, eid).then(() => lib());
   });
   h('player:playUrl', async (url, preset) => {
@@ -370,7 +377,8 @@ app.whenReady().then(async () => {
       return selected ? {...selected, provider:source.provider} : null;
     },
   });
-  cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send,
+    beforeLibrarySwitch: () => player.stop(), isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
   register();
   const detected = await mpvManager.find(store.data.settings.mpvPath);

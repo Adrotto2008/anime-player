@@ -9,6 +9,7 @@ const Language = require('./source-language');
 const { legacyFranchiseRepairs } = require('./franchise');
 const Franchise = require('./franchise-model');
 const Parts = require('./content-parts');
+const Identity = require('./content-identity');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -67,6 +68,7 @@ function validateLibraryData(input) {
           throw new Error(`Link non valido nella serie "${rawSeries.title}", episodio ${rawEpisode.number}.`);
         }
         return {
+          id: Identity.sourceId(rawEpisode.id,source),
           url: source.url,
           label: typeof source.label === 'string' && source.label ? source.label : hostLabel(source.url),
           ...(['animeunity', 'animeworld'].includes(source.provider) ? { provider: source.provider } : {}),
@@ -133,7 +135,7 @@ function validateLibraryData(input) {
     try { settings.onboardingComplete = Boolean(settings.mpvPath && fs.statSync(settings.mpvPath).isFile()); } catch { /* onboarding richiesto */ }
   }
   const deletedSeries = Array.isArray(input.deletedSeries) ? input.deletedSeries.filter((item) => item && typeof item.id === 'string' && Number.isFinite(Number(item.deletedAt))).map((item) => ({ id: item.id, deletedAt: Number(item.deletedAt) })) : [];
-  const deletedEpisodes = Array.isArray(input.deletedEpisodes) ? input.deletedEpisodes.filter((item) => item && typeof item.seriesId === 'string' && typeof item.id === 'string' && Number.isFinite(Number(item.deletedAt))).map((item) => ({ seriesId: item.seriesId, id: item.id, deletedAt: Number(item.deletedAt) })) : [];
+  const deletedEpisodes = Array.isArray(input.deletedEpisodes) ? input.deletedEpisodes.filter((item) => item && typeof item.seriesId === 'string' && typeof item.id === 'string' && Number.isFinite(Number(item.deletedAt))).map((item) => ({ ...item, seriesId: item.seriesId, id: item.id, deletedAt: Number(item.deletedAt) })) : [];
   const franchises = Array.isArray(input.franchises) ? input.franchises.map(group => {
     if (!group || typeof group.id !== 'string' || !group.id || typeof group.title !== 'string') throw new Error('Franchise non valido.');
     return {...group,custom:group.custom || {},suggestions:Array.isArray(group.suggestions)?group.suggestions:[],updatedAt:Math.max(0,Number(group.updatedAt)||0)};
@@ -141,7 +143,7 @@ function validateLibraryData(input) {
   if (new Set(franchises.map(g=>g.id)).size !== franchises.length) throw new Error('Franchise duplicato.');
   const deletedFranchises = (Array.isArray(input.deletedFranchises)?input.deletedFranchises:[]).filter(g=>typeof g?.id === 'string' && Number(g.deletedAt)>0);
   for (const record of series) if (record.franchiseMembership && !Franchise.membership(record.franchiseMembership)) throw new Error('Appartenenza al franchise non valida.');
-  return { settings, series, franchises, deletedFranchises, deletedSeries, deletedEpisodes, updatedAt: Math.max(0, Number(input.updatedAt) || 0), cloudDirty: Boolean(input.cloudDirty) };
+  return { settings, settingsUpdatedAt:Math.max(0,Number(input.settingsUpdatedAt)||0), series, franchises, deletedFranchises, deletedSeries, deletedEpisodes, updatedAt: Math.max(0, Number(input.updatedAt) || 0), cloudDirty: Boolean(input.cloudDirty) };
 }
 
 class Store extends EventEmitter {
@@ -150,18 +152,23 @@ class Store extends EventEmitter {
     this.file = file;
     this.data = { settings: { ...DEFAULT_SETTINGS }, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false };
     this._timer = null;
+    this.revision = 0;
+    this.scope = 0;
+    this._migrationBackups = new Set();
     this.load();
   }
 
   load() {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      if(!Object.hasOwn(raw,'settingsUpdatedAt'))this._pendingMigrationBackup=true;
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
       this.data.franchises = raw.franchises || [];
       this.data.deletedFranchises = raw.deletedFranchises || [];
       this.data.deletedSeries = Array.isArray(raw.deletedSeries) ? raw.deletedSeries : [];
       this.data.deletedEpisodes = Array.isArray(raw.deletedEpisodes) ? raw.deletedEpisodes : [];
       this.data.updatedAt = Math.max(0, Number(raw.updatedAt) || 0);
+      this.data.settingsUpdatedAt = Math.max(0,Number(raw.settingsUpdatedAt)||0);
       this.data.cloudDirty = raw.cloudDirty == null ? this.data.series.length > 0 : Boolean(raw.cloudDirty);
       this.data.series.forEach((s) => {
         s.videoPreference = Language.preference(s.videoPreference);
@@ -191,9 +198,28 @@ class Store extends EventEmitter {
   }
 
   migrateFranchises() {
+    const before=JSON.stringify(this.data.series);
     Franchise.migrate(this.data);
-    for (const series of this.data.series) if (Franchise.singleWork(series) || series.mediaParts || series.movieSources?.length) Parts.migrateParts(series);
+    for (const series of this.data.series) if (Franchise.singleWork(series) || series.mediaParts || series.movieSources?.length) this.migrateParts(series);
+    Identity.ensureSourceIds(this.data);
+    if(JSON.stringify(this.data.series)!==before)this._pendingMigrationBackup=true;
   }
+
+  migrateParts(series) {
+    const before=JSON.stringify([series.episodes,series.mediaParts,series.movieSourcesMigrated]);
+    Parts.migrateParts(series);
+    if(JSON.stringify([series.episodes,series.mediaParts,series.movieSourcesMigrated])!==before)this._pendingMigrationBackup=true;
+  }
+
+  backup(reason='pre-integrity',file=this.file) {
+    if(!fs.existsSync(file))return null;
+    const target=`${file}.${reason}-${Date.now()}-${uid()}.bak`;
+    fs.copyFileSync(file,target,fs.constants.COPYFILE_EXCL);
+    return target;
+  }
+
+  versionToken() { return {revision:this.revision,scope:this.scope,file:path.resolve(this.file)}; }
+  matchesToken(token) { return token && token.revision===this.revision && token.scope===this.scope && token.file===path.resolve(this.file); }
 
   repairFranchiseGroups() {
     const repairs = legacyFranchiseRepairs(this.data.series);
@@ -211,9 +237,13 @@ class Store extends EventEmitter {
   save(now = false, throwOnError = false, { cloud = false, emit = true } = {}) {
     clearTimeout(this._timer);
     this.data.updatedAt = cloud ? Math.max(this.data.updatedAt || 0, Date.now()) : Date.now();
-    if (!cloud) this.data.cloudDirty = true;
+    if (!cloud) {this.data.cloudDirty = true;this.revision++;}
     const write = () => {
       try {
+        if(this._pendingMigrationBackup && !this._migrationBackups.has(path.resolve(this.file))) {
+          if(this.backup())this._migrationBackups.add(path.resolve(this.file));
+        }
+        this._pendingMigrationBackup=false;
         fs.mkdirSync(path.dirname(this.file), { recursive: true });
         const tmp = this.file + '.tmp';
         fs.writeFileSync(tmp, JSON.stringify(this.data, null, 1));
@@ -234,6 +264,7 @@ class Store extends EventEmitter {
   snapshot() { return JSON.parse(JSON.stringify(this.data)); }
   importData(input) {
     const next = validateLibraryData(input);
+    this.backup('pre-import');
     for (const series of next.series) series.videoPreference ||= Language.preference(this.getSeries(series.id)?.videoPreference);
     const previous = this.data;
     this.data = next;
@@ -243,23 +274,33 @@ class Store extends EventEmitter {
     return this.snapshot();
   }
 
-  applyCloudData(input, updatedAt) {
+  applyCloudData(input, updatedAt, {expected, pending=false} = {}) {
+    if(expected && !this.matchesToken(expected))return false;
     const next = validateLibraryData(input);
+    const deleted=new Set(next.deletedSeries.map(s=>s.id));
+    const deletedUnits=new Set(next.deletedEpisodes.map(e=>`${e.seriesId}:${e.id}`));
+    next.series=next.series.filter(s=>!deleted.has(s.id));
+    for(const s of next.series) {
+      s.episodes=s.episodes.filter(e=>!deletedUnits.has(`${s.id}:${e.id}`));
+      if(s.mediaParts)s.mediaParts=s.mediaParts.filter(e=>!deletedUnits.has(`${s.id}:${e.id}`));
+    }
     for (const series of next.series) series.videoPreference ||= Language.preference(this.getSeries(series.id)?.videoPreference);
     const previous = this.data;
     next.updatedAt = Math.max(0, Date.parse(updatedAt) || Number(input.updatedAt) || 0);
-    next.cloudDirty = false;
+    next.cloudDirty = pending;
     this.data = next;
     const repaired = this.repairFranchiseGroups();
     this.migrateFranchises();
-    try { this.save(true, true, { cloud: !repaired, emit: false }); } catch (error) { this.data = previous; throw error; }
+    try { this.save(true, true, { cloud: !repaired, emit: false });this.revision++; } catch (error) { this.data = previous; throw error; }
     return this.snapshot();
   }
 
-  markCloudSynced(updatedAt) {
+  markCloudSynced(updatedAt, expected) {
+    if(expected && !this.matchesToken(expected))return false;
     this.data.cloudDirty = false;
     this.data.updatedAt = Math.max(this.data.updatedAt || 0, Date.parse(updatedAt) || Date.now());
     this.save(true, true, { cloud: true, emit: false });
+    return true;
   }
 
   switchFile(file) {
@@ -267,6 +308,9 @@ class Store extends EventEmitter {
     this.save(true, true);
     const deviceSettings = { mpvPath: this.data.settings.mpvPath || '', onboardingComplete: Boolean(this.data.settings.onboardingComplete) };
     this.file = file;
+    this.scope++;
+    this.revision++;
+    this._pendingMigrationBackup=false;
     this.data = { settings: { ...DEFAULT_SETTINGS, ...deviceSettings }, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false };
     this.load();
     this.data.settings.mpvPath = deviceSettings.mpvPath || this.data.settings.mpvPath || '';
@@ -277,23 +321,32 @@ class Store extends EventEmitter {
   writeLibraryFile(file, data) {
     const previousFile = this.file;
     const previousData = this.data;
+    const previousBackup = this._pendingMigrationBackup;
     this.file = file;
     this.data = validateLibraryData(data);
     const repaired = this.repairFranchiseGroups();
     this.migrateFranchises();
     try { this.save(true, true, { cloud: !repaired, emit: false }); }
-    catch (error) { this.file = previousFile; this.data = previousData; throw error; }
+    catch (error) { this.file = previousFile; this.data = previousData;this._pendingMigrationBackup=previousBackup; throw error; }
     this.file = previousFile;
     this.data = previousData;
+    this._pendingMigrationBackup=previousBackup;
   }
 
   getSeries(id) { return this.data.series.find((s) => s.id === id); }
   getEpisode(sid, eid) { return Franchise.units(this.getSeries(sid)).find(e=>e.id === eid); }
+  getSource(sid,eid,source) {
+    const unit=this.getEpisode(sid,eid);
+    const id=typeof source==='string'?source:source && Identity.sourceId(eid,source);
+    return unit?.sources.find(s=>Identity.sourceId(eid,s)===id);
+  }
+  episodeNumberDeleted(sid,number) { return (this.data.deletedEpisodes || []).some(e=>e.seriesId===sid && e.kind!=='part' && e.number===number); }
 
   setSettings(patch) {
     Object.assign(this.data.settings, patch);
+    this.data.settingsUpdatedAt=Math.max(Date.now(),(this.data.settingsUpdatedAt || 0)+1);
     this.save();
-    this.emit('settings', { settings: { ...this.data.settings }, updatedAt: Date.now() });
+    this.emit('settings', { settings: { ...this.data.settings }, updatedAt: this.data.settingsUpdatedAt });
   }
 
   needsOnboarding() {
@@ -324,8 +377,9 @@ class Store extends EventEmitter {
     if (!s) throw new Error('Serie non trovata');
     const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
-    if (Object.hasOwn(patch,'movieSources')) {delete s.movieSourcesMigrated;Parts.migrateParts(s);}
-    if (Franchise.singleWork(s)) Parts.migrateParts(s);
+    if(Object.hasOwn(patch,'personalRating'))s.personalRatingUpdatedAt=Math.max(Date.now(),(s.personalRatingUpdatedAt || 0)+1);
+    if (Object.hasOwn(patch,'movieSources')) {delete s.movieSourcesMigrated;this.migrateParts(s);}
+    if (Franchise.singleWork(s)) this.migrateParts(s);
     s.updatedAt = Date.now();
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);
@@ -436,7 +490,9 @@ class Store extends EventEmitter {
   ensurePart(series,number=1,title='',key,layout) {
     if (!Number.isSafeInteger(number) || number < 1) throw new Error('Numero parte non valido.');
     series.mediaParts ||= [];
-    let part=series.mediaParts.find(p=>key ? p.key === key : p.number === number);
+    const matches=series.mediaParts.filter(p=>key ? p.key === key : p.number === number);
+    if(matches.length>1)throw new Error('Parti ambigue: seleziona l’unità tramite il suo identificatore prima di aggiungere link.');
+    let part=matches[0];
     if (!part) {
       const position=series.mediaParts.some(p=>p.number === number)?Math.max(...series.mediaParts.map(p=>p.number))+1:number;
       part=Parts.makePart(position,title,key,layout);series.mediaParts.push(part);
@@ -456,8 +512,10 @@ class Store extends EventEmitter {
   }
 
   ensureEpisode(s, number) {
+    if(Franchise.singleWork(s))throw new Error('Un’opera singola richiede una parte, non un episodio TV.');
     let ep = s.episodes.find((e) => e.number === number);
     if (!ep) {
+      if(this.episodeNumberDeleted(s.id,number))throw new Error('Episodio eliminato: ripristino esplicito richiesto.');
       ep = { id: uid(), number, title: '', thumb: null, duration: 0, rating: null, ratingSource: null, personalRating: null, skipTimes: [], sources: [], updatedAt: Date.now(), progress: { pos: 0, duration: 0, watched: false, updatedAt: 0 } };
       s.episodes.push(ep);
       s.episodes.sort((a, b) => a.number - b.number);
@@ -482,8 +540,12 @@ class Store extends EventEmitter {
           added++;
         } else if (existing.language?.origin !== 'manual') Object.assign(existing, Language.metadata(it));
       } else {
+        const descriptor=identity && ep.automaticSources?.find(source=>Language.sourceIdentity(source)===identity);
         ep.sources.push({ url: it.url, label: hostLabel(it.url), ...(['animeunity', 'animeworld'].includes(it.provider) ? { provider: it.provider } : {}), ...(it.referer ? { referer: it.referer } : {}), ...(it.userAgent ? { userAgent: it.userAgent } : {}), ...(['found','resolved'].includes(it.resolutionState) ? {resolutionState:it.resolutionState} : {}) });
         Object.assign(ep.sources.at(-1), sourceMetadata(it));
+        ep.sources.at(-1).id=descriptor?.id || Identity.sourceId(ep.id,it);
+        if(descriptor?.referer)ep.sources.at(-1).referer=descriptor.referer;
+        if(descriptor?.userAgent)ep.sources.at(-1).userAgent=descriptor.userAgent;
         ep.updatedAt = Date.now(); added++;
       }
       const priority = (source) => source.provider === 'animeunity' ? 0 : source.provider === 'animeworld' ? 1 : 2;
@@ -497,7 +559,8 @@ class Store extends EventEmitter {
   setSources(sid, eid, urls) {
     const ep = this.getEpisode(sid, eid);
     if (!ep) throw new Error('Episodio non trovato');
-    ep.sources = [...new Set(urls)].map(url => ep.sources.find(source => source.url === url) || { url, label: hostLabel(url) });
+    ep.sources = [...new Set(urls)].map(url => ep.sources.find(source => source.url === url) || { id:Identity.sourceId(eid,{url}), url, label: hostLabel(url) });
+    ep.automaticSources=(ep.automaticSources || []).filter(d=>ep.sources.some(s=>s.id===d.id));
     ep.updatedAt = Date.now();
     const series = this.getSeries(sid); if (series) series.updatedAt = ep.updatedAt;
     this.save();
@@ -523,14 +586,16 @@ class Store extends EventEmitter {
 
   recordSourceTracks(sid, eid, source, list) {
     const ep = this.getEpisode(sid, eid);
-    if (!ep?.sources.includes(source)) return;
+    source=this.getSource(sid,eid,source);
+    if (!source) return;
     source.mediaTracks = Language.observedTracks(list);
     ep.updatedAt = Date.now(); this.save();
   }
 
   refreshSource(sid, eid, source, fresh) {
     const ep = this.getEpisode(sid, eid);
-    if (!ep?.sources.includes(source) || !['animeunity', 'animeworld'].includes(source.provider) || source.provider !== fresh.provider) return false;
+    source=this.getSource(sid,eid,source);
+    if (!source || !['animeunity', 'animeworld'].includes(source.provider) || source.provider !== fresh.provider) return false;
     const replaceReferer = !source.referer || source.referer === source.resolverReferer || !source.resolverReferer && urlLifetime(source.referer).temporary;
     const metadata = sourceMetadata(fresh);
     if (source.url !== fresh.url) { delete source.mediaTracks; delete metadata.mediaTracks; }
@@ -554,7 +619,8 @@ class Store extends EventEmitter {
     const s = this.getSeries(sid);
     if (!s || !this.getEpisode(sid,eid)) return;
     this.data.deletedEpisodes ||= [];
-    this.data.deletedEpisodes.push({ seriesId: sid, id: eid, deletedAt: Math.max(Date.now(),(Number(this.getEpisode(sid,eid)?.updatedAt)||0)+1) });
+    const unit=this.getEpisode(sid,eid);
+    this.data.deletedEpisodes.push({ seriesId: sid, id: eid, number:unit.number,kind:unit.kind || 'episode',...(unit.key?{key:unit.key}:{}), deletedAt: Math.max(Date.now(),(Number(unit.updatedAt)||0)+1) });
     s.episodes = s.episodes.filter((e) => e.id !== eid);
     if(s.mediaParts)s.mediaParts=s.mediaParts.filter(e=>e.id!==eid);
     s.updatedAt = Date.now();
@@ -575,6 +641,7 @@ class Store extends EventEmitter {
     const ep = this.getEpisode(sid, eid);
     if (!ep) throw new Error('Episodio non trovato');
     ep.personalRating = personalRating(rating);
+    ep.personalRatingUpdatedAt=Math.max(Date.now(),(ep.personalRatingUpdatedAt || 0)+1);
     ep.updatedAt = Date.now();
     const series = this.getSeries(sid); if (series) series.updatedAt = ep.updatedAt;
     this.save();
@@ -623,8 +690,9 @@ class Store extends EventEmitter {
   }
   mergeEpisodeMeta(sid, list) {
     const s = this.getSeries(sid);
-    if (!s) return;
+    if (!s || Franchise.singleWork(s)) return;
     for (const m of list) {
+      if(this.episodeNumberDeleted(sid,m.number))continue;
       const ep = this.ensureEpisode(s, m.number);
       const before = JSON.stringify(ep);
       if (m.title && !ep.title) ep.title = m.title;
@@ -642,6 +710,13 @@ class Store extends EventEmitter {
     this.save();
   }
 
+  setUnitSkipTimes(sid,eid,skipTimes) {
+    const unit=this.getEpisode(sid,eid);
+    if(!unit || !Array.isArray(skipTimes))return false;
+    if(JSON.stringify(unit.skipTimes)===JSON.stringify(skipTimes))return true;
+    unit.skipTimes=skipTimes;unit.updatedAt=Date.now();this.save();return true;
+  }
+
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
@@ -654,15 +729,16 @@ class Store extends EventEmitter {
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);
     s.personalRating = personalRating(s.personalRating);
-    if (Franchise.singleWork(s)) Parts.migrateParts(s);
+    if (Franchise.singleWork(s)) this.migrateParts(s);
     const retainEpisode = (ep) => ep.sources.length > 0 || ep.progress.pos > 0 || ep.progress.duration > 0 || ep.progress.watched || ep.progress.updatedAt > 0;
     if (!Franchise.singleWork(s) && Number.isInteger(s.episodeCount) && s.episodeCount > 0 && s.episodeCount <= 300) {
-      for (let n = 1; n <= s.episodeCount; n++) this.ensureEpisode(s, n);
+      for (let n = 1; n <= s.episodeCount; n++) if(!this.episodeNumberDeleted(sid,n))this.ensureEpisode(s, n);
       s.episodes = s.episodes.filter((ep) => ep.number <= s.episodeCount || retainEpisode(ep));
     }
     for (const m of list) {
       if (Franchise.singleWork(s)) break;
       if (!Number.isInteger(m.number) || m.number < 0) continue;
+      if(this.episodeNumberDeleted(sid,m.number))continue;
       if (s.episodeCount > 0 && m.number > s.episodeCount) {
         const existing = s.episodes.find((e) => e.number === m.number);
         if (!existing || !retainEpisode(existing)) continue;

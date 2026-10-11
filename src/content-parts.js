@@ -2,6 +2,7 @@
 const crypto = require('crypto');
 const {sourceMetadata} = require('./source-state');
 const Model = require('./franchise-model');
+const Identity = require('./content-identity');
 function makePart(number, title = '',key=`manual:${number}`,layout='manual') {
   return {id:crypto.randomUUID(),number,key,layout,kind:'part',title,sources:[],thumb:null,duration:0,personalRating:null,
     skipTimes:[],updatedAt:Date.now(),progress:{pos:0,duration:0,watched:false,updatedAt:0}};
@@ -11,6 +12,14 @@ function migrateParts(series) {
   if(Model.singleWork(series) && (series.episodes || []).length) {
     const complete=series.episodes.length===1;
     for(const episode of series.episodes) {
+      const existing=series.mediaParts.find(p=>p.id===episode.id);
+      if(existing) {
+        const winner=(Number(episode.updatedAt)||0)>(Number(existing.updatedAt)||0)?episode:existing;
+        const progress=(Number(episode.progress?.updatedAt)||0)>(Number(existing.progress?.updatedAt)||0)?episode.progress:existing.progress;
+        const sources=Identity.mergeSources(episode.id,existing.sources,episode.sources);
+        const layout={number:existing.number,key:existing.key,layout:existing.layout,kind:'part'};
+        Object.assign(existing,{...winner,...layout,...Identity.mergePersonalRating(episode,existing),sources,progress});continue;
+      }
       const number=Number.isSafeInteger(episode.number) && episode.number>0 ? episode.number : 1;
       const position=series.mediaParts.some(p=>p.number===number)?Math.max(...series.mediaParts.map(p=>p.number))+1:number;
       series.mediaParts.push({...episode,number:position,key:complete?'single':`legacy:${episode.number}`,layout:complete?'single':'legacy',kind:'part',
@@ -19,8 +28,12 @@ function migrateParts(series) {
     series.episodes=[];
   }
   if ((series.movieSources || []).length && !series.movieSourcesMigrated) {
-    let part = series.mediaParts.find(p => p.key === 'single' || !p.key && p.number === 1);
-    if (!part) { part = makePart(Math.max(0,...series.mediaParts.map(p=>p.number))+1,'','single','single'); series.mediaParts.push(part); }
+    const candidates=series.mediaParts.filter(p => p.key === 'single' || !p.key && p.number === 1);
+    // Ambiguous existing cuts require explicit review; the legacy links remain.
+    if(candidates.length>1)return;
+    let part = candidates[0];
+    if (!part) { part = makePart(Math.max(0,...series.mediaParts.map(p=>p.number))+1,'','single','single');
+      part.id=Identity.sourceId(series.id,{url:'legacy:movie-sources:single'});series.mediaParts.push(part); }
     for (const source of series.movieSources) if (!part.sources.some(s => s.url === source.url)) {
       part.sources.push({...source,...sourceMetadata(source)});
     }

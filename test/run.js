@@ -85,8 +85,8 @@ const cloudMerge = mergeLibrarySnapshots(
 );
 assert.strictEqual(cloudMerge.series.length, 1, 'le serie eliminate non ricompaiono nel merge');
 assert.strictEqual(cloudMerge.series[0].title, 'Serie remota', 'vince la versione più recente dei metadati');
-assert.deepStrictEqual(cloudMerge.series[0].episodes.map((episode) => episode.id).sort(), ['e1', 'e2', 'e3-new'], 'gli episodi indipendenti vengono uniti mantenendo un solo elemento per numero');
-assert.strictEqual(cloudMerge.series[0].episodes.find((episode) => episode.number === 3).sources.length, 2, 'le sorgenti di entrambi i dispositivi vengono conservate');
+assert.deepStrictEqual(cloudMerge.series[0].episodes.map((episode) => episode.id).sort(), ['e1', 'e2', 'e3-new','e3-old'], 'UUID distinti restano indipendenti anche con lo stesso numero');
+assert.strictEqual(cloudMerge.series[0].episodes.filter((episode) => episode.number === 3).flatMap(e=>e.sources).length, 2, 'le sorgenti di entrambi i dispositivi vengono conservate');
 ok('merge libreria cloud: metadati recenti, episodi uniti, eliminazioni rispettate');
 
 const sourceLibrary = { settings: {}, series: [{ id: 'pattern-series', title: 'Pattern', episodes: [1, 2, 3].map((number) => ({ id: `ep-${number}`, number, sources: [{ url: `https://video.example/show/ep${String(number).padStart(2, '0')}.m3u8` }], progress: { watched: false, pos: 0, duration: 0, updatedAt: 0 } })) }, { id: 'single-series', title: 'Singolo', episodes: [{ id: 'ep-1', number: 1, sources: [{ url: 'https://video.example/opaque' }] }] }] };
@@ -95,7 +95,7 @@ assert.deepStrictEqual(compressedLibrary.series[0].sourcePattern, { pattern: 'ht
 assert.ok(compressedLibrary.series.every((series) => series.episodes.every((episode) => !Object.hasOwn(episode, 'sources'))), 'il cloud non deve contenere link episodio per episodio');
 const restoredLibrary = expandLibraryFromCloud(compressedLibrary);
 assert.strictEqual(restoredLibrary.series[0].episodes[2].sources[0].url, sourceLibrary.series[0].episodes[2].sources[0].url, 'il dispositivo ricostruisce gli URL dal pattern cloud');
-assert.deepStrictEqual(restoredLibrary.series[1].episodes[0].sources, [], 'i link senza pattern restano solo locali');
+assert.strictEqual(restoredLibrary.series[1].episodes[0].sources[0].url, sourceLibrary.series[1].episodes[0].sources[0].url, 'anche i link manuali senza pattern sopravvivono al cloud');
 const animeWorldOnly = compressLibraryForCloud({ series: [{ id: 'animeworld', title: 'AnimeWorld', episodes: [1, 2].map((number) => ({
   id: `aw-${number}`, number, sources: [{ url: `https://video.example/stream/episode${number}.m3u8`, provider: 'animeworld' }],
 })) }] });
@@ -112,7 +112,9 @@ const lossyPattern = compressLibraryForCloud({ series: [{ id: 'lossy', title: 'P
   { id: '3', number: 3, sources: [] },
 ] }] });
 assert.deepStrictEqual(lossyPattern.series[0].sourcePattern, { pattern: 'https://v.example/ep{ep}.mp4', from: 1, to: 3 }, 'il pattern rappresentativo genera la stagione intera anche se mancava il link locale di alcuni episodi');
-assert.strictEqual(expandLibraryFromCloud(lossyPattern).series[0].episodes[2].sources[0].url, 'https://v.example/ep3.mp4');
+assert.deepStrictEqual(expandLibraryFromCloud(lossyPattern).series[0].episodes[2].sources, [], 'i nuovi snapshot conservano l’assenza di un link e non inventano sorgenti per numero');
+const legacyPattern=JSON.parse(JSON.stringify(lossyPattern));for(const episode of legacyPattern.series[0].episodes)delete episode.manualSources;
+assert.strictEqual(expandLibraryFromCloud(legacyPattern).series[0].episodes[2].sources[0].url, 'https://v.example/ep3.mp4','i vecchi snapshot con solo pattern restano leggibili');
 ok('snapshot cloud compatto: pattern manuali ricostruiti, link AnimeWorld solo locali');
 
 // --- libreria

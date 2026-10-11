@@ -1,9 +1,19 @@
 # Anime Player
 
-Anime Player **v0.5.34** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.35** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Data integrity and concurrent cloud synchronization — 0.5.35
+
+- Movie and one-shot OVA/ONA/special playback skips TV AniSkip requests. Episode skip updates address the saved unit ID and cannot create a missing unit. Repeated refresh/migration retains IDs and does not recreate units deleted with the new tombstone metadata.
+- Cloud merging uses work and unit UUIDs. Distinct cuts/episodes remain independent even when they share `single`, a release key or a number. Ambiguous source imports stop for explicit review; existing duplicates are preserved. Sources acquire stable IDs retained through object replacement, URL renewal, import and provider rediscovery. Custom headers and manually classified links remain attached to their source.
+- A Store revision and account/file scope protect requests in flight. Acknowledgements clean only the transmitted revision; subsequent edits/deletions are rebased by ID, persisted and left pending for another sync. Conditional remote revision conflicts retry without replacing local data. Personal rating edits/clears have their own timestamp. Stale responses from another account are discarded throughout the sync pipeline, and playback flushes before switching libraries. Later anonymous edits are no longer erased by signing in again.
+- Private snapshots preserve all manual URLs, IDs, headers and classifications, including opaque links. Automatic stream URLs stay local; provider identity descriptors preserve saved IDs and custom headers for rediscovery. Old pattern-only snapshots remain readable. Concurrent use of older binaries against this snapshot format is unsupported.
+- The optional shared numbered episode catalogue skips ambiguous multiple local units targeting one remote row. Their independent progress still syncs through the private UUID snapshot.
+- The first structural migration write creates an exclusive backup of the original file bytes; import and account transfer have separate rollback copies. A failed backup blocks that write. No automatic duplicate cleanup is performed. See [backup and rollback procedure](docs/data-integrity-2a.md).
+- Isolated regression tests hold HTTP requests at explicit barriers and cover playback, AniSkip failures, refresh/reopen/import, duplicate keys/numbers, renewal, upload edits/deletions, revision conflicts, account changes and backup failure. Existing real mpv and Electron checks also run. No personal library or live Supabase account is used; live two-device synchronization remains unverified.
 
 ## Manageable franchises and linked content — 0.5.34
 
@@ -92,11 +102,11 @@ episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWor
 - HTTP availability checks beside each episode link; redirects and inconclusive responses are labeled separately.
 - Direct video links, HLS playlists, local files, and yt-dlp-supported pages.
 - Multiple fallback links per episode.
-- Signed-in users privately sync their complete library, one representative
-  episode-link pattern per series when available, metadata, playback progress,
+- Signed-in users privately sync their complete library, saved manual links and
+  headers, metadata, playback progress,
   deletion records, watch history, and shared app preferences
   across devices. Each account has a separate local library and cloud snapshot.
-  Individual episode URLs stay on the device.
+  Automatic stream URLs stay on the device and are rediscovered.
 - Automatic episode-number detection, patterns (`{ep}` and `{ep:02}`),
   newline lists, and `.m3u`/`.m3u8` import.
 - Exact playback progress (flushed during playback and on exit), watched state, resume cards, autoplay, and
@@ -227,7 +237,8 @@ A+A HQ, but it can be changed globally, per series, or while mpv is playing.
 The app keeps an offline local JSON copy of the library and can sync a private
 copy to the signed-in user's Supabase account. It contacts AniList, Kitsu, and
 IMDb for metadata and ratings, and AnimeUnity/AnimeWorld to search titles and
-resolve episode links. Resolved episode URLs remain local and are not sent to Supabase.
+resolve episode links. Automatic stream URLs remain local; saved manual URLs and
+custom headers sync in the private account snapshot.
 Anime Player does not download video files.
 
 ### Supabase account and sync
@@ -244,7 +255,7 @@ not commit local config or `.env` files.
 The app asks whether to sign in or create an account at startup, and the Account
 item remains available in the navigation. Auth sessions are encrypted with
 Electron `safeStorage` when the operating system provides secure storage.
-The full library snapshot (including user-entered episode-link patterns, progress,
+The full library snapshot (including user-entered links and headers, progress,
 watched state, personal ratings, metadata, and deletion records), watch history,
 favorites, and shared app preferences are stored in a private, account-owned
 Supabase row. Row Level Security restricts that row to its owner. The data is
@@ -261,11 +272,12 @@ the shared catalog has no matching entries. Social profile queries expose only
 selected profile fields; they do not grant access to private library snapshots.
 The Social section supports profile nicknames and image URLs, searching by
 nickname or exact email, and friend requests. Email addresses are matched in a
-restricted database function and are never returned in search results. Where a
-series' episode URLs do not share a reconstructible pattern, those URLs remain
-on that device and are omitted from the cloud snapshot. The database enforces
-this rule when any app version syncs, retaining a saved representative pattern
-while stripping per-episode URL fields.
+restricted database function and are never returned in search results. Manual
+URLs (including links without a pattern) retain their saved IDs and headers in
+the private snapshot. Automatic provider stream URLs are omitted; identity and
+custom header descriptors allow rediscovery. The existing database sanitizer
+strips the legacy TV `sources` field while preserving the new `manualSources`
+and identity descriptors. No database migration is required by this client change.
 
 Playback events use Realtime Broadcast and Presence; video files are never sent to
 Supabase and playback events are not written to PostgreSQL.

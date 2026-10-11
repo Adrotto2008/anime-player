@@ -9,23 +9,23 @@ const { detectSeasonFromTitle } = require('./metadata');
 const { detectEpisodeNumber, expandPattern } = require('./patterns');
 const Language = require('./source-language');
 const Franchise = require('./franchise-model');
+const Identity = require('./content-identity');
 
 function newest(values) {
   return values.filter(Boolean).sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0) || JSON.stringify(b).localeCompare(JSON.stringify(a)))[0];
 }
 function mergeParts(first=[],second=[]) {
-  const key=p=>p.key || `legacy:${p.number}`;
-  const parts=new Map(first.map(p=>[key(p),{...p,sources:[...(p.sources||[])]}]));
+  const parts=new Map(first.map(p=>[p.id,{...p,sources:Identity.mergeSources(p.id,p.sources)}]));
   for (const part of second) {
-    const old=parts.get(key(part)); if (!old) {parts.set(key(part),{...part});continue;}
+    const old=parts.get(part.id); if (!old) {parts.set(part.id,{...part,sources:Identity.mergeSources(part.id,part.sources)});continue;}
     const winner=newest([old,part]);
-    parts.set(key(part),{...winner,id:old.id,kind:'part',
-      sources:[...new Map([...(old.sources||[]),...(part.sources||[])].map(s=>[s.url,s])).values()],
+    parts.set(part.id,{...winner,id:old.id,kind:'part',
+      ...Identity.mergePersonalRating(part,old),
+      automaticSources:[...new Map([...(old.automaticSources || []),...(part.automaticSources || [])].map(s=>[s.id,s])).values()],
+      sources:Identity.mergeSources(part.id,old.sources,part.sources),
       progress:newest([old.progress,part.progress]),updatedAt:Math.max(old.updatedAt||0,part.updatedAt||0)});
   }
-  const result=[...parts.values()].sort((a,b)=>a.number-b.number),used=new Set();let next=Math.max(0,...result.map(p=>p.number))+1;
-  for(const part of result){if(used.has(part.number))part.number=next++;used.add(part.number);}
-  return result;
+  return [...parts.values()].sort((a,b)=>a.number-b.number || a.id.localeCompare(b.id));
 }
 
 const PROJECT_REF = 'gbdcdserzrujiuacefca'; // anime-player; deliberately excludes the old haxball2 project.
@@ -34,6 +34,7 @@ const DEVICE_SETTINGS = ['mpvPath', 'mpvInstallDirectory', 'onboardingComplete']
 const uuid = () => crypto.randomUUID();
 const nowIso = (value = Date.now()) => new Date(value).toISOString();
 const EMPTY_LIBRARY = () => ({ settings: {}, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false });
+const EMPTY_SYNC_STATE = () => ({ mappings: {}, favorites: [], removedFavorites: [], history: [], settingsUpdatedAt: 0, libraryRevision: 0 });
 
 function mergeLibrarySnapshots(localInput, remoteInput) {
   const local = localInput || EMPTY_LIBRARY();
@@ -61,29 +62,31 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
   }
   for (const item of [...(remote.deletedEpisodes || []), ...(local.deletedEpisodes || [])]) {
     const key = `${item.seriesId}:${item.id}`;
-    deletedEpisodes.set(key, Math.max(deletedEpisodes.get(key) || 0, Number(item.deletedAt) || 0));
+    if(!deletedEpisodes.has(key) || Number(item.deletedAt)>=Number(deletedEpisodes.get(key).deletedAt))deletedEpisodes.set(key,{...item});
   }
   const series = new Map();
   for (const item of [...(remote.series || []), ...(local.series || [])]) {
     const current = series.get(item.id);
     if (!current) { series.set(item.id, { ...item, episodes: [...(item.episodes || [])] }); continue; }
     const winner = (Number(item.updatedAt || item.addedAt) || 0) > (Number(current.updatedAt || current.addedAt) || 0) ? item : current;
-    const episodes = new Map((current.episodes || []).map((episode) => [episode.number, episode]));
+    const episodes = new Map((current.episodes || []).map((episode) => [episode.id, episode]));
     for (const episode of item.episodes || []) {
-      const old = episodes.get(episode.number);
-      if (!old) { episodes.set(episode.number, episode); continue; }
+      const old = episodes.get(episode.id);
+      if (!old) { episodes.set(episode.id, episode); continue; }
       const oldProgressAt = Number(old.progress?.updatedAt) || 0;
       const newProgressAt = Number(episode.progress?.updatedAt) || 0;
       const winner = (Number(episode.updatedAt || newProgressAt) || 0) > (Number(old.updatedAt || oldProgressAt) || 0) ? episode : old;
-      const sources = new Map([...(old.sources || []), ...(episode.sources || [])].map((source) => [source.url, source]));
+      const sources = Identity.mergeSources(episode.id,old.sources,episode.sources);
       const measured = [old,episode].filter(ep=>ep.durationSource==='mpv' && Number(ep.duration)>0)
         .sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0))[0];
       const latestProgress=newProgressAt > oldProgressAt ? episode.progress : old.progress;
-      episodes.set(episode.number, {
+      episodes.set(episode.id, {
         ...winner,
+        ...Identity.mergePersonalRating(episode,old),
+        automaticSources:[...new Map([...(old.automaticSources || []),...(episode.automaticSources || [])].map(s=>[s.id,s])).values()],
         ...(measured ? {duration:measured.duration,durationSource:'mpv'} : {}),
         id: old.id || episode.id,
-        sources: [...sources.values()],
+        sources,
         progress: {...latestProgress,duration:Number(latestProgress?.duration)>0 ? latestProgress.duration : Number(old.progress?.duration) || Number(episode.progress?.duration) || 0},
         updatedAt: Math.max(Number(old.updatedAt) || 0, Number(episode.updatedAt) || 0, oldProgressAt, newProgressAt),
       });
@@ -100,6 +103,7 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
     const movieSources = new Map([...(current.movieSources || []), ...(item.movieSources || [])].filter((source) => source?.url).map((source) => [source.url, source]));
     const patternOwner = item.sourcePattern ? item : current;
     series.set(item.id, { ...winner, ...franchise, ...(member ? {franchiseMembership:member} : {}),
+      ...Identity.mergePersonalRating(item,current),
       ...(item.mediaParts || current.mediaParts ? {mediaParts:mergeParts(current.mediaParts,item.mediaParts)} : {}),
       videoPreference:Language.mergePreference(item.videoPreference, current.videoPreference),
       sourcePatternLanguage:Language.classification(patternOwner.sourcePatternLanguage), cover:winner.cover || older.cover || null, banner:winner.banner || older.banner || null,
@@ -108,16 +112,15 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
   }
   const resultSeries = [];
   for (const item of series.values()) {
-    if (deletedSeries.has(item.id) && deletedSeries.get(item.id) >= (Number(item.updatedAt || item.addedAt) || 0)) continue;
+    if (deletedSeries.has(item.id)) continue;
     item.episodes = (item.episodes || []).filter((episode) => {
-      const deletedAt = deletedEpisodes.get(`${item.id}:${episode.id}`) || 0;
-      if (deletedAt && deletedAt >= (Number(episode.updatedAt || episode.progress?.updatedAt) || 0)) return false;
+      const deletedAt = deletedEpisodes.get(`${item.id}:${episode.id}`)?.deletedAt || 0;
+      if (deletedAt) return false; // UUID deletion requires an explicit restore, never a metadata timestamp.
       return true;
     });
     if(item.mediaParts) {
       item.mediaParts=item.mediaParts.filter(part=>{
-        const deletedAt=deletedEpisodes.get(`${item.id}:${part.id}`);
-        return !deletedAt || deletedAt < (Number(part.updatedAt || part.progress?.updatedAt)||0);
+        return !deletedEpisodes.has(`${item.id}:${part.id}`);
       });
       const converted=new Set(item.mediaParts.map(part=>part.id));
       item.mediaParts=item.mediaParts.map(part=>{
@@ -130,13 +133,14 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
   }
   const localSettingsAt = Number(local.settingsUpdatedAt) || 0;
   const remoteSettingsAt = Number(remote.settingsUpdatedAt) || 0;
-  const settings = { ...(remote.settings || {}), ...(localSettingsAt > remoteSettingsAt ? local.settings || {} : {}) };
+  const settings = { ...(local.settings || {}), ...(remote.settings || {}), ...(localSettingsAt >= remoteSettingsAt ? local.settings || {} : {}) };
   return Franchise.migrate({
     settings, series: resultSeries,
+    settingsUpdatedAt:Math.max(localSettingsAt,remoteSettingsAt),
     franchises:[...franchises.values()].filter(g=>!deletedFranchises.has(g.id) || deletedFranchises.get(g.id)<(Number(g.updatedAt)||0)),
     deletedFranchises:[...deletedFranchises].map(([id,deletedAt])=>({id,deletedAt})),
     deletedSeries: [...deletedSeries].map(([id, deletedAt]) => ({ id, deletedAt })),
-    deletedEpisodes: [...deletedEpisodes].map(([key, deletedAt]) => { const [seriesId, id] = key.split(':'); return { seriesId, id, deletedAt }; }),
+    deletedEpisodes: [...deletedEpisodes.values()],
     updatedAt: Math.max(Number(local.updatedAt) || 0, Number(remote.updatedAt) || 0), cloudDirty: true,
   });
 }
@@ -180,14 +184,17 @@ function compressLibraryForCloud(input) {
       if (range.length) sourcePattern = { pattern: best.pattern, from: range[0], to: range[range.length - 1] };
     }
     const cleanSeries = { ...series };
-    if (series.mediaParts) cleanSeries.mediaParts=series.mediaParts.map(part=>({...part,sources:(part.sources||[]).filter(s=>!s.provider)}));
+    if (series.mediaParts) cleanSeries.mediaParts=series.mediaParts.map(part=>({...part,sources:(part.sources||[]).filter(s=>!s.provider),automaticSources:Identity.automaticSources(part)}));
     delete cleanSeries.sourcePattern;
     delete cleanSeries.sourcePatternLanguage;
     if (sourcePattern) {
       cleanSeries.sourcePattern = sourcePattern;
       if (sourcePatternLanguage) cleanSeries.sourcePatternLanguage = sourcePatternLanguage;
     }
-    cleanSeries.episodes = episodes.map(({ sources, ...episode }) => ({ ...episode }));
+    cleanSeries.episodes = episodes.map(({ sources, ...episode }) => ({ ...episode,automaticSources:Identity.automaticSources({...episode,sources}),
+      // Keep every manual link (including opaque URLs, IDs and custom headers).
+      // Patterns remain a backwards-compatible hint for old snapshots only.
+      manualSources:(sources || []).filter(source=>!source.provider).map(source=>({...source,id:Identity.sourceId(episode.id,source)})) }));
     return cleanSeries;
   });
   return library;
@@ -200,8 +207,8 @@ function expandLibraryFromCloud(input) {
     const next = { ...series };
     delete next.sourcePattern;
     next.episodes = (series.episodes || []).map((episode) => {
-      let sources = Array.isArray(episode.sources) ? episode.sources : [];
-      if (sourcePattern && Number.isInteger(episode.number) && episode.number >= sourcePattern.from && episode.number <= sourcePattern.to) {
+      let sources = Array.isArray(episode.manualSources) ? episode.manualSources : Array.isArray(episode.sources) ? episode.sources : [];
+      if (!Array.isArray(episode.manualSources) && sourcePattern && Number.isInteger(episode.number) && episode.number >= sourcePattern.from && episode.number <= sourcePattern.to) {
         try {
           const link = expandPattern(sourcePattern.pattern, episode.number, episode.number)[0]?.url;
           if (link) {
@@ -210,7 +217,8 @@ function expandLibraryFromCloud(input) {
           }
         } catch { /* pattern cloud non valido: conserva eventuali sorgenti locali */ }
       }
-      return { ...episode, sources };
+      const {manualSources,...fields}=episode;
+      return { ...fields, sources };
     });
     return next;
   });
@@ -264,8 +272,9 @@ function createSessionStorage({ safeStorage, file }) {
 }
 
 class CloudService {
-  constructor({ store, userDataPath, safeStorage, notify = () => {}, env = process.env, client = null, isPackaged = false, resourcesPath = null }) {
+  constructor({ store, userDataPath, safeStorage, notify = () => {}, beforeLibrarySwitch = async () => {}, env = process.env, client = null, isPackaged = false, resourcesPath = null }) {
     this.store = store;
+    this.beforeLibrarySwitch=beforeLibrarySwitch;
     this.libraryFile = store.file;
     this.legacyLibrarySnapshot = store.snapshot();
     this.legacySyncSnapshot = null;
@@ -292,6 +301,8 @@ class CloudService {
         realtime: { transport: WebSocket },
       });
     }
+    this._accountEpoch = 0;
+    this._stateRevision = 0;
     this.user = null;
     this.syncing = null;
     this.timer = null;
@@ -303,6 +314,17 @@ class CloudService {
     this._onLibraryChanged = () => { if (this.user && !this.suppressLibrarySync) this._scheduleSync(1500); };
   }
 
+  get user() { return this._user; }
+  set user(value) {
+    if((this._user?.id || null)!==(value?.id || null))this._accountEpoch++;
+    this._user=value;
+  }
+  _context(userId) { return {userId,epoch:this._accountEpoch,scope:this.store.scope,file:this.store.file,stateFile:this.file}; }
+  _current(context) {
+    return context && !this.stopped && this.user?.id===context.userId && this._accountEpoch===context.epoch
+      && this.activeLibraryUserId===context.userId && this.store.scope===context.scope && this.store.file===context.file && this.file===context.stateFile;
+  }
+
   _loadState() {
     try {
       const loaded = JSON.parse(fs.readFileSync(this.file, 'utf8'));
@@ -310,7 +332,7 @@ class CloudService {
         mappings: loaded.mappings || {}, favorites: loaded.favorites || [], removedFavorites: loaded.removedFavorites || [],
         history: loaded.history || [], settingsUpdatedAt: Number(loaded.settingsUpdatedAt) || 0, libraryRevision: Number(loaded.libraryRevision) || 0,
       };
-    } catch { return { mappings: {}, favorites: [], removedFavorites: [], history: [], settingsUpdatedAt: 0, libraryRevision: 0 }; }
+    } catch { return EMPTY_SYNC_STATE(); }
   }
 
   _saveState() {
@@ -334,12 +356,16 @@ class CloudService {
     const { data: { subscription } } = this.client.auth.onAuthStateChange((_event, session) => {
       this.user = session && session.user || null;
       this._publish();
-      if (this.user) setTimeout(() => this.sync().catch((error) => this._failed(error)), 0);
+      setTimeout(() => {
+        if(this.stopped)return;
+        (this.user?this.sync():this._activateLibrary(null)).catch(error=>this._failed(error));
+      },0);
     });
     this.authSubscription = subscription;
+    const epoch=this._accountEpoch;
     const { data: { session }, error } = await this.client.auth.getSession();
     if (error) this._failed(error);
-    this.user = session && session.user || null;
+    if(epoch===this._accountEpoch)this.user = session && session.user || null;
     this._publish();
     if (this.user) this.sync().catch((err) => this._failed(err));
     // Retry local outbox while the app is open; network errors never block local playback.
@@ -376,6 +402,7 @@ class CloudService {
   _queueSettings({ settings, updatedAt }) {
     if (!this.client || !CLOUD_SETTINGS.some((key) => Object.hasOwn(settings, key))) return;
     this.state.settingsUpdatedAt = updatedAt;
+    this._stateRevision++;
     this._saveState();
     this._scheduleSync(1500);
   }
@@ -418,10 +445,11 @@ class CloudService {
 
   async getSession() {
     if (!this.client) return this.status();
+    const epoch=this._accountEpoch;
     const { data, error } = await this.client.auth.getSession();
     if (error) throw error;
-    this.user = data.session && data.session.user || null;
-    return { ...this.status(), user: data.session && data.session.user ? { id: data.session.user.id, email: data.session.user.email, email_confirmed_at: data.session.user.email_confirmed_at || null } : null };
+    if(epoch===this._accountEpoch)this.user = data.session && data.session.user || null;
+    return { ...this.status(), user: this.user ? { id: this.user.id, email: this.user.email, email_confirmed_at: this.user.email_confirmed_at || null } : null };
   }
 
   _requireClient() {
@@ -477,6 +505,8 @@ class CloudService {
   }
 
   recordWatchSession({ seriesId, episodeId, startedAt, finishedAt, watchedSeconds }) {
+    this._stateRevision++;
+    this.store.save();
     this.state.history.push({ id: uuid(), seriesId, episodeId, startedAt: nowIso(startedAt), finishedAt: nowIso(finishedAt), watchedSeconds: Math.max(0, Number(watchedSeconds) || 0), synced: false });
     this._saveState();
     if (this.user) this._scheduleSync(1000);
@@ -485,6 +515,8 @@ class CloudService {
   async setFavorite(seriesId, favorite) {
     const series = this.store.getSeries(seriesId);
     if (!series) throw new Error('Serie non trovata.');
+    this._stateRevision++;
+    this.store.save();
     if (favorite) {
       this.state.removedFavorites = this.state.removedFavorites.filter((id) => id !== seriesId);
       if (!this.state.favorites.includes(seriesId)) this.state.favorites.push(seriesId);
@@ -511,15 +543,25 @@ class CloudService {
   }
 
   async _syncForUser(userId) {
+    if(this.user?.id!==userId || this.stopped)return;
     await this._activateLibrary(userId);
-    await this._syncPrivateLibrary(userId);
+    const context=this._context(userId);
+    await this._syncPrivateLibrary(userId,context);
+    if(!this._current(context))return;
     await this.ensureProfile(userId);
-    const catalog = await this._resolveCatalog();
-    await this._syncProgress(userId, catalog);
-    await this._syncHistory(userId, catalog);
-    await this._syncFavorites(userId, catalog);
-    await this._syncSettings(userId);
-    await this._syncPrivateLibrary(userId);
+    if(!this._current(context))return;
+    const catalog = await this._resolveCatalog(context);
+    if(!this._current(context))return;
+    await this._syncProgress(userId, catalog,context);
+    if(!this._current(context))return;
+    await this._syncHistory(userId, catalog,context);
+    if(!this._current(context))return;
+    await this._syncFavorites(userId, catalog,context);
+    if(!this._current(context))return;
+    await this._syncSettings(userId,context);
+    if(!this._current(context))return;
+    await this._syncPrivateLibrary(userId,context);
+    if(!this._current(context))return;
     this._saveState();
     this.lastError = null;
     const message = this.pendingCatalogMatches
@@ -538,33 +580,50 @@ class CloudService {
 
   async _activateLibrary(userId) {
     if (this.activeLibraryUserId === userId) return;
+    this._accountEpoch++;
+    const epoch=this._accountEpoch;
+    // Flush/stop the current account's player before replacing its Store.
+    await this.beforeLibrarySwitch();
+    if(epoch!==this._accountEpoch || (this.user?.id || null)!==userId)return;
     const wasUnclaimed = !fs.existsSync(this.libraryClaimFile);
     let claim = null;
     try { claim = JSON.parse(fs.readFileSync(this.libraryClaimFile, 'utf8')); } catch { /* first login */ }
     const targetFile = userId ? path.join(path.dirname(this.libraryFile), `library-${userId}.json`) : this.libraryFile;
-    if (userId && wasUnclaimed && this.legacyOwnerOverrideId && this.legacyOwnerOverrideId !== userId && this.legacyLibrarySnapshot.series.length) {
+    const legacySnapshot=this.store.file===this.libraryFile?this.store.snapshot():this.legacyLibrarySnapshot;
+    const legacyState=this.file===this.baseStateFile?JSON.parse(JSON.stringify(this.state)):this.legacySyncSnapshot;
+    const hasLegacyData=legacySnapshot.series.length || legacySnapshot.franchises?.length || legacySnapshot.deletedSeries?.length
+      || legacySnapshot.deletedEpisodes?.length || legacyState?.history?.length || legacyState?.favorites?.length;
+    if (userId && wasUnclaimed && this.legacyOwnerOverrideId && this.legacyOwnerOverrideId !== userId && legacySnapshot.series.length) {
       throw new Error('Per trasferire la libreria locale, accedi all’account che hai indicato.');
     }
     const legacyOwnerId = claim && claim.userId ? claim.userId : (userId && wasUnclaimed ? userId : null);
     const legacyOwnerFile = legacyOwnerId ? path.join(path.dirname(this.libraryFile), `library-${legacyOwnerId}.json`) : null;
-    if (legacyOwnerId && this.legacyLibrarySnapshot.series.length && !fs.existsSync(legacyOwnerFile)) {
+    let transferred=false;
+    if (legacyOwnerId && hasLegacyData && !fs.existsSync(legacyOwnerFile)) {
       // A saved owner marker keeps the original library assigned to the selected account.
-      this.store.writeLibraryFile(legacyOwnerFile, this.legacyLibrarySnapshot);
+      this.store.writeLibraryFile(legacyOwnerFile, legacySnapshot);
+      transferred=true;
       const ownerStateFile = this._syncFileForUser(legacyOwnerId);
       if (!fs.existsSync(ownerStateFile)) {
-        try { fs.writeFileSync(ownerStateFile, JSON.stringify(this.legacySyncSnapshot, null, 2), { mode: 0o600 }); } catch { /* no previous sync state */ }
+        fs.writeFileSync(ownerStateFile, JSON.stringify(legacyState, null, 2), { mode: 0o600 });
       }
     }
     if (userId && wasUnclaimed && !claim) {
       fs.mkdirSync(path.dirname(this.libraryClaimFile), { recursive: true });
       fs.writeFileSync(this.libraryClaimFile, JSON.stringify({ userId }), { mode: 0o600 });
     }
-    if (userId && (wasUnclaimed || claim)) {
-      // Keep the legacy path empty after transferring its contents to the selected owner.
-      this.store.writeLibraryFile(this.libraryFile, EMPTY_LIBRARY());
-    }
     this.suppressLibrarySync = true;
     try { this.store.switchFile(targetFile); } finally { this.suppressLibrarySync = false; }
+    if (transferred) {
+      // Clear only the snapshot just transferred, AFTER switchFile has flushed
+      // the old path. Later anonymous libraries are independent and stay intact.
+      this.store.backup('pre-account-transfer',this.libraryFile);
+      this.store.backup('pre-account-transfer',this.baseStateFile);
+      this.store.writeLibraryFile(this.libraryFile, EMPTY_LIBRARY());
+      const stateTemp=`${this.baseStateFile}.tmp`;
+      fs.writeFileSync(stateTemp,JSON.stringify(EMPTY_SYNC_STATE(),null,2),{mode:0o600});
+      fs.renameSync(stateTemp,this.baseStateFile);
+    }
     this.activeLibraryUserId = userId;
     this.file = userId ? this._syncFileForUser(userId) : this.baseStateFile;
     this.state = this._loadState();
@@ -575,21 +634,27 @@ class CloudService {
     const library = this.store.snapshot();
     library.settings = Object.fromEntries(Object.entries(library.settings || {}).filter(([key]) => !DEVICE_SETTINGS.includes(key)));
     library.cloudDirty = false;
-    return { library: compressLibraryForCloud(library), history: this.state.history, sync: { mappings: this.state.mappings, favorites: this.state.favorites, removedFavorites: this.state.removedFavorites, settingsUpdatedAt: this.state.settingsUpdatedAt } };
+    return JSON.parse(JSON.stringify({ library: compressLibraryForCloud(library), history: this.state.history, sync: { mappings: this.state.mappings, favorites: this.state.favorites, removedFavorites: this.state.removedFavorites, settingsUpdatedAt: this.state.settingsUpdatedAt } }));
   }
 
-  async _syncPrivateLibrary(userId) {
+  async _syncPrivateLibrary(userId,context=this._context(userId)) {
+    if(!this._current(context))return;
+    const readStateRevision=this._stateRevision;
     const { data: remote, error } = await this.client.from('user_library_snapshots').select('snapshot,revision,updated_at').eq('user_id', userId).maybeSingle();
+    if(!this._current(context))return;
     if (error) throw error;
-    const localDirty = Boolean(this.store.data.cloudDirty);
+    const localDirty = Boolean(this.store.data.cloudDirty) || readStateRevision!==this._stateRevision;
     const localRevision = Number(this.state.libraryRevision) || 0;
     if (!remote) {
+      const token=this.store.versionToken(),stateRevision=this._stateRevision;
       const snapshot = this._privateSnapshot();
       snapshot.library.settings = Object.fromEntries(Object.entries(snapshot.library.settings || {}).filter(([key]) => !DEVICE_SETTINGS.includes(key)));
       const { data, error: insertError } = await this.client.from('user_library_snapshots').insert({ user_id: userId, snapshot, revision: 1, updated_at: nowIso() }).select('revision,updated_at').single();
-      if (insertError) { if (insertError.code === '23505') return this._syncPrivateLibrary(userId); throw insertError; }
+      if(!this._current(context))return;
+      if (insertError) { if (insertError.code === '23505') {this._scheduleSync(1000);return;} throw insertError; }
       this.state.libraryRevision = Number(data.revision) || 1;
-      this.store.markCloudSynced(data.updated_at);
+      if(stateRevision===this._stateRevision)this.store.markCloudSynced(data.updated_at,token);
+      if(!this.store.matchesToken(token) || stateRevision!==this._stateRevision) {this.store.save(true,true);this._scheduleSync(1000);}
       this._saveState();
       return;
     }
@@ -601,36 +666,44 @@ class CloudService {
       restored.cloudDirty = false;
       this.suppressLibrarySync = true;
       try { this.store.applyCloudData(restored, remote.updated_at); } finally { this.suppressLibrarySync = false; }
-      this.state = { ...this.state, ...(remoteSnapshot.sync || {}), history: remoteSnapshot.history || this.state.history, libraryRevision: Number(remote.revision) };
+      this.state = { ...this.state, ...(remoteSnapshot.sync || {}), history: [...new Map([...(remoteSnapshot.history || []),...this.state.history].map(r=>[r.id,r])).values()], libraryRevision: Number(remote.revision) };
       this._saveState();
       return;
     }
     if (!localDirty) return;
-    let library = this.store.snapshot();
-    if (localRevision !== Number(remote.revision)) library = mergeLibrarySnapshots(library, remote.snapshot?.library || EMPTY_LIBRARY());
+    const token=this.store.versionToken(),base=this.store.snapshot(),stateRevision=this._stateRevision;
+    let library = base;
+    if (localRevision !== Number(remote.revision)) library = mergeLibrarySnapshots(library, expandLibraryFromCloud(remote.snapshot?.library || EMPTY_LIBRARY()));
     const snapshot = this._privateSnapshot();
     snapshot.library = compressLibraryForCloud(library);
     snapshot.library.settings = Object.fromEntries(Object.entries(snapshot.library.settings || {}).filter(([key]) => !DEVICE_SETTINGS.includes(key)));
     const history = new Map([...(remote.snapshot?.history || []), ...this.state.history].map((record) => [record.id, record]));
-    snapshot.history = [...history.values()];
-    snapshot.sync = { ...(remote.snapshot?.sync || {}), mappings: this.state.mappings, favorites: this.state.favorites, removedFavorites: this.state.removedFavorites, settingsUpdatedAt: this.state.settingsUpdatedAt };
+    Object.assign(snapshot,JSON.parse(JSON.stringify({history:[...history.values()],sync:{ ...(remote.snapshot?.sync || {}), mappings: this.state.mappings, favorites: this.state.favorites, removedFavorites: this.state.removedFavorites, settingsUpdatedAt: this.state.settingsUpdatedAt }})));
     const updatedAt = nowIso();
     const { data, error: updateError } = await this.client.from('user_library_snapshots').update({ snapshot, revision: Number(remote.revision) + 1, updated_at: updatedAt }).eq('user_id', userId).eq('revision', remote.revision).select('revision,updated_at').maybeSingle();
+    if(!this._current(context))return;
     if (updateError) throw updateError;
     if (!data) { this.state.libraryRevision = 0; this._saveState(); this._scheduleSync(1000); return; }
     this.state.libraryRevision = Number(data.revision);
-    if (library !== this.store.data) {
+    const pending=!this.store.matchesToken(token) || stateRevision!==this._stateRevision;
+    if (library !== base) {
+      if(pending)library=Identity.rebase(base,this.store.snapshot(),library);
       const deviceSettings = Object.fromEntries(DEVICE_SETTINGS.map((key) => [key, this.store.data.settings[key]]));
       this.suppressLibrarySync = true;
-      try { this.store.applyCloudData({ ...library, settings: { ...library.settings, ...deviceSettings } }, data.updated_at); } finally { this.suppressLibrarySync = false; }
-    } else this.store.markCloudSynced(data.updated_at);
+      try { this.store.applyCloudData({ ...library, settings: { ...library.settings, ...deviceSettings } }, data.updated_at,{pending}); } finally { this.suppressLibrarySync = false; }
+    } else if(pending) {
+      this.store.data.cloudDirty=true;
+      this.store.save(true,true,{cloud:true,emit:false});
+    } else this.store.markCloudSynced(data.updated_at,token);
+    if(pending)this._scheduleSync(1000);
     this._saveState();
   }
 
-  async _resolveCatalog() {
+  async _resolveCatalog(context) {
     const series = this.store.data.series.filter((item) => item.anilistId != null);
     const ids = [...new Set(series.flatMap((item) => [String(item.anilistId), `anilist:${item.anilistId}`]))];
     const { data: animeRows, error: animeError } = await this.client.from('anime').select('id,external_id').in('external_id', ids);
+    if(context && !this._current(context))return;
     if (animeError) throw animeError;
     const localAnime = new Map();
     for (const row of animeRows || []) {
@@ -643,6 +716,7 @@ class CloudService {
       return { episodes: new Map(), anime: new Map() };
     }
     const { data: episodeRows, error: episodeError } = await this.client.from('episodes').select('id,anime_id,episode_number,season_number').in('anime_id', remoteAnimeIds);
+    if(context && !this._current(context))return;
     if (episodeError) throw episodeError;
     const remoteEpisodes = new Map();
     for (const row of episodeRows || []) remoteEpisodes.set(`${row.anime_id}:${row.season_number}:${row.episode_number}`, row.id);
@@ -667,16 +741,27 @@ class CloudService {
       const animeId = localAnime.get(String(item.anilistId));
       if (animeId) animeMap.set(item.id, animeId);
     }
+    // The optional numbered catalogue cannot represent independent cuts/units
+    // targeting the same row. Keep their progress in the private UUID snapshot.
+    const targets=new Map();for(const remoteId of episodeMap.values())targets.set(remoteId,(targets.get(remoteId)||0)+1);
+    for(const [localKey,remoteId] of episodeMap)if(targets.get(remoteId)>1) {
+      episodeMap.delete(localKey);unmatchedEpisodes++;
+      const [seriesId,episodeId]=localKey.split(':');
+      delete this.state.mappings[seriesId]?.episodes?.[episodeId];
+    }
     this.pendingCatalogMatches = unmatchedEpisodes;
     return { episodes: episodeMap, anime: animeMap };
   }
 
-  async _syncProgress(userId, catalog) {
+  async _syncProgress(userId, catalog,context) {
+    const token=this.store.versionToken();
+    const pendingLocal=Boolean(this.store.data.cloudDirty);
     const { data: remoteRows, error } = await this.client.from('user_progress').select('episode_id,position_seconds,completed,updated_at').eq('user_id', userId);
+    if(context && !this._current(context))return;
     if (error) throw error;
     const remoteByEpisode = new Map((remoteRows || []).map((row) => [row.episode_id, row]));
     const localByRemote = new Map([...catalog.episodes].map(([local, remote]) => [remote, local]));
-    for (const row of remoteRows || []) {
+    for (const row of !pendingLocal && this.store.matchesToken(token)?remoteRows || []:[]) {
       const local = localByRemote.get(row.episode_id);
       if (!local) continue;
       const [seriesId, episodeId] = local.split(':');
@@ -694,13 +779,15 @@ class CloudService {
     }
     if (pending.length) {
       const { error: upsertError } = await this.client.from('user_progress').upsert(pending, { onConflict: 'user_id,episode_id' });
+      if(context && !this._current(context))return;
       if (upsertError) throw upsertError;
     }
   }
 
-  async _syncHistory(userId, catalog) {
+  async _syncHistory(userId, catalog,context) {
     const reverseMap = new Map([...catalog.episodes].map(([local, remote]) => [remote, local]));
     const { data: remoteRows, error: selectError } = await this.client.from('watch_history').select('id,episode_id,started_at,finished_at,watched_seconds').eq('user_id', userId);
+    if(context && !this._current(context))return;
     if (selectError) throw selectError;
     const knownIds = new Set(this.state.history.map((record) => record.id));
     for (const row of remoteRows || []) {
@@ -718,13 +805,15 @@ class CloudService {
     }
     if (!pending.length) return;
     const { error } = await this.client.from('watch_history').upsert(pending, { onConflict: 'id' });
+    if(context && !this._current(context))return;
     if (error) throw error;
     const sent = new Set(pending.map((record) => record.id));
     for (const record of this.state.history) if (sent.has(record.id)) record.synced = true;
   }
 
-  async _syncFavorites(userId, catalog) {
+  async _syncFavorites(userId, catalog,context) {
     const { data: remoteRows, error } = await this.client.from('favorites').select('anime_id').eq('user_id', userId);
+    if(context && !this._current(context))return;
     if (error) throw error;
     const localAnime = new Map([...catalog.anime].map(([local, remote]) => [remote, local]));
     const remoteFavorites = new Set((remoteRows || []).map((row) => row.anime_id));
@@ -736,6 +825,7 @@ class CloudService {
     const additions = [...localFavoriteAnime].filter((id) => !remoteFavorites.has(id)).map((anime_id) => ({ user_id: userId, anime_id }));
     if (additions.length) {
       const { error: insertError } = await this.client.from('favorites').insert(additions);
+      if(context && !this._current(context))return;
       if (insertError) throw insertError;
     }
     const removed = [];
@@ -743,6 +833,7 @@ class CloudService {
       const animeId = catalog.anime.get(localId);
       if (animeId) {
         const { error: deleteError } = await this.client.from('favorites').delete().eq('user_id', userId).eq('anime_id', animeId);
+        if(context && !this._current(context))return;
         if (deleteError) throw deleteError;
         removed.push(localId);
       }
@@ -750,13 +841,16 @@ class CloudService {
     this.state.removedFavorites = this.state.removedFavorites.filter((id) => !removed.includes(id));
   }
 
-  async _syncSettings(userId) {
+  async _syncSettings(userId,context) {
+    const token=this.store.versionToken();
     const { data: remote, error } = await this.client.from('settings').select('settings,updated_at').eq('user_id', userId).maybeSingle();
+    if(context && !this._current(context) || !this.store.matchesToken(token))return;
     if (error) throw error;
-    const localUpdatedAt = this.state.settingsUpdatedAt;
+    const localUpdatedAt = Math.max(this.state.settingsUpdatedAt || 0,this.store.data.settingsUpdatedAt || 0);
     if (remote && (Date.parse(remote.updated_at) || 0) > localUpdatedAt) {
       const patch = Object.fromEntries(CLOUD_SETTINGS.filter((key) => Object.hasOwn(remote.settings || {}, key) && validCloudSetting(key, remote.settings[key])).map((key) => [key, remote.settings[key]]));
       Object.assign(this.store.data.settings, patch);
+      this.store.data.settingsUpdatedAt=Date.parse(remote.updated_at) || 0;
       this.store.save();
       this.notify('lib:changed', this.store.snapshot());
       this.state.settingsUpdatedAt = Date.parse(remote.updated_at) || 0;
@@ -765,6 +859,7 @@ class CloudService {
     const settings = Object.fromEntries(CLOUD_SETTINGS.filter((key) => Object.hasOwn(this.store.data.settings, key) && validCloudSetting(key, this.store.data.settings[key])).map((key) => [key, this.store.data.settings[key]]));
     const row = { user_id: userId, settings, updated_at: nowIso(localUpdatedAt || Date.now()) };
     const { error: upsertError } = await this.client.from('settings').upsert(row, { onConflict: 'user_id' });
+    if(context && !this._current(context) || !this.store.matchesToken(token))return;
     if (upsertError) throw upsertError;
     if (!localUpdatedAt) this.state.settingsUpdatedAt = Date.now();
   }
