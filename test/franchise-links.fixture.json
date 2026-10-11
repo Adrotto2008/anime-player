@@ -1,0 +1,1663 @@
+{
+  "source": "Public AniList metadata via application client; no user data",
+  "capturedAt": "2026-10-11T15:09:00.571Z",
+  "records": [
+    {
+      "anilistId": 21355,
+      "title": "Re:ZERO -Starting Life in Another World-",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21355-wRVUrGxpvIQQ.jpg",
+      "format": "TV",
+      "episodeCount": 25,
+      "year": 2016,
+      "related": [
+        {
+          "id": 21780,
+          "title": "Re:ZERO ~Starting Break Time From Zero~",
+          "relation": "SPIN_OFF",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/21780-xCJk0z5vpn57.jpg"
+        },
+        {
+          "id": 21891,
+          "title": "Re:PETIT ~Re: Starting Life in Another World From PETIT~",
+          "relation": "SPIN_OFF",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b21891-Zr4CPYnZzljl.jpg"
+        },
+        {
+          "id": 100049,
+          "title": "Re:ZERO -Starting Life in Another World- OVAs",
+          "relation": "SIDE_STORY",
+          "format": "OVA",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx100049-mgvPLctBJprp.jpg"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx104454-pH5YCR7HteqP.jpg"
+        },
+        {
+          "id": 108632,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx108632-lQWnmw7XaNOK.jpg"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110178-UhigZiRQVwLf.jpg"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "relation": "CHARACTER",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx117074-kgucq8a1ZeOw.jpg"
+        },
+        {
+          "id": 166093,
+          "title": "Snack Basue",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx166093-dibytcX5V7G3.jpg"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx194447-sgmaOpJ0VIUI.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 108632,
+      "title": "Re:ZERO -Starting Life in Another World- Season 2",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx108632-lQWnmw7XaNOK.jpg",
+      "format": "TV",
+      "episodeCount": 13,
+      "year": 2020,
+      "related": [
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21355-wRVUrGxpvIQQ.jpg"
+        },
+        {
+          "id": 119661,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2 Part 2",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2021,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx119661-GDbUZxrZMz01.png"
+        },
+        {
+          "id": 120700,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season",
+          "relation": "SPIN_OFF",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b120700-buuy9COgsBTa.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 119661,
+      "title": "Re:ZERO -Starting Life in Another World- Season 2 Part 2",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season Part 2",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx119661-GDbUZxrZMz01.png",
+      "format": "TV",
+      "episodeCount": 12,
+      "year": 2021,
+      "related": [
+        {
+          "id": 108632,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx108632-lQWnmw7XaNOK.jpg"
+        },
+        {
+          "id": 128306,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season Part 2",
+          "relation": "SPIN_OFF",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2021,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b128306-94Zyoqy2fA4X.png"
+        },
+        {
+          "id": 163134,
+          "title": "Re:ZERO -Starting Life in Another World- Season 3",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx163134-yieRFbvUOH9a.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 163134,
+      "title": "Re:ZERO -Starting Life in Another World- Season 3",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx163134-yieRFbvUOH9a.jpg",
+      "format": "TV",
+      "episodeCount": 16,
+      "year": 2024,
+      "related": [
+        {
+          "id": 119661,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2 Part 2",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2021,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx119661-GDbUZxrZMz01.png"
+        },
+        {
+          "id": 182417,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 3rd Season",
+          "relation": "SPIN_OFF",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx182417-zKlgy4KbGj1H.jpg"
+        },
+        {
+          "id": 189046,
+          "title": "Re:ZERO -Starting Life in Another World- Season 4",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2026,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx189046-yaHWtS5FII46.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 189046,
+      "title": "Re:ZERO -Starting Life in Another World- Season 4",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 4th Season",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx189046-yaHWtS5FII46.jpg",
+      "format": "TV",
+      "episodeCount": 19,
+      "year": 2026,
+      "related": [
+        {
+          "id": 163134,
+          "title": "Re:ZERO -Starting Life in Another World- Season 3",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx163134-yieRFbvUOH9a.jpg"
+        },
+        {
+          "id": 210687,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 4th Season",
+          "relation": "SPIN_OFF",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2026,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx210687-H54G1bTwCBpV.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 21202,
+      "title": "KONOSUBA -God's blessing on this wonderful world!",
+      "altTitle": "Kono Subarashii Sekai ni Shukufuku wo!",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21202-mPOr80AEjUcZ.png",
+      "format": "TV",
+      "episodeCount": 10,
+      "year": 2016,
+      "related": [
+        {
+          "id": 21574,
+          "title": "KONOSUBA -God's blessing on this wonderful world!: God's Blessings On This Wonderful Choker!",
+          "relation": "SIDE_STORY",
+          "format": "OVA",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21574-CTRsdAGe4mDp.png"
+        },
+        {
+          "id": 21699,
+          "title": "KONOSUBA -God's blessing on this wonderful world! 2",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21699-Fkbnkl9ZC6fW.png"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx104454-pH5YCR7HteqP.jpg"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110178-UhigZiRQVwLf.jpg"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "relation": "CHARACTER",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx117074-kgucq8a1ZeOw.jpg"
+        },
+        {
+          "id": 150075,
+          "title": "KONOSUBA -An Explosion on This Wonderful World!",
+          "relation": "SPIN_OFF",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2023,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx150075-QIGcA7oVyO6l.jpg"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx194447-sgmaOpJ0VIUI.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 21699,
+      "title": "KONOSUBA -God's blessing on this wonderful world! 2",
+      "altTitle": "Kono Subarashii Sekai ni Shukufuku wo! 2",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21699-Fkbnkl9ZC6fW.png",
+      "format": "TV",
+      "episodeCount": 10,
+      "year": 2017,
+      "related": [
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21202-mPOr80AEjUcZ.png"
+        },
+        {
+          "id": 97996,
+          "title": "KONOSUBA -God's blessing on this wonderful world! 2: God's Blessings on These Wonderful Works of Art!",
+          "relation": "SIDE_STORY",
+          "format": "OVA",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b97996-px2KGexuEZpg.jpg"
+        },
+        {
+          "id": 102976,
+          "title": "KONOSUBA -God's blessing on this wonderful world!- Legend of Crimson",
+          "relation": "SEQUEL",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx102976-2Yi5icRbjukO.png"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 102976,
+      "title": "KONOSUBA -God's blessing on this wonderful world!- Legend of Crimson",
+      "altTitle": "Kono Subarashii Sekai ni Shukufuku wo! Kurenai Densetsu",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx102976-2Yi5icRbjukO.png",
+      "format": "MOVIE",
+      "episodeCount": 1,
+      "year": 2019,
+      "related": [
+        {
+          "id": 21699,
+          "title": "KONOSUBA -God's blessing on this wonderful world! 2",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21699-Fkbnkl9ZC6fW.png"
+        },
+        {
+          "id": 136804,
+          "title": "KONOSUBA -God's blessing on this wonderful world! 3",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx136804-7FVftG67FPBc.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 20832,
+      "title": "Overlord",
+      "altTitle": "Overlord",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx20832-vUNm5zrYWifc.jpg",
+      "format": "TV",
+      "episodeCount": 13,
+      "year": 2015,
+      "related": [
+        {
+          "id": 87489,
+          "title": "Overlord: Ple Ple Pleiades - Nazarick Saidai no Kiki",
+          "relation": "SIDE_STORY",
+          "format": "OVA",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/87489-rizr4yabatdV.jpg"
+        },
+        {
+          "id": 98437,
+          "title": "Overlord II",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98437-5q0GWqHhNAgJ.jpg"
+        },
+        {
+          "id": 98873,
+          "title": "Overlord: The Undead King",
+          "relation": "SUMMARY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98873-XAcxAF1rXuyM.jpg"
+        },
+        {
+          "id": 98874,
+          "title": "Overlord: The Dark Hero",
+          "relation": "SUMMARY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98874-pZZievwSEwwC.jpg"
+        },
+        {
+          "id": 21305,
+          "title": "Overlord: Ple Ple Pleiades",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/21305-TaVD5SO86umP.jpg"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx104454-pH5YCR7HteqP.jpg"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110178-UhigZiRQVwLf.jpg"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "relation": "CHARACTER",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx117074-kgucq8a1ZeOw.jpg"
+        },
+        {
+          "id": 166035,
+          "title": "Overlord: Ple Ple Pleiades Tokubetsu-hen",
+          "relation": "SIDE_STORY",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx166035-hQZ7BI4mLkxL.jpg"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx194447-sgmaOpJ0VIUI.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 98437,
+      "title": "Overlord II",
+      "altTitle": "Overlord II",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx98437-5q0GWqHhNAgJ.jpg",
+      "format": "TV",
+      "episodeCount": 13,
+      "year": 2018,
+      "related": [
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20832-vUNm5zrYWifc.jpg"
+        },
+        {
+          "id": 101083,
+          "title": "Overlord: Ple Ple Pleiades 2",
+          "relation": "SIDE_STORY",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b101083-glFBs3o8ej3g.png"
+        },
+        {
+          "id": 101474,
+          "title": "Overlord III",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101474-tGRyvSAWMjU9.jpg"
+        },
+        {
+          "id": 98874,
+          "title": "Overlord: The Dark Hero",
+          "relation": "PREQUEL",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98874-pZZievwSEwwC.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 101474,
+      "title": "Overlord III",
+      "altTitle": "Overlord III",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx101474-tGRyvSAWMjU9.jpg",
+      "format": "TV",
+      "episodeCount": 13,
+      "year": 2018,
+      "related": [
+        {
+          "id": 98437,
+          "title": "Overlord II",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx98437-5q0GWqHhNAgJ.jpg"
+        },
+        {
+          "id": 103209,
+          "title": "Overlord: Ple Ple Pleiades 3",
+          "relation": "SIDE_STORY",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b103209-3YzdSL4JkSi9.png"
+        },
+        {
+          "id": 133844,
+          "title": "Overlord IV",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx133844-E32FjKZ0XxEs.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 133844,
+      "title": "Overlord IV",
+      "altTitle": "Overlord IV",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx133844-E32FjKZ0XxEs.jpg",
+      "format": "TV",
+      "episodeCount": 13,
+      "year": 2022,
+      "related": [
+        {
+          "id": 101474,
+          "title": "Overlord III",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101474-tGRyvSAWMjU9.jpg"
+        },
+        {
+          "id": 133845,
+          "title": "OVERLORD: The Sacred Kingdom",
+          "relation": "SEQUEL",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx133845-InD67nSzCAUr.png"
+        },
+        {
+          "id": 151898,
+          "title": "Overlord: Ple Ple Pleiades 4",
+          "relation": "SIDE_STORY",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx151898-O2DNX5aVCB8q.png"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 133845,
+      "title": "OVERLORD: The Sacred Kingdom",
+      "altTitle": "Overlord: Sei Oukoku-hen",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx133845-InD67nSzCAUr.png",
+      "format": "MOVIE",
+      "episodeCount": 1,
+      "year": 2024,
+      "related": [
+        {
+          "id": 133844,
+          "title": "Overlord IV",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx133844-E32FjKZ0XxEs.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 21613,
+      "title": "Saga of Tanya the Evil",
+      "altTitle": "Youjo Senki",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21613-qT3NiwYP5dYc.png",
+      "format": "TV",
+      "episodeCount": 12,
+      "year": 2017,
+      "related": [
+        {
+          "id": 98186,
+          "title": "Youjo Shenki",
+          "relation": "SIDE_STORY",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/98186-2s9zyDfRAvrr.png"
+        },
+        {
+          "id": 100878,
+          "title": "Saga of Tanya the Evil - the Movie -",
+          "relation": "SEQUEL",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx100878-npKVJvggmK6a.jpg"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx104454-pH5YCR7HteqP.jpg"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110178-UhigZiRQVwLf.jpg"
+        },
+        {
+          "id": 135866,
+          "title": "Saga of Tanya the Evil: Operation Desert Pasta",
+          "relation": "SIDE_STORY",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2021,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx135866-Q5qZPscMNLFa.png"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "relation": "CHARACTER",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx117074-kgucq8a1ZeOw.jpg"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "relation": "CHARACTER",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx194447-sgmaOpJ0VIUI.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 100878,
+      "title": "Saga of Tanya the Evil - the Movie -",
+      "altTitle": "Youjo Senki Movie",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx100878-npKVJvggmK6a.jpg",
+      "format": "MOVIE",
+      "episodeCount": 1,
+      "year": 2019,
+      "related": [
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "relation": "PREQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21613-qT3NiwYP5dYc.png"
+        },
+        {
+          "id": 135865,
+          "title": "Saga of Tanya the Evil Season 2",
+          "relation": "SEQUEL",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2026,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx135865-T7XIPMAbqcxN.png"
+        },
+        {
+          "id": 135866,
+          "title": "Saga of Tanya the Evil: Operation Desert Pasta",
+          "relation": "PREQUEL",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2021,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx135866-Q5qZPscMNLFa.png"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 104454,
+      "title": "Isekai Quartet",
+      "altTitle": "Isekai Quartet",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx104454-pH5YCR7HteqP.jpg",
+      "format": "TV_SHORT",
+      "episodeCount": 12,
+      "year": 2019,
+      "related": [
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20832-vUNm5zrYWifc.jpg"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21355-wRVUrGxpvIQQ.jpg"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21202-mPOr80AEjUcZ.png"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21613-qT3NiwYP5dYc.png"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "relation": "SEQUEL",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110178-UhigZiRQVwLf.jpg"
+        }
+      ],
+      "relationTags": [
+        {
+          "id": 158,
+          "name": "Crossover",
+          "rank": 97,
+          "isMediaSpoiler": false
+        }
+      ]
+    },
+    {
+      "anilistId": 110178,
+      "title": "Isekai Quartet 2",
+      "altTitle": "Isekai Quartet 2",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx110178-UhigZiRQVwLf.jpg",
+      "format": "TV_SHORT",
+      "episodeCount": 12,
+      "year": 2020,
+      "related": [
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "relation": "PREQUEL",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx104454-pH5YCR7HteqP.jpg"
+        },
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20832-vUNm5zrYWifc.jpg"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21355-wRVUrGxpvIQQ.jpg"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21202-mPOr80AEjUcZ.png"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21613-qT3NiwYP5dYc.png"
+        },
+        {
+          "id": 99263,
+          "title": "The Rising of the Shield Hero",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx99263-LcazQwdlWzMy.jpg"
+        },
+        {
+          "id": 105156,
+          "title": "Cautious Hero: The Hero Is Overpowered but Overly Cautious",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx105156-ZVtxISdoUqnY.png"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "relation": "SEQUEL",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx117074-kgucq8a1ZeOw.jpg"
+        }
+      ],
+      "relationTags": [
+        {
+          "id": 158,
+          "name": "Crossover",
+          "rank": 100,
+          "isMediaSpoiler": false
+        }
+      ]
+    },
+    {
+      "anilistId": 117074,
+      "title": "Isekai Quartet The Movie: Another World",
+      "altTitle": "Isekai Quartet: Another World",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx117074-kgucq8a1ZeOw.jpg",
+      "format": "MOVIE",
+      "episodeCount": 1,
+      "year": 2022,
+      "related": [
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "relation": "PREQUEL",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2020,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx110178-UhigZiRQVwLf.jpg"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21613-qT3NiwYP5dYc.png"
+        },
+        {
+          "id": 99263,
+          "title": "The Rising of the Shield Hero",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx99263-LcazQwdlWzMy.jpg"
+        },
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20832-vUNm5zrYWifc.jpg"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21202-mPOr80AEjUcZ.png"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21355-wRVUrGxpvIQQ.jpg"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "relation": "SEQUEL",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx194447-sgmaOpJ0VIUI.jpg"
+        }
+      ],
+      "relationTags": [
+        {
+          "id": 158,
+          "name": "Crossover",
+          "rank": 96,
+          "isMediaSpoiler": false
+        }
+      ]
+    },
+    {
+      "anilistId": 194447,
+      "title": "Isekai Quartet 3",
+      "altTitle": "Isekai Quartet 3",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx194447-sgmaOpJ0VIUI.jpg",
+      "format": "TV_SHORT",
+      "episodeCount": 11,
+      "year": 2025,
+      "related": [
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "relation": "PREQUEL",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx117074-kgucq8a1ZeOw.jpg"
+        },
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20832-vUNm5zrYWifc.jpg"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21202-mPOr80AEjUcZ.png"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21613-qT3NiwYP5dYc.png"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21355-wRVUrGxpvIQQ.jpg"
+        },
+        {
+          "id": 99263,
+          "title": "The Rising of the Shield Hero",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx99263-LcazQwdlWzMy.jpg"
+        },
+        {
+          "id": 130298,
+          "title": "The Eminence in Shadow",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx130298-YMdcKHytpWNH.jpg"
+        },
+        {
+          "id": 105156,
+          "title": "Cautious Hero: The Hero Is Overpowered but Overly Cautious",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx105156-ZVtxISdoUqnY.png"
+        }
+      ],
+      "relationTags": [
+        {
+          "id": 158,
+          "name": "Crossover",
+          "rank": 91,
+          "isMediaSpoiler": false
+        }
+      ]
+    },
+    {
+      "anilistId": 166093,
+      "title": "Snack Basue",
+      "altTitle": "Snack Basue",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx166093-dibytcX5V7G3.jpg",
+      "format": "TV",
+      "episodeCount": 13,
+      "year": 2024,
+      "related": [
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21355-wRVUrGxpvIQQ.jpg"
+        }
+      ],
+      "relationTags": []
+    },
+    {
+      "anilistId": 21,
+      "title": "ONE PIECE",
+      "altTitle": "ONE PIECE",
+      "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/large/bx21-ELSYx3yMPcKM.jpg",
+      "format": "TV",
+      "episodeCount": null,
+      "year": 1999,
+      "related": [
+        {
+          "id": 466,
+          "title": "One Piece: Defeat the Pirate Ganzack!",
+          "relation": "SIDE_STORY",
+          "format": "OVA",
+          "type": "ANIME",
+          "year": 1998,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx466-bVP54I7dCB2F.jpg"
+        },
+        {
+          "id": 1094,
+          "title": "One Piece: Umi no Heso no Daibouken-hen",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2000,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1094-H3YFJ1TR0ZZi.jpg"
+        },
+        {
+          "id": 1237,
+          "title": "One Piece Special: Open Upon the Great Sea! A Father's Huge, HUGE Dream!",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2003,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/1237.jpg"
+        },
+        {
+          "id": 1238,
+          "title": "One Piece Special: Protect! The Last Great Performance",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2003,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx1238-Rf2wqBrCwgvO.jpg"
+        },
+        {
+          "id": 2020,
+          "title": "One Piece Special: The Detective Memoirs of Chief Straw Hat Luffy",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2005,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/2020.jpg"
+        },
+        {
+          "id": 2386,
+          "title": "ONE PIECE: Yume no Soccer Ou!",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2002,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/2386-NQQkq1taHJ08.jpg"
+        },
+        {
+          "id": 2490,
+          "title": "ONE PIECE: Mezase! Kaizoku Yakyuu Ou",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2004,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/2490-AL4WmnCJ5zvE.jpg"
+        },
+        {
+          "id": 12001,
+          "title": "ONE PIECE 3D: Gekisou! Trap Coaster",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2011,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx12001-XX0NNNfaKZ3e.jpg"
+        },
+        {
+          "id": 16239,
+          "title": "One Piece: Episode of Luffy - Hand Island Adventure",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2012,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b16239-XzoVjd7JK8xJ.png"
+        },
+        {
+          "id": 16468,
+          "title": "ONE PIECE FILM: Z - GLORIOUS ISLAND",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2012,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b16468-pMKFwfY8lYZX.png"
+        },
+        {
+          "id": 15323,
+          "title": "ONE PIECE: Episode of Nami - Koukaishi no Namida to Nakama no Kizuna",
+          "relation": "SUMMARY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2012,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/15323.jpg"
+        },
+        {
+          "id": 19123,
+          "title": "One Piece: Episode of Merry - The Tale of One More Friend",
+          "relation": "SUMMARY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2013,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx19123-leET1CrSJknT.jpg"
+        },
+        {
+          "id": 20835,
+          "title": "One Piece 3D2Y: Overcome Ace’s Death! Luffy’s Vow to his Friends",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2014,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx20835-QVV6LpJlqe1A.jpg"
+        },
+        {
+          "id": 21230,
+          "title": "One Piece - Episode of Sabo: Bond of Three Brothers - A Miraculous Reunion and an Inherited Will",
+          "relation": "SUMMARY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21230-rfoUZud1Jn0L.png"
+        },
+        {
+          "id": 21485,
+          "title": "One Piece: Adventure of Nebulandia",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2015,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/21485-KR1sv4rYSe6V.jpg"
+        },
+        {
+          "id": 21831,
+          "title": "One Piece: Heart of Gold",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx21831-qj5IKYiPOupF.jpg"
+        },
+        {
+          "id": 99302,
+          "title": "One Piece: Episode of East Blue",
+          "relation": "SUMMARY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2017,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx99302-b40WIhc5dylo.jpg"
+        },
+        {
+          "id": 459,
+          "title": "ONE PIECE: The Movie",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2000,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx459-Ivw65mUXackh.png"
+        },
+        {
+          "id": 460,
+          "title": "One Piece: Clockwork Island Adventure",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2001,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx460-p9HObfGUhWn0.jpg"
+        },
+        {
+          "id": 461,
+          "title": "One Piece: Chopper’s Kingdom on the Island of Strange Animals",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2002,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx461-DC9fMDl3AaK1.jpg"
+        },
+        {
+          "id": 462,
+          "title": "One Piece The Movie: The Dead End Adventure",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2003,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx462-Ig8zfdsFWcql.png"
+        },
+        {
+          "id": 463,
+          "title": "One Piece: The Curse of the Sacred Sword",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2004,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx463-QDnETPoHp9oD.jpg"
+        },
+        {
+          "id": 464,
+          "title": "One Piece: Baron Omatsuri and the Secret Island",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2005,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx464-g4wcZPjbhY5j.png"
+        },
+        {
+          "id": 465,
+          "title": "One Piece: Mega Mecha Soldier of Karakuri Castle",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2006,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx465-qSRr0MKYhS0I.jpg"
+        },
+        {
+          "id": 2107,
+          "title": "One Piece: The Desert Princess and the Pirates, Adventures in Alabasta",
+          "relation": "SUMMARY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2007,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2107-H8bRuRRbhCIJ.jpg"
+        },
+        {
+          "id": 3848,
+          "title": "One Piece: Episode Of Chopper +: The Miracle Winter Cherry Blossom",
+          "relation": "SUMMARY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2008,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx3848-SCnYGTn34Llt.jpg"
+        },
+        {
+          "id": 4155,
+          "title": "One Piece Film: Strong World",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2009,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx4155-P5TDf6t6qFwX.png"
+        },
+        {
+          "id": 9999,
+          "title": "One Piece 3D: Mugiwara Chase",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2011,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx9999-2icUDMDtpH2L.jpg"
+        },
+        {
+          "id": 12859,
+          "title": "One Piece Film: Z",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2012,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx12859-uQFENDPzMWz6.jpg"
+        },
+        {
+          "id": 21335,
+          "title": "One Piece Film: Gold",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx21335-XsXdE0AeOkkZ.jpg"
+        },
+        {
+          "id": 101918,
+          "title": "One Piece: Episode of Skypiea",
+          "relation": "SUMMARY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2018,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx101918-3uyCYHw1syki.png"
+        },
+        {
+          "id": 8740,
+          "title": "ONE PIECE FILM: STRONG WORLD - EPISODE:0",
+          "relation": "SIDE_STORY",
+          "format": "OVA",
+          "type": "ANIME",
+          "year": 2010,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b8740-oZajT3brPn7b.jpg"
+        },
+        {
+          "id": 105143,
+          "title": "One Piece: Stampede",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2019,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx105143-5uBDmhvMr6At.png"
+        },
+        {
+          "id": 102639,
+          "title": "Nissan SERENA × One Piece: Sennyuu Sauzando Sanii-gou",
+          "relation": "CHARACTER",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx102639-AjxqMLkusd2Y.jpg"
+        },
+        {
+          "id": 106492,
+          "title": "Kyutai Panic Adventure!",
+          "relation": "CHARACTER",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b106492-ciLSI5nTJsV7.png"
+        },
+        {
+          "id": 106572,
+          "title": "ONE PIECE: Episode of Alabasta - Sabaku no Oujo to Kaizoku-tachi",
+          "relation": "SUMMARY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2011,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/n106572-k1gqIsDcqGaV.jpg"
+        },
+        {
+          "id": 107110,
+          "title": "ONE PIECE: Cry heart",
+          "relation": "OTHER",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2014,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/n107110-pF0sMxDe3aLi.png"
+        },
+        {
+          "id": 107256,
+          "title": "Kyutai Panic Adventure Returns!!!",
+          "relation": "CHARACTER",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b107256-Pvgk6VnCmMZq.png"
+        },
+        {
+          "id": 2385,
+          "title": "One Piece: Django's Dance Carnival",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2001,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx2385-06iBj9aNIadt.jpg"
+        },
+        {
+          "id": 101099,
+          "title": "HUNGRY DAYS: Aoharu ka yo.",
+          "relation": "CHARACTER",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b101099-3AoCbJWTj2cV.jpg"
+        },
+        {
+          "id": 21880,
+          "title": "ONE PIECE FILM: GOLD - episode 0 711ver.",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx21880-uxsZ880LXSdY.jpg"
+        },
+        {
+          "id": 5252,
+          "title": "One Piece: Romance Dawn Story",
+          "relation": "ALTERNATIVE",
+          "format": "OVA",
+          "type": "ANIME",
+          "year": 2008,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/5252.jpg"
+        },
+        {
+          "id": 113308,
+          "title": "Kinen Satsuei",
+          "relation": "CHARACTER",
+          "format": "MUSIC",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx113308-u6wWW3d01DSt.jpg"
+        },
+        {
+          "id": 114761,
+          "title": "A-RA-SHI : Reborn",
+          "relation": "CHARACTER",
+          "format": "MUSIC",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b114761-C2xOMuA44zKY.png"
+        },
+        {
+          "id": 10033,
+          "title": "Toriko",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2011,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/nx10033-V7xnlgAVtaVR.jpg"
+        },
+        {
+          "id": 813,
+          "title": "Dragon Ball Z",
+          "relation": "CHARACTER",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 1989,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx813-ZhnFNOeCU5dQ.png"
+        },
+        {
+          "id": 126649,
+          "title": "The Great Tongari Island Treasure Hunting Adventure",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2016,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b126649-sbuKTAghtsln.jpg"
+        },
+        {
+          "id": 141902,
+          "title": "One Piece Film: Red",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2022,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx141902-fTyoTk8F8qOl.jpg"
+        },
+        {
+          "id": 143293,
+          "title": "One Piece: Annecy Festival 60th Anniversary",
+          "relation": "OTHER",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx143293-1ngwckHDsK95.jpg"
+        },
+        {
+          "id": 167404,
+          "title": "MONSTERS: 103 Mercies Dragon Damnation",
+          "relation": "PREQUEL",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx167404-QMZJVARntkbv.jpg"
+        },
+        {
+          "id": 171630,
+          "title": "THE ONE PIECE",
+          "relation": "ALTERNATIVE",
+          "format": null,
+          "type": "ANIME",
+          "year": 2027,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx171630-2U7Y5OIWwXJJ.jpg"
+        },
+        {
+          "id": 177475,
+          "title": "ONE PIECE×KAWAISOUNI! Kono Boushi wo Omae ni Azukeru",
+          "relation": "OTHER",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx177475-8HlvUgopoH0S.png"
+        },
+        {
+          "id": 182469,
+          "title": "ONE PIECE FAN LETTER",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx182469-JQ808NBPxmgn.jpg"
+        },
+        {
+          "id": 183423,
+          "title": "One Piece Log: Fish-Man Island Saga",
+          "relation": "SUMMARY",
+          "format": "TV",
+          "type": "ANIME",
+          "year": 2024,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx183423-6Iiu194UDxD0.jpg"
+        },
+        {
+          "id": 187225,
+          "title": "LOS ANGELES LAKERS x ONE PIECE",
+          "relation": "CHARACTER",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx187225-H0ppAOkOYMxM.jpg"
+        },
+        {
+          "id": 188668,
+          "title": "Koisuru ONE PIECE",
+          "relation": "SIDE_STORY",
+          "format": "ONA",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx188668-rOB7rkgOz89w.jpg"
+        },
+        {
+          "id": 197178,
+          "title": "ONE PIECE HEROINES",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2026,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx197178-Ui8PY9HQbNgu.jpg"
+        },
+        {
+          "id": 187380,
+          "title": "ONE PIECE: Original Episode/Luffy, Law",
+          "relation": "SIDE_STORY",
+          "format": "SPECIAL",
+          "type": "ANIME",
+          "year": 2025,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx187380-RZmxpJyB3A6Y.jpg"
+        },
+        {
+          "id": 204432,
+          "title": "CHOPPER's",
+          "relation": "SPIN_OFF",
+          "format": "TV_SHORT",
+          "type": "ANIME",
+          "year": 2026,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/bx204432-h8U4bVnSU6bM.png"
+        },
+        {
+          "id": 215855,
+          "title": "ONE PIECE FILM: GOD VALLEY",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": 2027,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b215855-z86bqRqVcr13.png"
+        },
+        {
+          "id": 215856,
+          "title": "ONE PIECE FILM: BAAD",
+          "relation": "SIDE_STORY",
+          "format": "MOVIE",
+          "type": "ANIME",
+          "year": null,
+          "cover": "https://s4.anilist.co/file/anilistcdn/media/anime/cover/medium/b215856-0V3mzYbhODqZ.png"
+        }
+      ],
+      "relationTags": []
+    }
+  ]
+}

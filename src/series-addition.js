@@ -142,8 +142,11 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
       if(!valid())return cancelled();
     }
     if(group && store.getFranchise(group.id) && !target) {
+      const anchors=[...graph.items,...graph.movies,...related.automatic];
+      await require('./franchise-link-service').createFranchiseLinkService({store,metadata,sourceQueue}).discover(group.id,related.suggestions,anchors);
+      if(!valid())return cancelled();
       const memberIds=new Set(store.franchiseMembers(group.id).map(s=>String(s.anilistId)));
-      group.suggestions=related.suggestions.filter(s=>!memberIds.has(String(s.anilistId)) && !(group.excludedAniListIds||[]).includes(String(s.anilistId)));
+      group.suggestions=related.suggestions.filter(s=>!Model.evaluateFranchiseRelation(s,anchors) && !memberIds.has(String(s.anilistId)) && !(group.excludedAniListIds||[]).includes(String(s.anilistId)));
       group.discoveryTruncated=Boolean(related.truncated);group.relatedDeferred=Boolean(graph.relatedDeferred);store.save();
     }
     if(target)target.suggestions=(target.suggestions || []).filter(s=>String(s.anilistId)!==String(anilistId));

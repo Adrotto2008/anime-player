@@ -2,7 +2,8 @@
 const {discoverRelatedWorks}=require('./franchise-discovery');
 const Model=require('./franchise-model');
 const {resolveFranchise,applyFranchiseMetadata}=require('./franchise');
-function createFranchiseService({store,metadata,addSeries,sourceQueue,player}) {
+function createFranchiseService({store,metadata,addSeries,sourceQueue,player,loadRatings}) {
+  const links=require('./franchise-link-service').createFranchiseLinkService({store,metadata,sourceQueue,loadRatings});
   const scans=new Map();store._deletingFranchises=new Set();
   const available=id=>{const group=store.getFranchise(id);if(!group || store._deletingFranchises.has(id))throw new Error('Franchise non disponibile.');return group;};
   const scan=async id=>{
@@ -19,6 +20,8 @@ function createFranchiseService({store,metadata,addSeries,sourceQueue,player}) {
     const anchors=core && !core.ambiguous ? [...core.items,...core.movies] : records;
     const result=await discoverRelatedWorks(anchors,fetchRecords);
     if(!active())return{cancelled:true,lib:store.snapshot()};
+    await links.discover(id,result.suggestions,[...anchors,...result.automatic]);
+    if(!active())return{cancelled:true,lib:store.snapshot()};
     const seasons=core && !core.ambiguous ? applyFranchiseMetadata(core.items,{franchiseId:id,franchiseTitle:group.title,items:core.items}) : [];
     for(const record of [...seasons,...(core?.movies || []),...result.automatic]) {
       if(!active())break;
@@ -33,13 +36,14 @@ function createFranchiseService({store,metadata,addSeries,sourceQueue,player}) {
     }
     if(!active())return{cancelled:true,lib:store.snapshot()};
     const present=new Set(store.franchiseMembers(id).map(s=>String(s.anilistId)));
-    const suggestions=result.suggestions.filter(s=>!present.has(String(s.anilistId)) && !(group.excludedAniListIds||[]).includes(String(s.anilistId)));
+    const suggestions=result.suggestions.filter(s=>!Model.evaluateFranchiseRelation(s,[...anchors,...result.automatic]) && !present.has(String(s.anilistId)) && !(group.excludedAniListIds||[]).includes(String(s.anilistId)));
     if(JSON.stringify(suggestions)!==JSON.stringify(group.suggestions) || Boolean(group.discoveryTruncated)!==Boolean(result.truncated)) {
       group.suggestions=suggestions;group.discoveryTruncated=result.truncated;group.updatedAt=Math.max(Date.now(),(group.updatedAt||0)+1);store.save();
     }
     return{lib:store.snapshot(),suggestions:group.suggestions.length,truncated:result.truncated};
   };
   return {
+    ...links,
     scan(id){const key=store.scope+':'+id;if(scans.has(key))return scans.get(key);const task=scan(id).finally(()=>scans.delete(key));scans.set(key,task);return task;},
     async delete(id){
       const group=available(id),ids=store.franchiseMembers(id).map(s=>s.id);store._deletingFranchises.add(id);sourceQueue.cancel?.(ids);

@@ -171,7 +171,7 @@ function register() {
   });
   const addSeries=createSeriesAdder({store,metadata:meta,sourceQueue,loadRatings:id=>ratings.load(id)});
   h('series:create',addSeries);
-  const franchiseService=require('./src/franchise-service').createFranchiseService({store,metadata:meta,sourceQueue,player,addSeries});
+  const franchiseService=require('./src/franchise-service').createFranchiseService({store,metadata:meta,sourceQueue,player,addSeries,loadRatings:id=>ratings.load(id)});
   h('franchise:create',(sid)=>{const record=store.getSeries(sid);if(!record)throw new Error('Opera non trovata.');const group=store.ensureFranchise({title:record.title,cover:record.cover,banner:record.banner,rootAniListId:record.anilistId});store.setMembership(sid,{franchiseId:group.id});return{lib:lib(),id:group.id};});
   h('franchise:update',(id,patch)=>{store.updateFranchise(id,patch);return lib();});
   h('franchise:member',(sid,patch)=>{store.setMembership(sid,patch);return lib();});
@@ -182,6 +182,10 @@ function register() {
   h('franchise:discover',id=>franchiseService.scan(id));
   h('franchise:accept',(id,anilistId,category)=>franchiseService.accept(id,anilistId,category));
   h('franchise:reject',(id,anilistId)=>franchiseService.reject(id,anilistId));
+  h('franchise:linkPreview',(id,linkId)=>franchiseService.previewLink(id,linkId));
+  h('franchise:linkCreate',token=>franchiseService.createLinked(token));
+  h('franchise:linkDecide',(id,linkId,patch)=>franchiseService.decideLink(id,linkId,patch));
+  h('franchise:linkManual',(id,targetId,type)=>franchiseService.manualLink(id,targetId,type));
   const addContentLink=(id,{url,partNumber=1,mode='unknown',layout='single'}={})=>{
     const series=store.getSeries(id);if(!series || !require('./src/franchise-model').singleWork(series))throw new Error('Contenuto singolo non trovato.');
     const value=String(url||'').trim();if(!isValidSource(value))throw new Error('Link non valido.');

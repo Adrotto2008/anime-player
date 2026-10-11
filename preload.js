@@ -4,6 +4,7 @@ const INVOKE = new Set([
   'series:videoPreference', 'series:imdbSelect', 'episodes:sourceLanguage', 'player:languageFallback',
   'lib:get', 'library:export', 'library:import', 'series:search', 'series:create', 'series:update', 'series:delete', 'series:refresh', 'series:ratings', 'series:discoverSources', 'movie:addLink', 'movie:play','content:addLink',
   'franchise:create','franchise:update','franchise:member','franchise:reorder','franchise:mergePreview','franchise:merge','franchise:delete','franchise:discover','franchise:accept','franchise:reject',
+  'franchise:linkPreview','franchise:linkCreate','franchise:linkDecide','franchise:linkManual',
   'patterns:detect', 'episodes:addPattern', 'episodes:addList', 'episodes:addM3U', 'episodes:setSources', 'episodes:checkSources', 'episodes:delete', 'episodes:mark', 'episodes:rate',
   'episodes:skipTimes', 'player:play', 'player:playUrl', 'player:stop', 'player:diagnostics', 'player:preset', 'player:seekRelative', 'player:seekAbsolute', 'player:skipIntro', 'player:skipEnding', 'player:skipSegment', 'player:state',
   'settings:set', 'mpv:detect', 'mpv:browse', 'mpv:install', 'mpv:openGuide', 'presets:list', 'stats:get', 'app:version',

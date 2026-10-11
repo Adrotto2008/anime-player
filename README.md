@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.38** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.39** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Independent linked franchises — 0.5.39
+
+- Membership and franchise links are separate. Linked franchises appear after internal categories, with Create franchise / Open franchise, an immutable preview, explicit confirmation, exclusions and manual type editing. A link never moves or deletes works.
+- Directed AniList IDs and evidence govern relevance through the existing classifier. CHARACTER alone stays secondary; an explicit high-ranked Crossover tag supplies independent evidence. Films and seasons resolve to a shared external root where reciprocal chronology proves it. No title blacklist or Quartet-specific rule is used.
+- Stable link IDs, independently timestamped manual decisions and exclusions survive import/export, refresh and cloud conflicts. Edits during upload are rebased atomically and remain pending. Creation rechecks identity, reuses safe ungrouped works, commits atomically and blocks ambiguous duplicates or manual membership conflicts.
+- No personal profile or live cloud data is used. See [Phase 3B architecture, limits and rollback](docs/franchise-links-3b.md).
 
 ## Work relationships and classification — 0.5.38
 

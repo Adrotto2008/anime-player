@@ -772,7 +772,7 @@ function franchiseView(id) {
           h('button',{class:'btn sm ghost',title:t('moveDown'),'aria-label':t('moveDown'),disabled:list.indexOf(series)===list.length-1,onclick:()=>moveFranchiseMember(id,series.id,1)},'↓'),
           h('button',{class:'btn sm ghost',onclick:()=>openMembershipDialog(series)},t('manageContent')))))))];
   });
-  const suggestions=(group?.suggestions || []).filter(candidate=>!members.some(s=>String(s.anilistId)===String(candidate.anilistId)) && !(group.excludedAniListIds || []).includes(String(candidate.anilistId)));
+  const suggestions=(group?.suggestions || []).filter(candidate=>!FranchiseModel.evaluateFranchiseRelation(candidate,members) && !members.some(s=>String(s.anilistId)===String(candidate.anilistId)) && !(group.excludedAniListIds || []).includes(String(candidate.anilistId)));
   const candidates=suggestions.length ? h('section',{class:'section franchise-suggestions'},
     h('div',{class:'section-head'},h('h2',null,t('relatedCandidates'),h('span',{class:'count'},suggestions.length))),
     suggestions.map(candidate=>h('div',{class:'res'},h('div',{class:'c',style:bg(candidate.cover)}),
@@ -797,10 +797,70 @@ function franchiseView(id) {
           episodes.length ? h('span',{class:'meta-item'},t('watchedOf',episodes.filter(e=>e.progress.watched).length,episodes.length)) : null),
         h('div',{class:'desc'},primary.description || ''),h('div',{class:'row wrap'},management,
           chartSource ? h('button',{class:'btn ghost',onclick:()=>go({name:'ratings-chart',id:chartSource.id})},icon('chart',16),t('ratingsChart')) : null),
-        group?.discoveryTruncated ? h('p',{class:'muted small'},t('relatedLimit')) : null))),
+        group?.discoveryTruncated ? h('p',{class:'muted small'},t('relatedLimit')) : null,
+        group?.linkEnrichment?.status==='loading' ? h('p',{class:'muted small','aria-live':'polite'},t('linkEnrichmentProgress',group.linkEnrichment.done,group.linkEnrichment.total)) : null,
+        group?.linkEnrichment?.status==='partial' ? h('p',{class:'muted small'},t('linkEnrichmentPartial')) : null))),
     ...sections,duplicates.length ? h('section',{class:'section'},h('h2',null,t('duplicateNotice',duplicates.length)),
       duplicates.map(record=>h('div',{class:'row wrap'},h('span',null,record.title),h('button',{class:'btn',onclick:()=>go({name:'series',id:record.id})},t('details')),
-        h('button',{class:'btn ghost',onclick:()=>openMembershipDialog(record)},t('manageContent'))))) : null,candidates);
+        h('button',{class:'btn ghost',onclick:()=>openMembershipDialog(record)},t('manageContent'))))) : null,candidates,linkedFranchiseSection(id));
+}
+
+function linkedFranchiseSection(id) {
+  const links=FranchiseLinks.linksFor(state.lib,id);
+  return h('section',{class:'section linked-franchises','data-linked-franchises':id},
+    h('div',{class:'section-head'},h('h2',null,t('linkedFranchises')),h('button',{class:'btn sm ghost',onclick:()=>openManualFranchiseLink(id)},t('manualFranchiseLink'))),
+    links.length?links.map(link=>h('article',{class:'res linked-franchise','data-link-id':link.id},
+      h('div',{class:'c',style:bg(link.target.cover)}),h('div',null,h('b',null,link.target.title),
+        h('p',{class:'muted small'},[t('linkType_'+link.type),t('linkDirection_'+link.direction),t('linkReason_'+link.reason),t(link.target.franchiseId?'linkInLibrary':'linkNotInLibrary')].join(' · '))),
+      h('div',{class:'row wrap'},h('button',{class:'btn sm primary',disabled:link.ambiguous,onclick:()=>link.target.franchiseId?openExistingFranchiseLink(id,link):openLinkedFranchisePreview(id,link)},t(link.target.franchiseId?'openFranchise':'createFranchise')),
+        link.state==='suggested'?h('button',{class:'btn sm ghost',onclick:()=>mutate('franchise:linkDecide',id,link.id,{state:'excluded'})},t('excludeLink')):null,
+        h('button',{class:'btn sm ghost',onclick:()=>openFranchiseLinkEditor(id,link)},t('editLink'))))) : h('p',{class:'muted small'},t('noLinkedFranchises')),
+    (state.lib.franchises?.find(g=>g.id===id)?.linkEvidence || []).length?h('details',{class:'small muted'},h('summary',null,t('secondaryLinkEvidence')),h('p',null,t('secondaryLinkHint'))):null);
+}
+async function openExistingFranchiseLink(id,link) {
+  if(link.state==='suggested')state.lib=await call('franchise:linkDecide',id,link.id,{state:'confirmed'});
+  if(state.lib.franchises?.some(g=>g.id===link.target.franchiseId))go({name:'franchise',id:link.target.franchiseId});
+}
+async function openLinkedFranchisePreview(id,link) {
+  const view=state.view;
+  const preview=await call('franchise:linkPreview',id,link.id);
+  if(state.view!==view || !FranchiseLinks.linksFor(state.lib,id).some(l=>l.id===link.id))return;
+  openDialog(t('createFranchise'),close=>{
+    const status=h('p',{class:'muted small','aria-live':'polite'});
+    const confirm=h('button',{class:'btn primary','data-confirm-linked':'true',onclick:async()=>{
+      confirm.disabled=true;cancel.disabled=true;status.textContent=t('creatingFranchise');
+      try{const result=await call('franchise:linkCreate',preview.token);state.lib=result.lib;close();go({name:'franchise',id:result.id});}
+      catch{confirm.disabled=false;cancel.disabled=false;status.textContent=t('linkCreationFailed');}
+    }},t('confirmCreateFranchise'));
+    const cancel=h('button',{class:'btn',onclick:close},t('cancel'));
+    return [h('div',{class:'row'},h('div',{class:'linked-preview-cover',style:bg(preview.target.cover)}),h('div',null,h('h3',null,preview.target.title),h('p',null,t('linkType_'+preview.type)),h('p',{class:'small muted'},t('linkReason_'+preview.reason)),h('p',{class:'small muted'},t('providerRelation')+': AniList · '+preview.target.anilistId))),
+      h('h4',null,t('previewMainWorks')),h('ul',null,preview.works.map(m=>h('li',null,m.title+' · '+m.format+' · AniList '+m.anilistId))),
+      preview.reuse.length?h('p',{class:'small muted'},t('reuseExistingWorks',preview.reuse.length)):null,
+      preview.related.length?h('p',{class:'small muted'},t('linkedFranchises')+': '+preview.related.map(l=>l.title).join(', ')):null,
+      h('p',{class:'small muted'},t('linkPreviewLimits')),preview.ambiguous || preview.truncated?h('p',{class:'small muted'},t('relatedLimit')):null,
+      status,h('div',{class:'foot'},cancel,confirm)];
+  });
+}
+function franchiseLinkTypeSelect(value) {
+  const select=h('select',{class:'input select','aria-label':t('linkType')},FranchiseModel.LINK_TYPES.map(type=>h('option',{value:type},t('linkType_'+type))));select.value=value;return select;
+}
+function openFranchiseLinkEditor(id,link) {
+  openDialog(t('editLink'),close=>{const type=franchiseLinkTypeSelect(link.type);
+    return [h('p',null,link.target.title),field(t('linkType'),type),h('p',{class:'muted small'},t('removeLinkHint')),
+      h('div',{class:'foot'},h('button',{class:'btn',onclick:close},t('cancel')),
+        h('button',{class:'btn danger',onclick:async()=>{state.lib=await call('franchise:linkDecide',id,link.id,{state:'excluded'});close();render();}},t('removeLink')),
+        h('button',{class:'btn primary',onclick:async()=>{state.lib=await call('franchise:linkDecide',id,link.id,{state:'confirmed',type:type.value});close();render();}},t('confirmLink')))];
+  });
+}
+function openManualFranchiseLink(id) {
+  openDialog(t('manualFranchiseLink'),close=>{
+    const targets=(state.lib.franchises || []).filter(g=>g.id!==id);
+    const select=h('select',{class:'input select','aria-label':t('destination')},targets.map(g=>h('option',{value:g.id},g.title)));
+    const type=franchiseLinkTypeSelect('manual');
+    return [h('p',{class:'muted small'},t('manualFranchiseHint')),field(t('destination'),select),field(t('linkType'),type),
+      h('div',{class:'foot'},h('button',{class:'btn',onclick:close},t('cancel')),h('button',{class:'btn primary',disabled:!targets.length,onclick:async()=>{
+        state.lib=await call('franchise:linkManual',id,select.value,type.value);close();render();}},t('confirmLink')))];
+  });
 }
 
 async function moveFranchiseMember(id,sid,delta) {

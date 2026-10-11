@@ -10,6 +10,7 @@ const { detectEpisodeNumber, expandPattern } = require('./patterns');
 const Language = require('./source-language');
 const Franchise = require('./franchise-model');
 const Identity = require('./content-identity');
+const Links = require('./franchise-links');
 
 function newest(values) {
   return values.filter(Boolean).sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0) || JSON.stringify(b).localeCompare(JSON.stringify(a)))[0];
@@ -136,6 +137,7 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
   const settings = { ...(local.settings || {}), ...(remote.settings || {}), ...(localSettingsAt >= remoteSettingsAt ? local.settings || {} : {}) };
   return Franchise.migrate({
     settings, series: resultSeries,
+    franchiseLinks:Links.mergeLinks(local.franchiseLinks,remote.franchiseLinks),
     settingsUpdatedAt:Math.max(localSettingsAt,remoteSettingsAt),
     franchises:[...franchises.values()].filter(g=>!deletedFranchises.has(g.id) || deletedFranchises.get(g.id)<(Number(g.updatedAt)||0)),
     deletedFranchises:[...deletedFranchises].map(([id,deletedAt])=>({id,deletedAt})),
@@ -687,7 +689,7 @@ class CloudService {
     this.state.libraryRevision = Number(data.revision);
     const pending=!this.store.matchesToken(token) || stateRevision!==this._stateRevision;
     if (library !== base) {
-      if(pending)library=Identity.rebase(base,this.store.snapshot(),library);
+      if(pending){const current=this.store.snapshot();library=Links.rebaseDecisions(base,current,Identity.rebase(base,current,library));}
       const deviceSettings = Object.fromEntries(DEVICE_SETTINGS.map((key) => [key, this.store.data.settings[key]]));
       this.suppressLibrarySync = true;
       try { this.store.applyCloudData({ ...library, settings: { ...library.settings, ...deviceSettings } }, data.updated_at,{pending}); } finally { this.suppressLibrarySync = false; }

@@ -10,6 +10,7 @@ const { legacyFranchiseRepairs } = require('./franchise');
 const Franchise = require('./franchise-model');
 const Parts = require('./content-parts');
 const Identity = require('./content-identity');
+const Links = require('./franchise-links');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -143,7 +144,7 @@ function validateLibraryData(input) {
   if (new Set(franchises.map(g=>g.id)).size !== franchises.length) throw new Error('Franchise duplicato.');
   const deletedFranchises = (Array.isArray(input.deletedFranchises)?input.deletedFranchises:[]).filter(g=>typeof g?.id === 'string' && Number(g.deletedAt)>0);
   for (const record of series) if (record.franchiseMembership && !Franchise.membership(record.franchiseMembership)) throw new Error('Appartenenza al franchise non valida.');
-  return { settings, settingsUpdatedAt:Math.max(0,Number(input.settingsUpdatedAt)||0), series, franchises, deletedFranchises, deletedSeries, deletedEpisodes, updatedAt: Math.max(0, Number(input.updatedAt) || 0), cloudDirty: Boolean(input.cloudDirty) };
+  return { settings, settingsUpdatedAt:Math.max(0,Number(input.settingsUpdatedAt)||0), series, franchises, franchiseLinks:Links.validateLinks(input.franchiseLinks), deletedFranchises, deletedSeries, deletedEpisodes, updatedAt: Math.max(0, Number(input.updatedAt) || 0), cloudDirty: Boolean(input.cloudDirty) };
 }
 
 class Store extends EventEmitter {
@@ -159,11 +160,14 @@ class Store extends EventEmitter {
   }
 
   load() {
+    let linkError;
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if(!Object.hasOwn(raw,'settingsUpdatedAt'))this._pendingMigrationBackup=true;
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
       this.data.franchises = raw.franchises || [];
+      try{this.data.franchiseLinks = Links.validateLinks(raw.franchiseLinks);}catch(error){linkError=error;throw error;}
+      if(!Object.hasOwn(raw,'franchiseLinks'))this._pendingMigrationBackup=true;
       this.data.deletedFranchises = raw.deletedFranchises || [];
       this.data.deletedSeries = Array.isArray(raw.deletedSeries) ? raw.deletedSeries : [];
       this.data.deletedEpisodes = Array.isArray(raw.deletedEpisodes) ? raw.deletedEpisodes : [];
@@ -192,12 +196,14 @@ class Store extends EventEmitter {
         this.data.settings.onboardingComplete = Boolean(configured);
       }
     } catch { /* primo avvio o file rovinato: si parte da zero */ }
+    if(linkError)throw new Error(`Collegamenti franchise non validi; libreria non modificata: ${linkError.message}`);
     const repaired = this.repairFranchiseGroups();
     this.migrateFranchises();
     if (repaired) this.save();
   }
 
   migrateFranchises() {
+    this.data.franchiseLinks ||= [];
     const before=JSON.stringify(this.data.series);
     Franchise.migrate(this.data);
     for (const series of this.data.series) if (Franchise.singleWork(series) || series.mediaParts || series.movieSources?.length) this.migrateParts(series);
@@ -235,6 +241,7 @@ class Store extends EventEmitter {
   }
 
   save(now = false, throwOnError = false, { cloud = false, emit = true } = {}) {
+    if(this._transactionDepth)return true;
     clearTimeout(this._timer);
     this.data.updatedAt = cloud ? Math.max(this.data.updatedAt || 0, Date.now()) : Date.now();
     if (!cloud) {this.data.cloudDirty = true;this.revision++;}
@@ -262,6 +269,44 @@ class Store extends EventEmitter {
   }
 
   snapshot() { return JSON.parse(JSON.stringify(this.data)); }
+  // No asynchronous work is allowed in this atomic local commit. All metadata
+  // is prepared first; failed backup/write restores both data and revision.
+  transaction(fn) {
+    if(this._transactionDepth)throw new Error('Transazione già in corso.');
+    const previous=this.snapshot(),revision=this.revision,backupPending=this._pendingMigrationBackup;
+    clearTimeout(this._timer);this._transactionDepth=1;
+    try {const result=fn();if(result?.then)throw new Error('Transazione asincrona non consentita.');
+      this._transactionDepth=0;this.save(true,true,{emit:false});
+      try{this.emit('changed',{updatedAt:this.data.updatedAt,cloudDirty:this.data.cloudDirty});}catch(error){console.error('Notifica libreria fallita:',error.message);}
+      return result;
+    } catch(error){this._transactionDepth=0;this.data=previous;this.revision=revision;this._pendingMigrationBackup=backupPending;
+      // Preserve any earlier debounced edits after a failed transaction.
+      this.save(false,false,{cloud:true,emit:false});throw error;}
+  }
+  recordFranchiseLink(link) {
+    const checked=Links.validateLinks([link])[0];
+    const old=(this.data.franchiseLinks || []).find(l=>l.id===checked.id);
+    if(checked.origin==='automatic'){
+      const combined=Links.mergeLinks(old?[old]:[],[checked])[0];
+      const candidate={...combined,...checked,evidence:combined.evidence,...(old?.decision?{decision:old.decision}:{}),updatedAt:old?.updatedAt || 0};
+      if(JSON.stringify(candidate)!==JSON.stringify(old))candidate.updatedAt=Math.max(Date.now(),(old?.updatedAt || 0)+1);
+      Object.assign(checked,candidate);
+    }
+    const next=Links.mergeLinks(this.data.franchiseLinks || [],[checked]);
+    if(JSON.stringify(next)!==JSON.stringify(this.data.franchiseLinks || [])) {
+      this.data.franchiseLinks=next;this.save();
+    }
+    return this.data.franchiseLinks.find(l=>l.id===link.id);
+  }
+  decideFranchiseLink(id,patch) {
+    const link=(this.data.franchiseLinks || []).find(l=>l.id===id);if(!link)throw new Error('Collegamento non trovato.');
+    const state=patch.state || link.decision?.state || 'confirmed',type=patch.type || link.decision?.type || link.type;
+    if(!Franchise.LINK_STATES.includes(state) || !Franchise.LINK_TYPES.includes(type))throw new Error('Tipo o stato non valido.');
+    const directions=patch.directions || (patch.type && type!=='crossover' ? Object.fromEntries(link.endpoints.map(e=>[e.key,'related'])) : link.decision?.directions || link.directions);
+    if(directions && (typeof directions!=='object' || Object.keys(directions).some(key=>!link.endpoints.some(e=>e.key===key)) || Object.values(directions).some(v=>!['related','crossover_work','source_work'].includes(v))))throw new Error('Direzione non valida.');
+    link.decision={state,type,origin:'manual',updatedAt:Math.max(Date.now(),(link.decision?.updatedAt || 0)+1),...(directions?{directions}:{})};
+    link.updatedAt=Math.max(link.updatedAt || 0,link.decision.updatedAt);this.save();return link;
+  }
   importData(input) {
     const next = validateLibraryData(input);
     this.backup('pre-import');
@@ -375,7 +420,7 @@ class Store extends EventEmitter {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources', 'franchiseEvidence', 'franchiseRelations', 'related'];
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources', 'franchiseEvidence', 'franchiseRelations', 'related','relationTags'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     if(Object.hasOwn(patch,'personalRating'))s.personalRatingUpdatedAt=Math.max(Date.now(),(s.personalRatingUpdatedAt || 0)+1);
     if (Object.hasOwn(patch,'movieSources')) {delete s.movieSourcesMigrated;this.migrateParts(s);}
@@ -725,7 +770,7 @@ class Store extends EventEmitter {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating'];
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'cover', 'banner', 'description', 'genres', 'cast', 'related','relationTags', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) {
       if (['cover','banner'].includes(key) && !fields[key]) continue;
       if (key==='titleAliases') s[key]=[...new Set([...(s[key]||[]),...(fields[key]||[])])];

@@ -4,6 +4,32 @@
   else root.FranchiseModel = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const CATEGORIES = ['season', 'movie', 'special', 'spinoff', 'other'];
+  const LINK_TYPES = ['crossover','shared_universe','alternative','adaptation','explicit','manual'];
+  const LINK_STATES = ['suggested','confirmed','excluded'];
+  // The same directed evidence evaluator governs both membership and links.
+  // A character edge needs independent provider evidence to become prominent.
+  function evaluateFranchiseRelation(record, anchors) {
+    const item=evaluateRelated(record,anchors),proof=item.franchiseEvidence;
+    const types=new Set(proof.edges.map(e=>e.relation));
+    if(!seasonWork(record) && record.format!=='MOVIE' && !(record.format==='OVA' && Number(record.episodeCount)>1))
+      return types.has('CHARACTER')?{secondary:true,type:'explicit',reason:'unsupported_independent_format',evidence:proof}:null;
+    const crossover=[record,...anchors].find(m=>(m.relationTags || []).some(t=>t.name==='Crossover' && Number(t.rank)>=70 && !t.isMediaSpoiler));
+    if(proof.automatic || proof.reason==='conflicting_parent' || proof.reason==='contradictory_relations'
+      || types.has('PARENT') || types.has('SIDE_STORY') || types.has('SPIN_OFF'))return null;
+    let type,reason;
+    if(types.has('CHARACTER')) {
+      if(!crossover)return {secondary:true,type:'explicit',reason:'shared_characters_only',evidence:proof};
+      type='crossover';reason='crossover_tag_and_character';
+    } else if(types.has('SAME_UNIVERSE')) {type='shared_universe';reason='explicit_provider_relation';}
+    else if(types.has('ADAPTATION')) {type='adaptation';reason='explicit_provider_relation';}
+    else if(types.has('ALTERNATIVE') || types.has('ALTERNATIVE_VERSION')) {type='alternative';reason='explicit_provider_relation';}
+    else return null;
+    if(!record.related || proof.reason==='metadata_unavailable')return {secondary:true,type,reason:'metadata_unavailable',evidence:proof};
+    const taggedId=crossover?String(crossover.anilistId):null;
+    return {type,reason,targetDirection:type==='crossover'?(taggedId===String(record.anilistId)?'crossover_work':'source_work'):'related',evidence:{...proof,tags:crossover?(crossover.relationTags || []).filter(t=>t.name==='Crossover').map(t=>({...t,mediaId:taggedId})):[]},
+      directions:type==='crossover'?{[String(record.anilistId)]:taggedId===String(record.anilistId)?'crossover_work':'source_work',
+        ...Object.fromEntries(anchors.map(m=>[String(m.anilistId),taggedId===String(m.anilistId)?'crossover_work':'source_work']))}: {}};
+  }
   const ROLES = ['main','prequel','sequel','part','side_story','spinoff','shared_characters','crossover','alternative','remake','reboot','related','standalone'];
   const SEASON_FORMATS = new Set(['TV','TV_SHORT','ONA']);
   const WEAK = new Set(['SPIN_OFF','CHARACTER','ALTERNATIVE','ALTERNATIVE_VERSION','SUMMARY','COMPILATION','OTHER','SAME_UNIVERSE','REMAKE','REBOOT']);
@@ -102,5 +128,5 @@
   }
   function units(series) { return [...(series?.episodes || []), ...(series?.mediaParts || [])]; }
   function partOrder(part) { const n=Number(String(part.key || '').split(':').pop());return Number.isFinite(n)?n:part.number; }
-  return {CATEGORIES,ROLES,SEASON_FORMATS,WEAK,animeRelations,seasonWork,evaluateRelated,category,singleWork,membership,mirror,migrate,units,partOrder};
+  return {CATEGORIES,ROLES,LINK_TYPES,LINK_STATES,SEASON_FORMATS,WEAK,animeRelations,seasonWork,evaluateRelated,evaluateFranchiseRelation,category,singleWork,membership,mirror,migrate,units,partOrder};
 });

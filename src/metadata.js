@@ -33,7 +33,7 @@ async function translateDescriptionToItalian(description) {
 }
 
 const FIELDS = `id idMal title { romaji english native } synonyms duration coverImage { extraLarge large medium } bannerImage description(asHtml: false)
-  genres averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }
+  genres tags { id name rank isMediaSpoiler } averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }
   characters(sort: ROLE, perPage: 8) { edges { role node { name { full } image { medium } } } }
   relations { edges { relationType node { id title { romaji english } type format seasonYear coverImage { medium large } } } }`;
 
@@ -48,6 +48,7 @@ function normalize(m) {
     cover: m.coverImage && (m.coverImage.extraLarge || m.coverImage.large || m.coverImage.medium),
     banner: m.bannerImage || null,
     description: stripHtml(m.description),
+    relationTags: (m.tags || []).map(({id,name,rank,isMediaSpoiler})=>({id,name,rank,isMediaSpoiler})),
     genres: m.genres || [],
     score: m.averageScore ? m.averageScore / 10 : null,
     scoreSource: m.averageScore ? 'AniList' : null,
