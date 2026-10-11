@@ -10,3 +10,5 @@ supabase-config.json
 supabase/.temp/
 
 .isolated-user-data/
+
+dist-phase5b/

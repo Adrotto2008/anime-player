@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'manual', organizing:false, organizationContext:null, player: { playing: false }, stats: null, ratingLoads: {}, additions: [], descriptionRequests: new Set() };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'manual', organizationContext:null, player: { playing: false }, stats: null, ratingLoads: {}, additions: [], descriptionRequests: new Set() };
 let library=state.lib,chartIndices=new WeakMap(),chartMappings=new WeakMap();
 Object.defineProperty(state,'lib',{get:()=>library,set:value=>{
   library=value;chartIndices=new WeakMap();chartMappings=new WeakMap();
@@ -177,16 +177,12 @@ function sizeOrganizationGrid(grid){
   const width=grid.firstElementChild?.getBoundingClientRect().width;
   if(width && grid.dataset.cardWidth!==String(width)){grid.dataset.cardWidth=String(width);grid.style.setProperty('--organization-card-height',(width*1.5+71)+'px');}
 }
-function sortHandle(title){return state.organizing?h('button',{class:'sort-handle','data-sort-handle':'true',type:'button',
-  'aria-label':t('dragLabel',title),'aria-describedby':'organization-help','aria-pressed':'false',title:t('dragLabel',title)},'⠿'):null;}
+function sortHandle(title){return h('button',{class:'sort-handle sr-only','data-sort-handle':'true',type:'button',
+  'aria-label':t('dragLabel',title),'aria-describedby':'organization-help','aria-pressed':'false',title:t('dragLabel',title)},t('dragLabel',title));}
 function sortList(key,family,title,axis='grid'){return {'data-sort-list':key,'data-sort-family':family,'data-sort-title':title,'data-sort-axis':axis};}
 function sortItem(key,title,node){return h('article',{class:'organized-card','data-sort-id':key,'data-sort-title':title},node,sortHandle(title));}
 function orderedNodes(key,records,keyOf){const byId=new Map(records.map(r=>[keyOf(r),r]));return Organization.ordered(state.lib.organization,key,[...byId.keys()]).map(id=>byId.get(id));}
-function organizationHelp(){return state.organizing?h('p',{id:'organization-help',class:'organization-help'},t('organizationHelp')):null;}
-function organizeButton(){return h('button',{class:'btn ghost','data-organize-toggle':'true','aria-pressed':String(state.organizing),onclick:async()=>{
-  sorter?.cancel();if(!state.organizing){state.organizationContext=await call('organization:context');state.sort='manual';}
-  state.organizing=!state.organizing;render();
-}},t(state.organizing?'organizationDone':'organize'));}
+function organizationHelp(){return h('p',{id:'organization-help',class:'sr-only'},t('organizationHelp'));}
 function confirmOrganizationMove(command){
   return new Promise(resolve=>{
     const record=getSeries(command.item),category=command.to.split(':').at(-1),target=command.to==='independent'?t('independentWorks'):t('category_'+category);
@@ -199,11 +195,11 @@ function confirmOrganizationMove(command){
 }
 function setupOrganization(){
   let live=document.getElementById('organization-live');if(!live){live=h('div',{id:'organization-live',class:'sr-only',role:'status','aria-live':'polite','aria-atomic':'true'});document.body.append(live);}
-  sorter=window.Sortable.create({root:$('#main'),onCommit:async command=>{
+  sorter=window.Sortable.create({root:$('#main'),context:()=>state.organizationContext,onCommit:async command=>{
     const membership=command.from.startsWith('members:') && command.from!==command.to;
     if(membership && !await confirmOrganizationMove(command))return false;
-    const lib=await call('organization:move',{...command,context:state.organizationContext,...(membership?{confirmMembership:true}:{})});
-    state.lib=lib;state.stats=null;pendingOrganizationRender=true;return true;
+    const lib=await call('organization:move',{...command,...(membership?{confirmMembership:true}:{})});
+    state.lib=lib;state.stats=null;state.sort='manual';pendingOrganizationRender=true;return true;
   },onBusyChange:(busy,focus)=>{
     organizationBusy=busy;
     if(!busy && (pendingOrganizationRender || focus)){
@@ -226,10 +222,10 @@ function removeVisualSection(section){
     h('button',{class:'btn danger',onclick:async()=>{const result=await call('organization:section',{context:state.organizationContext,id:section.id,deleted:true});state.lib=result.lib;close();render();}},t('removeVisualSection')))]);
 }
 function homeSection(key,title,node){
-  if(!node && !state.organizing)return null;
+  if(!node)return null;
   node ||=h('section',{class:'section'},h('div',{class:'section-head'},h('h2',null,title)),h('p',{class:'muted small'},t('emptySection')));
   node.dataset.sortId=key;node.dataset.sortTitle=title;
-  if(state.organizing){const handle=sortHandle(title);handle.classList.add('section-sort-handle');(node.querySelector('.section-head') || node).append(handle);}
+  const handle=sortHandle(title);handle.classList.add('section-sort-handle');(node.querySelector('.section-head') || node).append(handle);
   return node;
 }
 
@@ -470,7 +466,6 @@ function render() {
     state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
     state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
   );
-  main.classList.toggle('organizing',state.organizing);
   organizationSizes.disconnect();
   for(const grid of main.querySelectorAll('.organized-grid[data-sort-family="visual"]')){sizeOrganizationGrid(grid);organizationSizes.observe(grid);}
   if(focusedList && focusedSortId)document.querySelector(`[data-sort-list="${CSS.escape(focusedList)}"] > [data-sort-id="${CSS.escape(focusedSortId)}"] [data-sort-handle]`)?.focus({preventScroll:true});
@@ -665,7 +660,7 @@ function homeView() {
     if (state.sort === 'rating') return (Number(right.score) || 0) - (Number(left.score) || 0);
     return a.title.localeCompare(b.title);
   });
-  if(state.sort==='manual' || state.organizing){const byKey=new Map(list.map(e=>[e.kind==='franchise'?'franchise:'+e.id:'series:'+e.series.id,e]));
+  if(state.sort==='manual'){const byKey=new Map(list.map(e=>[e.kind==='franchise'?'franchise:'+e.id:'series:'+e.series.id,e]));
     list.splice(0,list.length,...Organization.ordered(state.lib.organization,'library',[...byKey.keys()]).map(key=>byKey.get(key)));}
   const cont = orderedNodes('home:continue',q || state.progressFilter !== 'all' ? [] : continueItems(),item=>item.s.id);
   const featured = !q && state.progressFilter === 'all' ? (cont[0] ? cont[0].s : visibleSeries[0]) : null;
@@ -686,7 +681,6 @@ function homeView() {
     h('option', { value: 'title' }, t('sortTitle')),
     h('option', { value: 'recent' }, t('sortRecent')),
     h('option', { value: 'rating' }, t('sortRating')));
-  sort.disabled=state.organizing;
   const posterCard = (s) => {
     const total = episodeTotal(s); const seen = FranchiseModel.units(s).filter((e) => e.progress.watched).length;
     const personal = effectivePersonalRating(s); const seenPct = total ? (seen / total) * 100 : 0;
@@ -742,7 +736,7 @@ function homeView() {
     return sortItem(s.id,s.title,h('button', { class: 'resume', onclick: () => play(s.id, e.id) }, media, meta));
   });
   const sectionHead = (title, count, action) => h('div', { class: 'section-head' }, h('h2', null, title, count != null ? h('span', { class: 'count' }, count) : null), action || null);
-  const continueSection = cont.length || state.organizing ? h('section', { class: 'section' },
+  const continueSection = cont.length ? h('section', { class: 'section' },
     sectionHead(t('continueWatching'), cont.length, h('button', { class: 'section-link', onclick: () => { state.progressFilter = 'progress'; render(); } }, t('seeAll'))),
     h('div', { class: 'strip',...sortList('home:continue','continue',t('continueWatching'),'horizontal') }, continueCards)) : null;
   const entryKey=e=>e.kind==='franchise'?'franchise:'+e.id:'series:'+e.series.id;
@@ -760,8 +754,8 @@ function homeView() {
   const schedule = !q && state.progressFilter === 'all' ? airingSections(visibleSeries) : null;
   const custom=Organization.sections(state.lib.organization).map(section=>{
     const key='collection:'+section.id,entries=orderedNodes(key,list.filter(e=>Organization.placement(state.lib.organization,entryKey(e))===key),entryKey);
-    return homeSection(key,section.title,h('section',{class:'section visual-section'},sectionHead(section.title,entries.length,state.organizing?h('div',{class:'row'},
-      h('button',{class:'btn sm ghost',onclick:()=>openVisualSection(section)},t('editVisualSection')),h('button',{class:'btn sm ghost',onclick:()=>removeVisualSection(section)},t('removeVisualSection'))):null),
+    return homeSection(key,section.title,h('section',{class:'section visual-section'},sectionHead(section.title,entries.length,h('div',{class:'row'},
+      h('button',{class:'btn sm ghost',onclick:()=>openVisualSection(section)},t('editVisualSection')),h('button',{class:'btn sm ghost',onclick:()=>removeVisualSection(section)},t('removeVisualSection')))),
       h('div',{class:'grid organized-grid',...sortList(key,'visual',section.title)},entries.map(entryCard)),!entries.length?h('p',{class:'muted small empty-collection'},t('dropVisualContent')):null));
   });
   const nodes=[homeSection('featured',t('featured'),featuredHero),homeSection('continue',t('continueWatching'),continueSection),homeSection('library',t('library'),librarySection),
@@ -771,7 +765,7 @@ function homeView() {
       h('div', { class: 'head-main' },
         h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('library')), h('p', { class: 'subtitle' }, t('librarySummary', state.lib.series.length, totalEps))),
         h('div', { class: 'head-actions' },
-          organizeButton(),state.organizing?h('button',{class:'btn ghost',onclick:()=>openVisualSection()},icon('plus',16),t('newVisualSection')):null,
+          h('button',{class:'btn ghost',onclick:()=>openVisualSection()},icon('plus',16),t('newVisualSection')),
           h('button', { class: 'btn ghost', onclick: importLibrary }, icon('download', 16), h('span', { class: 'lbl' }, t('import'))),
           h('button', { class: 'btn ghost', onclick: exportLibrary }, icon('upload', 16), h('span', { class: 'lbl' }, t('export'))),
           h('button', { class: 'btn primary', onclick: openAddSeries }, icon('plus', 16), t('addSeries')))),
@@ -872,8 +866,7 @@ function franchiseView(id) {
   const episodes=ordered.filter(s=>FranchiseModel.category(s)==='season').flatMap(s=>s.episodes || []);
   const sections=FranchiseModel.CATEGORIES.flatMap(category=>{
     const key=`members:${id}:${category}`,list=orderedNodes(key,ordered.filter(s=>FranchiseModel.category(s)===category),s=>s.id);
-    if(!list.length && !state.organizing)return [];
-    return [h('section',{class:'section','data-franchise-category':category},
+    return [h('section',{class:'section'+(!list.length?' empty-destination':''),'data-franchise-category':category},
       h('div',{class:'section-head'},h('h2',null,t('category_'+category),h('span',{class:'count'},list.length))),
       h('div',{class:'grid organized-grid',...sortList(key,'members:'+id,t('category_'+category))},list.map(series=>h('article',{class:'franchise-member organized-card','data-sort-id':series.id,'data-sort-title':series.title},
         h('button',{class:'poster franchise-child',onclick:()=>go({name:'series',id:series.id})},
@@ -908,13 +901,13 @@ function franchiseView(id) {
       h('div',{class:'body'},h('div',{class:'cover',style:bg(cover)}),h('div',{class:'info'},h('h1',null,title),
         h('div',{class:'meta-row'},rating.score != null ? scorePill(rating.score) : null,FranchiseModel.CATEGORIES.filter(c=>counts[c]).map(c=>h('span',{class:'meta-item'},counts[c]+' '+t('category_'+c))),
           episodes.length ? h('span',{class:'meta-item'},t('watchedOf',episodes.filter(e=>e.progress.watched).length,episodes.length)) : null),
-        h('div',{class:'desc'},displayedDescription(primary)),h('div',{class:'row wrap'},management,organizeButton(),
+        h('div',{class:'desc'},displayedDescription(primary)),h('div',{class:'row wrap'},management,
           chartSource ? h('button',{class:'btn ghost',onclick:()=>go({name:'ratings-chart',id:chartSource.id})},icon('chart',16),t('ratingsChart')) : null),
         group?.discoveryTruncated ? h('p',{class:'muted small'},t('relatedLimit')) : null,
         group?.linkEnrichment?.status==='loading' ? h('p',{class:'muted small','aria-live':'polite'},t('linkEnrichmentProgress',group.linkEnrichment.done,group.linkEnrichment.total)) : null,
         group?.linkEnrichment?.status==='partial' ? h('p',{class:'muted small'},t('linkEnrichmentPartial')) : null))),
-    organizationHelp(),...sections,state.organizing?h('section',{class:'section independent-drop',...sortList('independent','members:'+id,t('independentWorks'),'vertical')},
-      h('h2',null,t('independentWorks')),h('p',{class:'muted small'},t('independentDropHint'))):null,
+    organizationHelp(),...sections,h('section',{class:'section independent-drop',...sortList('independent','members:'+id,t('independentWorks'),'vertical')},
+      h('h2',null,t('independentWorks')),h('p',{class:'muted small'},t('independentDropHint'))),
     duplicates.length ? h('section',{class:'section'},h('h2',null,t('duplicateNotice',duplicates.length)),
       duplicates.map(record=>h('div',{class:'row wrap'},h('span',null,record.title),h('button',{class:'btn',onclick:()=>go({name:'series',id:record.id})},t('details')),
         h('button',{class:'btn ghost',onclick:()=>openMembershipDialog(record)},t('manageContent'))))) : null,candidates,linkedFranchiseSection(id));
@@ -1620,7 +1613,9 @@ function openSetup() {
     const entry=state.ratingLoads[payload.id];if(!entry || entry.requestId && entry.requestId!==payload.requestId)return;
     Object.assign(entry,payload);updateRatingsStatus(payload.id);
   });
-  api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null; render(); });
+  api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null;
+    api.invoke('organization:context').then(token=>{state.organizationContext=token;}).catch(()=>{});
+    render(); });
   api.on('addition:progress', ({task})=>{if(!task)return;state.additions=state.additions.filter(item=>item.id!==task.id).concat(task);renderRail();});
   api.on('series:sourcesDiscovered', ({ id, sourceDiscovery, lib }) => {
     state.lib = lib; state.stats = null; render();
@@ -1633,6 +1628,7 @@ function openSetup() {
   api.on('player:language-fallback', showLanguageFallback);
   api.on('player:language-warning', message => toast(message));
   state.lib = await api.invoke('lib:get');
+  state.organizationContext = await api.invoke('organization:context');
   state.additions=await api.invoke('series:addTasks').catch(()=>[]);
   state.presets = await api.invoke('presets:list');
   state.version = await api.invoke('app:version');

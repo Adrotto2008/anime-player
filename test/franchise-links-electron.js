@@ -9,6 +9,7 @@ let win,store;const cases=[],errors=[];
 const report=body=>fs.writeFileSync(result,JSON.stringify(body,null,2));
 const timeout=setTimeout(()=>{report({ok:false,error:'Timeout',cases});app.exit(1);},40000);
 app.whenReady().then(async()=>{
+  ipcMain.handle('organization:context',()=> 'test-context');
   store=new Store(path.join(dir,'library.json'));store.setSettings({language:'it',onboardingComplete:true});
   const records=new Map([...require('./relation-classification.fixture.json').records,...require('./franchise-links.fixture.json').records].map(m=>[String(m.anilistId),m]));
   const meta={getAnimeBatch:async ids=>ids.map(id=>records.get(String(id))).filter(Boolean).map(x=>JSON.parse(JSON.stringify(x))),fetchEpisodes:async()=>({episodes:[]}),fetchImdbData:async()=>null};

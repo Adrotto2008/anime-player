@@ -2,12 +2,12 @@
 
 const DICT = {
   en: {
-    organize:'Organize',organizationDone:'Done',sortManual:'My order',homeSections:'Home sections',organizationSaved:'Layout saved.',
-    organizationHelp:'Drag the handles to organize. Keyboard: Space or Enter to pick up, arrows to move, Ctrl + arrows to change section, Enter to save, Esc to cancel. Collections only change the layout.',
+    sortManual:'My order',homeSections:'Home sections',organizationSaved:'Layout saved.',
+    organizationHelp:'Drag cards directly. Keyboard: Space or Enter to pick up, arrows to move, Ctrl + arrows to change section, Enter to save, Esc to cancel. Collections only change the layout.',
     dragLabel:title=>`Move ${title}`,dragPicked:title=>`${title} picked up. Use arrows to move or Esc to cancel.`,
     dragPosition:(title,section,index,total)=>`${title}: ${section}, position ${index} of ${total}.`,dragCancelled:'Move cancelled.',dragFailed:'Move failed. The current library is shown.',
     newVisualSection:'New collection',editVisualSection:'Rename collection',removeVisualSection:'Remove collection',sectionTitle:'Collection name',emptySection:'This section currently has no content.',
-    visualSectionHint:'A collection organizes the Home visually. Works keep their franchise, identity and metadata.',dropVisualContent:'Drag library cards here in Organize mode.',
+    visualSectionHint:'A collection organizes the Home visually. Works keep their franchise, identity and metadata.',dropVisualContent:'Drag library cards here.',
     removeVisualSectionHint:title=>`Remove “${title}”? Its cards return to the Library.`,
     confirmMembershipMove:'Confirm membership change',confirmMove:'Confirm move',independentWorks:'Independent works',
     membershipMoveHint:(title,target)=>`Move “${title}” to ${target}? This changes its saved category or franchise membership. Your manual choice takes precedence over future metadata updates.`,
@@ -185,12 +185,12 @@ const DICT = {
     shortcuts: 'Shortcuts', shortcutsHint: 'Customize the keys used by mpv. Leave a skip key empty to disable it.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
-    organize:'Organizza',organizationDone:'Fine',sortManual:'Il mio ordine',homeSections:'Sezioni della Home',organizationSaved:'Disposizione salvata.',
-    organizationHelp:'Trascina le maniglie per organizzare. Tastiera: Spazio o Invio per selezionare, frecce per spostare, Ctrl + frecce per cambiare sezione, Invio per salvare, Esc per annullare. Le raccolte cambiano solo la disposizione.',
+    sortManual:'Il mio ordine',homeSections:'Sezioni della Home',organizationSaved:'Disposizione salvata.',
+    organizationHelp:'Trascina direttamente le schede. Tastiera: Spazio o Invio per selezionare, frecce per spostare, Ctrl + frecce per cambiare sezione, Invio per salvare, Esc per annullare. Le raccolte cambiano solo la disposizione.',
     dragLabel:title=>`Sposta ${title}`,dragPicked:title=>`${title} selezionato. Usa le frecce per spostarlo o Esc per annullare.`,
     dragPosition:(title,section,index,total)=>`${title}: ${section}, posizione ${index} di ${total}.`,dragCancelled:'Spostamento annullato.',dragFailed:'Spostamento fallito. È mostrata la libreria attuale.',
     newVisualSection:'Nuova raccolta',editVisualSection:'Rinomina raccolta',removeVisualSection:'Rimuovi raccolta',sectionTitle:'Nome della raccolta',emptySection:'Questa sezione al momento non ha contenuti.',
-    visualSectionHint:'Una raccolta organizza visivamente la Home. Le opere conservano franchise, identità e metadati.',dropVisualContent:'Trascina qui le schede della libreria in modalità Organizza.',
+    visualSectionHint:'Una raccolta organizza visivamente la Home. Le opere conservano franchise, identità e metadati.',dropVisualContent:'Trascina qui le schede della libreria.',
     removeVisualSectionHint:title=>`Rimuovere “${title}”? Le sue schede tornano nella Libreria.`,
     confirmMembershipMove:'Conferma cambio di appartenenza',confirmMove:'Conferma spostamento',independentWorks:'Opere indipendenti',
     membershipMoveHint:(title,target)=>`Spostare “${title}” in ${target}? Cambia la categoria o l’appartenenza al franchise salvata. La tua scelta manuale avrà precedenza sui prossimi aggiornamenti dei metadati.`,

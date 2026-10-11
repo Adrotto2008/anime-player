@@ -1,11 +1,18 @@
 # Anime Player
 
-Anime Player **v0.5.42** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.43** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
 
-## Home and library organization — 0.5.42
+## Physical cards — 0.5.43 (Phase 5B)
+
+- Cards can be dragged directly during ordinary navigation, with an 8 px mouse threshold and a 380 ms touch hold. Brief clicks open content; internal buttons, search, menus and collection management remain available. Home section headings also support direct dragging. No Organize mode or visible corner handles remain; cards keep the default system cursor.
+- Pointer position drives restrained 3D hover with damped springs. Dragged cards follow the pointer directly and tilt with velocity; neighboring cards spring into the preview position, including direction changes. Release lands the lifted card before refreshing the view; Escape and invalid destinations animate back without saving.
+- Keyboard reorder controls appear on focus: Space/Enter picks up, arrows move, Ctrl + arrows changes compatible sections, Enter commits and Escape cancels. Reduced motion removes tilt, lift and animated movement. Existing organization transactions and explicit membership confirmation remain in use without a data schema change.
+- Visible Windows Electron tests include temporal frame sequences and synthetic 100/400/1000 card benchmarks. Packaging is offline into `dist-phase5b`. See [Phase 5B architecture and manual verification](docs/physical-cards-5b.md) for scope and remaining limits.
+
+## Home and library organization — 0.5.42 (historical Phase 5)
 
 - Organize mode provides separate pointer/touch handles, a moving preview, animated neighboring cards, clear drop targets, edge scrolling and Escape cancellation. Keyboard: Space/Enter picks up, arrows move, Ctrl + arrows switch compatible sections, Enter saves. Reduced motion skips reorder animation; normal card navigation and management menus remain available.
 - Home sections, library franchises/standalone works, continue/recent cards and works within franchise categories retain manual ordering. Explicit visual collections organize library cards without changing AniList metadata, franchise membership or linked franchises. Empty categories/collections become drop targets in Organize mode. Category changes and detachment show a confirmation and use existing membership validation.

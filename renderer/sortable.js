@@ -2,12 +2,14 @@
    occurs on pointer movement; only the final relative command crosses IPC. */
 (function(){
   'use strict';
-  function create({root,scroll=root,onCommit,onBusyChange=()=>{},announce=()=>{},labels={}}){
-    let pending=null,drag=null,saving=false,frame=0,cache=null,suppressUntil=0;
+  function create({root,scroll=root,onCommit,context=()=>null,onBusyChange=()=>{},announce=()=>{},labels={}}){
+    let pending=null,drag=null,saving=false,settling=false,frame=0,cache=null,suppressUntil=0,touchTimer=0,hovered=null;
+    const physics=window.CardMotion;
     const motion=matchMedia('(prefers-reduced-motion: reduce)'),animations=new Map();
+    const geometryObserver=new ResizeObserver(()=>{invalidate();relayoutVirtual();});
     const children=list=>[...list.children].filter(el=>el.hasAttribute('data-sort-id'));
     const lists=()=>[...root.querySelectorAll('[data-sort-list]')];
-    const busy=()=>Boolean(pending || drag || saving);
+    const busy=()=>Boolean(pending || drag || saving || settling);
     const compatible=(a,b)=>a.dataset.sortFamily===b.dataset.sortFamily;
     const reduced=()=>motion.matches;
     const sequence=list=>drag?.virtual?.list===list?drag.virtual.order:children(list);
@@ -22,12 +24,19 @@
       if(list.dataset.sortFamily==='visual' && list.dataset.sortAxis==='grid' && order.length>=80)
         d.virtual={list,order,indices:new Map(order.map((el,i)=>[el,i])),moved:new Set()};
     }
+    function relayoutVirtual(){const d=drag,v=d?.virtual;if(!v)return;
+      const r=layoutRect(v.list.firstElementChild),style=getComputedStyle(v.list),columns=style.gridTemplateColumns.split(' ').length;
+      const xs=r.width+(parseFloat(style.columnGap)||0),ys=r.height+(parseFloat(style.rowGap)||0);
+      for(const el of v.moved){const i=v.order.indexOf(el),base=v.indices.get(el),x=(i%columns-base%columns)*xs,y=(Math.floor(i/columns)-Math.floor(base/columns))*ys;
+        if(el===d.item){physics.clear(el);el.style.translate=`${x}px ${y}px`;}else physics.offset(el,x,y);
+      }
+    }
     function resetVirtual(d){const v=d?.virtual;if(!v)return;
-      for(const el of v.moved){el.style.transition='none';el.style.transform='';el.classList.remove('sort-virtual');el.style.transition='';}
+      for(const el of v.moved){physics.clear(el);el.classList.remove('sort-virtual');}
       d.virtual=null;
     }
     function flushVirtual(d){const v=d.virtual;if(!v)return;
-      const order=[...v.order];resetVirtual(d);v.list.append(...order);d.domChanged=true;invalidate();
+      const order=[...v.order],before=rectangles([...v.moved]);resetVirtual(d);v.list.append(...order);d.domChanged=true;invalidate();animate(before);
     }
     function virtualInsert(list,before){
       const d=drag,v=d.virtual,oldIndex=v.order.indexOf(d.item),next=v.order.filter(el=>el!==d.item);
@@ -37,15 +46,17 @@
       const xStep=r.width+(parseFloat(style.columnGap)||0),yStep=r.height+(parseFloat(style.rowGap)||0);
       for(let i=Math.min(oldIndex,newIndex);i<=Math.max(oldIndex,newIndex);i++){
         const el=next[i],base=v.indices.get(el),x=(i%columns-base%columns)*xStep,y=(Math.floor(i/columns)-Math.floor(base/columns))*yStep;
-        el.classList.add('sort-virtual');if(reduced() || el===d.item)el.style.transition='none';
-        el.style.transform=`translate(${x}px,${y}px)`;v.moved.add(el);
+        el.classList.add('sort-virtual');
+        if(el===d.item || reduced()){physics.clear(el);el.style.translate=`${x}px ${y}px`;}
+        else physics.offset(el,x,y);v.moved.add(el);
       }
       v.order=next;d.changed=true;invalidate();say('position',d.title,list.dataset.sortTitle || '',newIndex+1,next.length);
       focusKeyboard(d);
     }
     function layoutRect(el){const r=el.getBoundingClientRect();
       const transform=getComputedStyle(el).transform,m=transform==='none'?{m41:0,m42:0}:new DOMMatrixReadOnly(transform);
-      return {left:r.left-m.m41,right:r.right-m.m41,top:r.top-m.m42,bottom:r.bottom-m.m42,width:r.width,height:r.height};
+      const p=physics.position(el);
+      return {left:r.left-m.m41-p.x,right:r.right-m.m41-p.x,top:r.top-m.m42-p.y,bottom:r.bottom-m.m42-p.y,width:r.width,height:r.height};
     }
     const cancelAnimations=()=>{for(const animation of animations.values())animation.cancel();animations.clear();};
     function invalidate(){cache=null;}
@@ -61,22 +72,20 @@
     function animate(before){
       if(reduced())return;
       for(const [el,first] of before){
-        animations.get(el)?.cancel();animations.delete(el);
-        const last=el.getBoundingClientRect(),x=first.left-last.left,y=first.top-last.top;
+        const last=layoutRect(el),x=first.left-last.left,y=first.top-last.top;
         if((Math.abs(x)<1 && Math.abs(y)<1) || el===drag?.item)continue;
-        const animation=el.animate([{transform:`translate(${x}px,${y}px)`},{transform:'translate(0,0)'}],{duration:180,easing:'cubic-bezier(.2,.7,.2,1)'});
-        animation.id='organization-move';
-        animations.set(el,animation);animation.finished.then(()=>{if(animations.get(el)===animation)animations.delete(el);}).catch(()=>{});
+        physics.offset(el,0,0,{x,y});
       }
     }
     function say(key,...args){announce(typeof labels[key]==='function'?labels[key](...args):labels[key] || key);}
-    function begin(item,list,handle,point,keyboard=false,pointerId=null){
-      cancelAnimations();const rect=item.getBoundingClientRect();
+    function begin(item,list,handle,point,keyboard=false,pointerId=null,sourceContext=context()){
+      cancelAnimations();clearTimeout(touchTimer);leaveHover();const rect=item.getBoundingClientRect();
       const targets=lists().filter(el=>compatible(el,list));
       drag={item,origin:list,handle,lists:targets,originals:new Map(targets.map(el=>[el,[...el.children]])),
         id:item.dataset.sortId,title:item.dataset.sortTitle || handle.getAttribute('aria-label'),
-        keyboard,pointerId,x:point.x,y:point.y,offsetX:point.x-rect.left,offsetY:point.y-rect.top,valid:true,changed:false,domChanged:false,lastTime:performance.now()};
+        keyboard,pointerId,context:sourceContext,x:point.x,y:point.y,offsetX:point.x-rect.left,offsetY:point.y-rect.top,valid:true,changed:false,domChanged:false,lastTime:performance.now(),px:point.x,py:point.y};
       initVirtual(drag,list);
+      for(const target of targets)geometryObserver.observe(target);
       handle.setAttribute('aria-pressed','true');item.classList.add(keyboard?'sort-keyboard':'sort-placeholder');
       root.classList.add('sort-active');
       if(!keyboard){
@@ -88,7 +97,10 @@
         }else{ghost.append(item.cloneNode(true));ghost.style.height=rect.height+'px';}
         // Cloned controls must never introduce duplicate DOM IDs.
         for(const el of ghost.querySelectorAll('[id]'))el.removeAttribute('id');
+        for(const el of ghost.querySelectorAll('*')){el.style.translate='';el.style.transform='';el.style.willChange='';el.classList.remove('card-raised','sort-virtual');}
         document.body.append(ghost);drag.ghost=ghost;
+        physics.ghost(ghost,point.x-drag.offsetX,point.y-drag.offsetY);
+        item.setPointerCapture?.(pointerId);
       }
       invalidate();say('picked',drag.title);schedule();
     }
@@ -138,68 +150,88 @@
     function edge(value,lo,hi){const size=Math.min(60,(hi-lo)/4);return value<lo+size?-Math.min(1,(lo+size-value)/size):value>hi-size?Math.min(1,(value-hi+size)/size):0;}
     function tick(time){
       frame=0;const d=drag;if(!d || d.keyboard)return;
-      const factor=Math.min(2,(time-d.lastTime)/16.67);d.lastTime=time;
+      const factor=Math.max(.1,Math.min(2,(time-d.lastTime)/16.67));d.lastTime=time;
       const r=scroll.getBoundingClientRect();let scrolled=false;
       if(d.x>=r.left && d.x<=r.right){const old=scroll.scrollTop;scroll.scrollTop+=edge(d.y,r.top,r.bottom)*16*factor;scrolled=old!==scroll.scrollTop;}
       for(const m of measure())if(m.axis==='horizontal' && contains(m.rect,d.x,d.y)){
         const old=m.list.scrollLeft;m.list.scrollLeft+=edge(d.x,m.rect.left,m.rect.right)*14*factor;scrolled ||= old!==m.list.scrollLeft;
       }
       if(scrolled)invalidate();
-      d.ghost.style.transform=`translate3d(${d.x-d.offsetX}px,${d.y-d.offsetY}px,0)`;
+      physics.ghost(d.ghost,d.x-d.offsetX,d.y-d.offsetY,(d.x-d.px)/factor,(d.y-d.py)/factor);d.px=d.x;d.py=d.y;
       preview();schedule();
     }
     function schedule(){if(drag && !drag.keyboard && !frame)frame=requestAnimationFrame(tick);}
     function restore(d){
-      resetVirtual(d);if(!d.domChanged)return;
+      const virtualBefore=d.virtual?rectangles([...d.virtual.moved]):null;
+      resetVirtual(d);if(!d.domChanged){if(virtualBefore)animate(virtualBefore);return;}
       const before=rectangles(d.lists.flatMap(children));for(const [list,nodes] of d.originals)list.append(...nodes);animate(before);
     }
     function clear(d){
       if(frame)cancelAnimationFrame(frame);frame=0;cache=null;drag=null;pending=null;
+      geometryObserver.disconnect();
       resetVirtual(d);
-      d?.ghost?.remove();d?.item.classList.remove('sort-placeholder','sort-keyboard');d?.handle.setAttribute('aria-pressed','false');
+      if(d?.ghost){physics.clear(d.ghost);d.ghost.remove();}
+      d?.item.classList.remove('sort-placeholder','sort-keyboard');d?.handle.setAttribute('aria-pressed','false');
+      if(d?.pointerId!=null && d.item.hasPointerCapture?.(d.pointerId))d.item.releasePointerCapture(d.pointerId);
       for(const list of d?.lists || [])list.classList.remove('sort-over');root.classList.remove('sort-active');
     }
-    function cancel(){
-      if(saving)return;
-      if(drag){const d=drag;restore(d);clear(d);d.handle.focus({preventScroll:true});say('cancelled');}
+    async function settle(d){
+      if(frame)cancelAnimationFrame(frame);frame=0;settling=true;
+      if(d.ghost){const r=d.item.getBoundingClientRect();await Promise.all([physics.land(d.ghost,r.left,r.top),physics.idle(d.lists.flatMap(children))]);}
+      clear(d);settling=false;
+    }
+    async function cancel(){
+      if(saving || settling)return;
+      clearTimeout(touchTimer);
+      if(drag){const d=drag;suppressUntil=performance.now()+150;restore(d);await settle(d);if(d.keyboard)d.handle.focus({preventScroll:true});say('cancelled');}
       else pending=null;
       onBusyChange(false);
     }
     async function finish(){
+      if(settling || saving)return;
+      clearTimeout(touchTimer);
       if(!drag){pending=null;onBusyChange(false);return;}
       const d=drag;if(!d.valid){cancel();return;}
       const list=d.item.parentElement,all=sequence(list),index=all.indexOf(d.item),from=d.origin.dataset.sortList,to=list.dataset.sortList;
       const same=from===to && d.originals.get(d.origin).filter(el=>el.hasAttribute('data-sort-id')).every((el,i)=>all[i]===el);
-      const command={item:d.id,from,to,...(all[index+1]?{before:all[index+1].dataset.sortId}:all[index-1]?{after:all[index-1].dataset.sortId}:{})};
+      const command={item:d.id,from,to,context:d.context,...(all[index+1]?{before:all[index+1].dataset.sortId}:all[index-1]?{after:all[index-1].dataset.sortId}:{})};
       if(d.virtual && !same)flushVirtual(d);
-      clear(d);if(same){onBusyChange(false,{item:d.id,to});return;}
+      await settle(d);if(same){onBusyChange(false,d.keyboard?{item:d.id,to}:null);return;}
       saving=true;root.classList.add('sort-saving');
       try{const committed=await onCommit(command);if(committed===false){restore(d);say('cancelled');}else say('saved');}
       catch{restore(d);say('failed');}
-      finally{saving=false;root.classList.remove('sort-saving');onBusyChange(false,{item:d.id,to});}
+      finally{saving=false;root.classList.remove('sort-saving');onBusyChange(false,d.keyboard?{item:d.id,to}:null);}
     }
     function pointerDown(event){
-      const handle=event.target.closest('[data-sort-handle]');if(!handle || busy() || event.button!==0 || event.isPrimary===false)return;
-      const item=handle.closest('[data-sort-id]'),list=item?.parentElement;if(!list?.hasAttribute('data-sort-list'))return;
-      event.preventDefault();handle.focus({preventScroll:true});
-      pending={handle,item,list,x:event.clientX,y:event.clientY,id:event.pointerId};
-      handle.setPointerCapture?.(event.pointerId);onBusyChange(true);
+      if(busy() || event.button!==0 || event.isPrimary===false)return;
+      const item=event.target.closest('[data-sort-id]'),list=item?.parentElement;if(!list?.hasAttribute('data-sort-list'))return;
+      const control=event.target.closest('button,a,input,select,textarea,[contenteditable],summary,[role="button"]');
+      if(control && !control.matches('.poster,.resume,[data-sort-handle]'))return;
+      if(list.dataset.sortFamily==='sections' && !event.target.closest('.section-head,h2,.home-featured'))return;
+      const handle=item.querySelector('[data-sort-handle]') || item;
+      pending={handle,item,list,x:event.clientX,y:event.clientY,id:event.pointerId,context:context(),touch:event.pointerType==='touch'};
+      onBusyChange(true);
+      if(pending.touch){const p=pending;touchTimer=setTimeout(()=>{if(pending===p){pending=null;begin(p.item,p.list,p.handle,{x:p.x,y:p.y},false,p.id,p.context);}},380);}
     }
     function pointerMove(event){
+      if(!pending && !drag && !saving && !settling){hoverMove(event);return;}
       if(!pending && !drag || drag?.keyboard || pending && event.pointerId!==pending.id || drag && event.pointerId!==drag.pointerId)return;
-      if(pending && Math.hypot(event.clientX-pending.x,event.clientY-pending.y)>=7){const p=pending;pending=null;begin(p.item,p.list,p.handle,{x:p.x,y:p.y},false,p.id);}
+      if(settling || saving)return;
+      if(pending && Math.hypot(event.clientX-pending.x,event.clientY-pending.y)>=8){const p=pending;pending=null;
+        if(p.touch){clearTimeout(touchTimer);onBusyChange(false);return;}
+        begin(p.item,p.list,p.handle,{x:p.x,y:p.y},false,p.id,p.context);}
       if(drag){event.preventDefault();drag.x=event.clientX;drag.y=event.clientY;schedule();}
     }
     function pointerUp(event){
-      if(drag?.keyboard)return;
+      if(drag?.keyboard || settling || saving)return;
       if(drag && event.pointerId!==drag.pointerId)return;
       if(pending && event.pointerId!==pending.id)return;
       if(!pending && !drag)return;
-      if(drag){drag.x=event.clientX;drag.y=event.clientY;preview();suppressUntil=performance.now()+100;}
+      if(drag){drag.x=event.clientX;drag.y=event.clientY;preview();suppressUntil=performance.now()+150;}
       finish();
     }
     function keyDown(event){
-      if(saving)return;
+      if(saving || settling)return;
       if(drag && (event.key==='Escape' || event.key==='Tab')){if(event.key==='Escape')event.preventDefault();cancel();return;}
       const handle=event.target.closest('[data-sort-handle]');if(!handle)return;
       if(event.key===' ' || event.key==='Enter'){
@@ -212,15 +244,26 @@
       if(event.ctrlKey){const target=d.lists[d.lists.indexOf(list)+delta];if(target)insert(target,children(target)[0] || null);}
       else if(index+delta>=0 && index+delta<ids.length)insert(list,delta<0?ids[index-1]:ids[index+2] || null);
     }
+    function leaveHover(){if(hovered){physics.hover(hovered,0,0,false);hovered=null;}}
+    function hoverMove(event){
+      if(event.pointerType==='touch' || !root.contains(event.target)){leaveHover();return;}
+      const item=event.target.closest('.organized-card'),el=item?.querySelector('.poster,.resume');
+      if(el!==hovered){leaveHover();hovered=el;}
+      if(el){const r=item.getBoundingClientRect();physics.hover(el,Math.max(-1,Math.min(1,(event.clientX-r.left)/r.width*2-1)),Math.max(-1,Math.min(1,(event.clientY-r.top)/r.height*2-1)),true);}
+    }
     root.addEventListener('pointerdown',pointerDown);
+    root.addEventListener('pointerleave',leaveHover);
     document.addEventListener('pointermove',pointerMove,{passive:false});
+    // Before long press, native touch scrolling remains available. Once a
+    // card is picked up, consume touch moves before Chromium starts a pan.
+    root.addEventListener('touchmove',event=>{if(drag && !drag.keyboard && !settling)event.preventDefault();},{passive:false});
     document.addEventListener('pointerup',pointerUp);
     document.addEventListener('pointercancel',event=>{if(event.pointerId===pending?.id || event.pointerId===drag?.pointerId)cancel();});
     document.addEventListener('keydown',event=>{if(event.key==='Escape' && (pending || drag)){event.preventDefault();cancel();}else keyDown(event);});
-    root.addEventListener('click',event=>{if(event.target.closest('[data-sort-handle]') || performance.now()<suppressUntil){event.preventDefault();event.stopImmediatePropagation();}},{capture:true});
+    root.addEventListener('click',event=>{if(event.target.closest('[data-sort-handle]') || settling || performance.now()<suppressUntil){event.preventDefault();event.stopImmediatePropagation();}},{capture:true});
     root.addEventListener('dragstart',event=>{if(event.target.closest('[data-sort-id]'))event.preventDefault();});
     root.addEventListener('scroll',invalidate,true);window.addEventListener('resize',invalidate);window.addEventListener('blur',()=>{if(pending || drag)cancel();});
-    motion.addEventListener('change',()=>{cancelAnimations();invalidate();});
+    motion.addEventListener('change',()=>{leaveHover();cancelAnimations();invalidate();});
     return {get busy(){return busy();},cancel};
   }
   window.Sortable={create};

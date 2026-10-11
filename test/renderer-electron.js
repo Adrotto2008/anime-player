@@ -13,6 +13,7 @@ let win; const errors = [];
 const report = value => { if(resultFile) fs.writeFileSync(resultFile, JSON.stringify(value,null,2)); };
 const timeout = setTimeout(() => { report({ok:false,error:'Electron regression timeout'}); app.exit(1); }, 30000);
 app.whenReady().then(async () => {
+  ipcMain.handle('organization:context',()=> 'test-context');
   const store = new Store(path.join(dir,'library.json'));
   store.setSettings({language:'en',onboardingComplete:true});
   const records = [store.addSeries({ title:'Saga', franchiseId:'group', franchiseType:'season', franchiseOrder:1 }),
@@ -170,7 +171,7 @@ app.whenReady().then(async () => {
     await js(`Array.from(document.querySelectorAll('.menu-item')).find(x=>x.textContent.includes(window.i18n.t(${JSON.stringify(key)}))).click()`);await tick();
   };
   await openGroup();
-  assert.strictEqual(await js(`document.querySelectorAll('[data-franchise-category="special"],[data-franchise-category="spinoff"],[data-franchise-category="other"]').length`),0,'empty category sections consume no space');
+  assert.strictEqual(await js(`Array.from(document.querySelectorAll('[data-franchise-category="special"],[data-franchise-category="spinoff"],[data-franchise-category="other"]')).filter(el=>el.getClientRects().length).length`),0,'empty category sections consume no space before pickup');
   await groupAction('editFranchise');
   await js(`document.querySelector('#dialog-root input').value='My display title';document.querySelector('#dialog-root .foot .primary').click()`);await tick();
   assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'My display title');

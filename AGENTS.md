@@ -9,14 +9,14 @@ Prima di modificare il progetto:
 Prima di concludere una modifica:
 
 1. Esegui `npm run check` (test, controlli di sintassi e `git diff --check`).
-2. Se cambia l'app o la versione, esegui `npm run dist`. Lo script genera portable e installer x64 in `dist-phase5`, con configurazione offline predefinita; nessun accesso implicito ad AppData e nessuna rimozione di pacchetti precedenti.
-3. Controlla i file in `dist-phase5`, rivedi `git diff` e crea sempre un commit locale con un messaggio descrittivo.
+2. Se cambia l'app o la versione, esegui `npm run dist`. Lo script genera portable e installer x64 in `dist-phase5b`, con configurazione offline predefinita; nessun accesso implicito ad AppData e nessuna rimozione di pacchetti precedenti.
+3. Controlla i file in `dist-phase5b`, rivedi `git diff` e crea sempre un commit locale con un messaggio descrittivo.
 4. Dopo il commit locale fermati. Non eseguire `git push`, creare tag remoti o pubblicare release su GitHub finché Adriano non lo chiede esplicitamente.
 
 ## Comandi utili
 
 - `npm start`: avvia l'app.
 - `npm run check`: esegue i test e i controlli senza creare gli eseguibili.
-- `npm run dist`: controlla il progetto e genera portable e installer Windows in `dist-phase5` per la versione in `package.json`.
+- `npm run dist`: controlla il progetto e genera portable e installer Windows in `dist-phase5b` per la versione in `package.json`.
 
 Il terminale può pubblicare su GitHub: `gh` è installato e può avere una sessione autenticata. Verificare l'account con `gh auth status` se Adriano chiede un'operazione remota. L'autenticazione disponibile non equivale al permesso di pubblicare senza richiesta esplicita.

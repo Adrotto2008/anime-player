@@ -7,6 +7,7 @@ const report=value=>fs.writeFileSync(resultFile,JSON.stringify(value,null,2));co
 const tick=()=>new Promise(r=>setTimeout(r,60));
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{promise,resolve};};
 app.whenReady().then(async()=>{
+  ipcMain.handle('organization:context',()=> 'test-context');
   store=new Store(path.join(temp,'library.json'));store.setSettings({language:'en',onboardingComplete:true});
   const series=store.addSeries({title:'One Piece',year:null,format:'TV',episodeCount:2});store.ensureEpisode(series,1);store.ensureEpisode(series,2);
   let gate=deferred(),requests=0;const client={load:async(_options,{onProgress})=>{requests++;onProgress({phase:'loading',fetched:250,total:1200});return gate.promise;}};
