@@ -13,6 +13,8 @@ const { checkSources } = require('./src/source-check');
 const { createMpvManager } = require('./src/mpv-manager');
 const { createSeriesAdder } = require('./src/series-addition');
 const { createRatingsService } = require('./src/ratings-service');
+const { createAdditionOperationService } = require('./src/addition-operations');
+const { createWorkQueue } = require('./src/work-queue');
 const { discoverSeriesSources: discoverSources, createSourceDiscoveryQueue } = require('./src/source-discovery');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
@@ -126,6 +128,7 @@ function register() {
     if (!A4K.PRESETS[next.defaultPreset]) throw new Error('Preset Anime4K non valido.');
     if (!['default', 'compact'].includes(next.theme)) throw new Error('Tema non valido.');
     if (!['en', 'it'].includes(next.language)) throw new Error('Lingua non valida.');
+    if (!['translated','original'].includes(next.descriptionMode)) throw new Error('Modalità descrizione non valida.');
     if (patch && Object.hasOwn(patch, 'mpvPath') && next.mpvPath) {
       const result = await mpvManager.validate(next.mpvPath);
       if (!result.ok) throw new Error(result.error || 'Il file selezionato non è un eseguibile mpv compatibile.');
@@ -164,21 +167,35 @@ function register() {
 
   h('series:search', (text) => meta.searchAnime(text));
 
-  const discoverSeriesSources = (series, titles = [series.title]) => discoverSources(series, titles, { store, animeUnity, animeWorld });
+  const discoverSeriesSources = (series, titles = [series.title], options = {}) => discoverSources(series, titles, { store, animeUnity, animeWorld, ...options });
 
   const sourceQueue = createSourceDiscoveryQueue({ store, metadata: meta, discover: discoverSeriesSources,
     onComplete: (id, sourceDiscovery) => send('series:sourcesDiscovered', { id, sourceDiscovery, lib: lib() }),
   });
-  const addSeries=createSeriesAdder({store,metadata:meta,sourceQueue,loadRatings:id=>ratings.load(id)});
+  const workQueue=createWorkQueue({concurrency:2});
+  const addSeries=createSeriesAdder({store,metadata:meta,sourceQueue,loadRatings:(id,options)=>ratings.load(id,options),workQueue});
   h('series:create',addSeries);
-  const franchiseService=require('./src/franchise-service').createFranchiseService({store,metadata:meta,sourceQueue,player,addSeries,loadRatings:id=>ratings.load(id)});
+  const additions=createAdditionOperationService({store,addSeries,notify:event=>send('addition:progress',event)});
+  app.on('before-quit',()=>additions.cancelAll());
+  h('series:addStart', async payload=>{const task=additions.start(payload);const result=await task.core;return{taskId:task.taskId,...result};});
+  h('series:addTasks',()=>additions.list());
+  h('series:addCancel',id=>additions.cancel(id));
+  h('series:addRetry',id=>{if(!additions.retry(id))throw new Error('Operazione non ripetibile.');return additions.list();});
+  h('series:translateDescription',async(id,language)=>{
+    const scope=store.scope,record=store.getSeries(id);if(!record)throw new Error('Opera non trovata.');
+    const result=await meta.resolveDescription(record,language);
+    if(scope!==store.scope||!store.getSeries(id))return{cancelled:true};
+    if(result.status==='translated'){store.setDescriptionTranslation(id,language,result.translations[language]);return{...result,lib:lib()};}
+    return{...result,lib:lib()};
+  });
+  const franchiseService=require('./src/franchise-service').createFranchiseService({store,metadata:meta,sourceQueue,player,addSeries,loadRatings:id=>ratings.load(id),cancelAddition:id=>additions.cancelForSeries(id)});
   h('franchise:create',(sid)=>{const record=store.getSeries(sid);if(!record)throw new Error('Opera non trovata.');const group=store.ensureFranchise({title:record.title,cover:record.cover,banner:record.banner,rootAniListId:record.anilistId});store.setMembership(sid,{franchiseId:group.id});return{lib:lib(),id:group.id};});
   h('franchise:update',(id,patch)=>{store.updateFranchise(id,patch);return lib();});
   h('franchise:member',(sid,patch)=>{store.setMembership(sid,patch);return lib();});
   h('franchise:reorder',(id,ids)=>{store.reorderFranchise(id,ids);return lib();});
   h('franchise:mergePreview',(source,target)=>store.previewFranchiseMerge(source,target));
   h('franchise:merge',(source,target,options)=>{store.mergeFranchises(source,target,options);return lib();});
-  h('franchise:delete',id=>franchiseService.delete(id));
+  h('franchise:delete',async id=>{for(const series of store.franchiseMembers(id))additions.cancelForSeries(series.id);return franchiseService.delete(id);});
   h('franchise:discover',id=>franchiseService.scan(id));
   h('franchise:accept',(id,anilistId,category)=>franchiseService.accept(id,anilistId,category));
   h('franchise:reject',(id,anilistId)=>franchiseService.reject(id,anilistId));
@@ -213,14 +230,14 @@ function register() {
   h('series:discoverSources', async (id) => {
     const series = store.getSeries(id);
     if (!series) throw new Error('Serie non trovata.');
-    const sourceDiscovery = await sourceQueue.enqueue(id, [series.title, series.altTitle].filter(Boolean), { notify: false });
+    const sourceDiscovery = await sourceQueue.enqueue(id, [series.title, series.altTitle].filter(Boolean), { notify: false, priority:'interactive' });
     return { lib: lib(), sourceDiscovery };
   });
 
   h('series:update', (id, patch) => { store.updateSeries(id, patch); return lib(); });
   h('series:videoPreference', async (id, mode) => { await player.changeVideoPreference(id,mode); return lib(); });
   h('episodes:sourceLanguage', (sid,eid,url,mode) => { store.setSourceLanguage(sid,eid,url,mode); return lib(); });
-  h('series:delete', async (id) => { await player.stopIfSeries(id); store.deleteSeries(id); return lib(); });
+  h('series:delete', async (id) => { additions.cancelForSeries(id); sourceQueue.cancel([id]); await player.stopIfSeries(id); store.deleteSeries(id); return lib(); });
 
   const syncSeriesRatings = async (id) => {
     const s = store.getSeries(id);
@@ -287,7 +304,7 @@ function register() {
   });
   h('episodes:setSources', (sid, eid, urls) => { const items = urls.filter(Boolean).map((url) => ({ url })); items.forEach((i) => { if (!isValidSource(i.url)) throw new Error(`Link non valido: ${i.url}`); }); store.setSources(sid, eid, items.map((i) => i.url)); return lib(); });
   h('episodes:checkSources', (urls) => checkSources(urls));
-  h('episodes:delete', async (sid, eid) => { await player.stopIfUnit(sid,eid); store.deleteEpisode(sid, eid); return lib(); });
+  h('episodes:delete', async (sid, eid) => { additions.cancelForSeries(sid);await player.stopIfUnit(sid,eid); store.deleteEpisode(sid, eid); return lib(); });
   h('episodes:mark', (sid, eid, watched) => { store.markWatched(sid, eid, watched); return lib(); });
 
   const ensureMpv = async (request) => {

@@ -2,6 +2,11 @@
 
 const DICT = {
   en: {
+    additionActivity:'Background additions',additionBackgroundStarted:'The work was saved. Metadata and source discovery continue in the background.',
+    additionPhase_identification:'Identifying the work',additionPhase_metadata:'Fetching main metadata',additionPhase_franchise:'Finding related works',additionPhase_library:'Saving to library',additionPhase_additionalMetadata:'Fetching episode metadata and ratings',additionPhase_sources:'Finding streaming sources',
+    additionStatus_pending:'Waiting',additionStatus_running:'In progress',additionStatus_completed:'Complete',additionStatus_partial:'Partial',additionStatus_failed:'Failed',additionStatus_cancelled:'Cancelled',
+    additionMessage_partial:'Some optional information is unavailable. Retry to try again.',additionMessage_failed:'The operation failed. Retry to try again.',additionMessage_cancelled:'The operation was cancelled.',cancelOperation:'Cancel operation',
+    descriptionMode:'Synopsis language',descriptionTranslated:'Translated when available',descriptionOriginal:'Original text',descriptionAutoTranslated:'Automatically translated',descriptionFallback:'Original text shown · translation unavailable',descriptionOriginalShown:'Original text',partTwo:'Part 2',
     linkEnrichmentProgress:(done,total)=>`Fetching episode metadata: ${done}/${total}. You can keep using the library.`,linkEnrichmentPartial:'Some episode metadata could not be retrieved. Use Refresh on the work to retry.',
     linkedFranchises:'Linked franchises',manualFranchiseLink:'Link a franchise manually',noLinkedFranchises:'No confirmed or sufficiently supported links.',
     createFranchise:'Create franchise',openFranchise:'Open franchise',confirmCreateFranchise:'Confirm and create',creatingFranchise:'Saving the franchise…',linkCreationFailed:'Creation failed. Review the error and retry or cancel.',
@@ -170,6 +175,11 @@ const DICT = {
     shortcuts: 'Shortcuts', shortcutsHint: 'Customize the keys used by mpv. Leave a skip key empty to disable it.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
+    additionActivity:'Aggiunte in background',additionBackgroundStarted:'L’opera è stata salvata. Metadati e ricerca dei link continuano in background.',
+    additionPhase_identification:'Identificazione dell’opera',additionPhase_metadata:'Recupero metadati principali',additionPhase_franchise:'Ricerca opere correlate',additionPhase_library:'Salvataggio nella libreria',additionPhase_additionalMetadata:'Recupero episodi e voti',additionPhase_sources:'Ricerca sorgenti video',
+    additionStatus_pending:'In attesa',additionStatus_running:'In corso',additionStatus_completed:'Completata',additionStatus_partial:'Parziale',additionStatus_failed:'Non riuscita',additionStatus_cancelled:'Annullata',
+    additionMessage_partial:'Alcune informazioni facoltative non sono disponibili. Puoi riprovare.',additionMessage_failed:'Operazione non riuscita. Puoi riprovare.',additionMessage_cancelled:'Operazione annullata.',cancelOperation:'Annulla operazione',
+    descriptionMode:'Lingua descrizioni',descriptionTranslated:'Tradotta quando disponibile',descriptionOriginal:'Testo originale',descriptionAutoTranslated:'Traduzione automatica',descriptionFallback:'Mostrato il testo originale · traduzione non disponibile',descriptionOriginalShown:'Testo originale',partTwo:'Parte 2',
     linkEnrichmentProgress:(done,total)=>`Recupero metadati degli episodi: ${done}/${total}. Puoi continuare a usare la libreria.`,linkEnrichmentPartial:'Alcuni metadati degli episodi non sono disponibili. Usa Aggiorna sull’opera per riprovare.',
     linkedFranchises:'Franchise collegati',manualFranchiseLink:'Collega un franchise manualmente',noLinkedFranchises:'Nessun collegamento confermato o sufficientemente documentato.',
     createFranchise:'Crea franchise',openFranchise:'Apri franchise',confirmCreateFranchise:'Conferma e crea',creatingFranchise:'Salvataggio del franchise…',linkCreationFailed:'Creazione fallita. Controlla l’errore e riprova oppure annulla.',

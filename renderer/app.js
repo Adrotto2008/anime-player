@@ -2,7 +2,7 @@
 'use strict';
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
-const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
+const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {}, additions: [], descriptionRequests: new Set() };
 let library=state.lib,chartIndices=new WeakMap(),chartMappings=new WeakMap();
 Object.defineProperty(state,'lib',{get:()=>library,set:value=>{
   library=value;chartIndices=new WeakMap();chartMappings=new WeakMap();
@@ -159,6 +159,29 @@ async function call(ch, ...args) {
 async function mutate(ch, ...args) { const lib = await call(ch, ...args); if (lib && lib.series) { state.lib = lib; state.stats = null; render(); } return lib; }
 
 const getSeries = (id) => state.lib.series.find((s) => s.id === id);
+function displayedDescription(record){
+  if(!record)return'';
+  if(state.lib.settings.descriptionMode==='original')return record.descriptionOriginal??record.description??'';
+  const language=state.lib.settings.language||'en',entry=record.descriptionTranslations?.[language];
+  const source=record.descriptionOriginal??record.description??'';
+  if(entry?.text&&entry.originalHash&&entry.text.trim())return entry.text;
+  const requestKey=`${record.id}:${language}:${source}`;
+  if(source&&!state.descriptionRequests.has(requestKey)){
+    const key=requestKey;state.descriptionRequests.add(key);
+    api.invoke('series:translateDescription',record.id,language).then(result=>{
+      if(result?.lib)state.lib=result.lib;
+      if(result?.status==='unavailable')state.descriptionRequests.add(key);
+      render();
+    }).catch(()=>{});
+  }
+  return source;
+}
+function descriptionNotice(record){
+  if(!record)return null;
+  if(state.lib.settings.descriptionMode==='original')return t('descriptionOriginalShown');
+  const language=state.lib.settings.language||'en';
+  return record.descriptionTranslations?.[language]?.text?t('descriptionAutoTranslated'):t('descriptionFallback');
+}
 const presetLabel = (id) => (state.presets.find((p) => p.id === id) || {}).label || id;
 const defaultPreset = () => state.lib.settings.defaultPreset || 'aa-hq';
 
@@ -199,6 +222,12 @@ const field = (label, input) => h('label', { class: 'field' }, h('span', null, l
 function renderRail() {
   const v = state.view.name; const hasMpv = !!state.lib.settings.mpvPath;
   const navBtn = (label, ico, onclick, current) => h('button', { class: 'nav', 'aria-current': current ? 'page' : null, onclick }, ico ? icon(ico, 19) : null, h('span', null, label));
+  const activeAdds=state.additions.filter(task=>['pending','running'].includes(task.status));
+  const addPanel=activeAdds.length?h('div',{class:'addition-panel'},h('div',{class:'nav-label'},t('additionActivity')),...activeAdds.slice(0,3).map(task=>h('div',{class:'addition-card'},
+    h('button',{class:'link addition-title',onclick:()=>openAdditionDetails(task.id)},task.title||t('addSeries')),
+    h('small',{class:'muted'},t('additionPhase_'+task.phase)),
+    task.stages?.[task.phase]?.total!=null?h('progress',{max:Math.max(1,task.stages[task.phase].total),value:task.stages[task.phase].done}):h('progress'),
+    h('button',{class:'link',onclick:()=>call('series:addCancel',task.id)},t('cancel'))))):null;
   $('#rail').replaceChildren(
     h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, icon('play', 17)), h('span', { class: 'brand-copy' }, h('b', null, 'Anime Player'), h('small', null, 'mpv + Anime4K'))),
     h('div', { class: 'nav-label' }, t('navBrowse')),
@@ -212,11 +241,21 @@ function renderRail() {
       ? navBtn(h('span', { class: 'account-nav-label' }, state.profile && state.profile.avatar_url ? h('img', { class: 'account-avatar', src: state.profile.avatar_url, alt: '' }) : null, state.sync.user && state.sync.user.email || t('account')), null, openAccountDialog, false)
       : navBtn(t('account'), 'account', openAccountDialog, false),
     navBtn(t('settings'), 'settings', openSettings, false),
+    addPanel,
     h('div', { class: 'spacer' }),
     h('button', { class: 'mpvstat' + (hasMpv ? '' : ' bad'), onclick: openSettings },
       h('span', { class: 'status-dot', 'aria-hidden': 'true' }),
       h('span', { class: 'status-copy' }, h('b', null, hasMpv ? t('mpvReady') : t('mpvMissing')), hasMpv ? h('small', null, `Anime4K · ${presetLabel(defaultPreset())}`) : null)),
   );
+}
+function openAdditionDetails(id){
+  const task=state.additions.find(item=>item.id===id);if(!task)return;
+  openDialog(task.title||t('addSeries'),close=>[
+    ...Object.entries(task.stages||{}).map(([phase,stage])=>h('div',{class:'addition-stage'},h('b',null,t('additionPhase_'+phase)),h('span',{class:'muted'},`${stage.done}/${stage.total??'…'} · ${t('additionStatus_'+stage.status)}`))),
+    task.message?h('p',{class:'muted'},t('additionMessage_'+task.message)):null,
+    h('div',{class:'foot'},task.status==='partial'||task.status==='failed'?h('button',{class:'btn primary',onclick:async()=>{state.additions=await call('series:addRetry',id);renderRail();close();}},t('retry')):null,
+      ['pending','running'].includes(task.status)?h('button',{class:'btn danger',onclick:async()=>{await call('series:addCancel',id);close();}},t('cancelOperation')):null,
+      h('button',{class:'btn',onclick:close},t('close')))]);
 }
 function openAccountDialog() {
   let mode = 'signIn';
@@ -624,7 +663,7 @@ function homeView() {
       h('div', { class: 'meta-row' },
         featured.score != null ? scorePill(featured.score) : null,
         [featured.year, featured.format && featured.format.replace('_', ' '), episodeTotal(featured) ? `${episodeTotal(featured)} ${t('episodes').toLowerCase()}` : null, statusLabel(featured)].filter(Boolean).map((x) => h('span', { class: 'meta-item' }, x))),
-      featured.description ? h('p', null, featured.description) : null,
+      displayedDescription(featured) ? h('p', null, displayedDescription(featured)) : null,
       h('div', { class: 'row wrap featured-actions' },
         h('button', { class: 'btn primary lg', onclick: () => featuredTarget ? play(featured.id, featuredTarget.id) : go({ name: 'series', id: featured.id }) }, icon('play', 16), featuredTarget ? `${resuming ? t('resume') : t('watch')}${featuredTarget.kind==='part'?'':' · '+t('episode',featuredTarget.number)}` : t('details')),
         h('button', { class: 'btn ghost lg', onclick: () => go({ name: 'series', id: featured.id }) }, t('details'))),
@@ -765,7 +804,7 @@ function franchiseView(id) {
       h('div',{class:'grid'},list.map(series=>h('article',{class:'franchise-member'},
         h('button',{class:'poster franchise-child',onclick:()=>go({name:'series',id:series.id})},
           h('div',{class:'cover',style:bg(series.cover)},series.cover ? null : series.title.slice(0,1),
-            h('span',{class:'poster-badge'},category==='season' && series.franchiseSeasonNumber ? t('season')+' '+series.franchiseSeasonNumber : series.format || t('category_'+category))),
+            h('span',{class:'poster-badge'},category==='season' && series.franchiseSeasonNumber ? t('season')+' '+series.franchiseSeasonNumber+(/\bpart\s*2\b/i.test(series.title)?' · '+t('partTwo'):'') : series.format || t('category_'+category))),
           h('div',{class:'t'},series.title),h('div',{class:'poster-meta'},[series.year,series.score != null ? '★ '+Number(series.score).toFixed(1) : null].filter(Boolean).join(' · '))),
         classificationHint(series),h('div',{class:'row franchise-member-actions'},
           h('button',{class:'btn sm ghost',title:t('moveUp'),'aria-label':t('moveUp'),disabled:list.indexOf(series)===0,onclick:()=>moveFranchiseMember(id,series.id,-1)},'↑'),
@@ -795,7 +834,7 @@ function franchiseView(id) {
       h('div',{class:'body'},h('div',{class:'cover',style:bg(cover)}),h('div',{class:'info'},h('h1',null,title),
         h('div',{class:'meta-row'},rating.score != null ? scorePill(rating.score) : null,FranchiseModel.CATEGORIES.filter(c=>counts[c]).map(c=>h('span',{class:'meta-item'},counts[c]+' '+t('category_'+c))),
           episodes.length ? h('span',{class:'meta-item'},t('watchedOf',episodes.filter(e=>e.progress.watched).length,episodes.length)) : null),
-        h('div',{class:'desc'},primary.description || ''),h('div',{class:'row wrap'},management,
+        h('div',{class:'desc'},displayedDescription(primary)),h('div',{class:'row wrap'},management,
           chartSource ? h('button',{class:'btn ghost',onclick:()=>go({name:'ratings-chart',id:chartSource.id})},icon('chart',16),t('ratingsChart')) : null),
         group?.discoveryTruncated ? h('p',{class:'muted small'},t('relatedLimit')) : null,
         group?.linkEnrichment?.status==='loading' ? h('p',{class:'muted small','aria-live':'polite'},t('linkEnrichmentProgress',group.linkEnrichment.done,group.linkEnrichment.total)) : null,
@@ -984,8 +1023,9 @@ function seriesView(s) {
     ...MODES.map(([id, label]) => h('button', { 'aria-pressed': String(!!s.preset && effMode === id), onclick: () => setPreset(`${id}-${s.preset ? effTier : 'fast'}`) }, label)),
   ];
   const tierBtns = ['fast', 'hq'].map((tier) => h('button', { 'aria-pressed': String(!!s.preset && s.preset !== 'off' && effTier === tier), disabled: !s.preset || s.preset === 'off', onclick: () => setPreset(`${effMode}-${tier}`) }, tier === 'fast' ? t('fast') : t('hq')));
-  const desc = h('div', { class: 'desc' }, s.description || t('noDescription'));
-  const more = s.description && s.description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? t('showLess') : t('readMore'); } }, t('readMore')) : null;
+  const description=displayedDescription(s);
+  const desc = h('div', { class: 'desc' }, description || t('noDescription'));
+  const more = description && description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? t('showLess') : t('readMore'); } }, t('readMore')) : null;
   const target = resumeTarget(s);
   const resuming = target && target.progress.pos > 0 && !target.progress.watched;
   const total = episodeTotal(s); const seen = units.filter((e) => e.progress.watched).length;
@@ -1037,7 +1077,7 @@ function seriesView(s) {
       s.status === 'RELEASING' && s.nextAiringAt ? h('div', { class: 'muted small airing-next' }, icon('clock', 14), `${t('nextEpisode')}: ${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleString()}`) : null,
       single ? null : knownSkip ? h('div', { class: 'muted small skip-summary' }, t('skipAvailable') + ` · ${knownSkip} ${t('episodes').toLowerCase()}`) : h('div', { class: 'muted small skip-summary' }, t('skipCheckedOnPlay')),
       total ? h('div', { class: 'series-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: (seen / total) * 100 + '%' } })), h('span', { class: 'muted small' }, t('watchedOf', seen, total))) : null,
-      desc, more, classificationHint(s), rate, actions));
+      desc,h('small',{class:'muted description-notice'},descriptionNotice(s)), more, classificationHint(s), rate, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
     h('button', { class: 'link back', onclick: () => go(s.franchiseId ? {name:'franchise',id:s.franchiseId} : { name: 'home' }) }, icon('back', 16),
       s.franchiseId ? s.franchiseTitle || t('seasons') : t('backLibrary').replace(/^←\s*/, '')), heroBody);
@@ -1102,7 +1142,7 @@ function ratingsChartView(s) {
       imdbOverall != null ? h('span', { class: 'score-src' }, '(IMDb)') : primary.scoreSource ? h('span', { class: 'score-src' }, `(${primary.scoreSource})`) : null,
     ),
     h('h1', { class: 'ratings-chart-title' }, (chart && chart.title) || s.title),
-    h('div', { class: 'ratings-chart-desc' }, s.description || t('noDescription')),
+    h('div', { class: 'ratings-chart-desc' }, displayedDescription(s) || t('noDescription'),h('small',{class:'muted description-notice'},descriptionNotice(s))),
   );
 
   let mainContent;
@@ -1241,15 +1281,15 @@ function openAddSeries(context={}) {
       const originalLabel = btn.textContent;
       btn.disabled = true; btn.textContent = t('adding');
       try {
-        const r = await call('series:create', {...payload,...(context.franchiseId ? {franchiseId:context.franchiseId,category:category.value || undefined} : {})}); state.lib = r.lib; close();
+        const r = await call('series:addStart', {...payload,...(context.franchiseId ? {franchiseId:context.franchiseId,category:category.value || undefined} : {})});
+        state.additions=await api.invoke('series:addTasks').catch(()=>state.additions);
+        if(r.lib)state.lib = r.lib; renderRail(); close();
         if(r.cancelled){render();return;}
+        if(r.error||!r.id){toast(t('additionMessage_failed'),'error');renderRail();return;}
         go({ name: 'series', id: r.id });
-        const discoveries = Array.isArray(r.sourceDiscovery) ? r.sourceDiscovery.map((item) => item.sourceDiscovery).filter(Boolean) : [r.sourceDiscovery].filter(Boolean);
-        const added = discoveries.reduce((sum, item) => sum + Number(item.episodesAdded || 0), 0);
-        const unavailable = discoveries.length > 0 && discoveries.every((item) => item.unavailable);
         if (r.franchiseDeferred) toast(t('anilistLimitedSelectedAdded'));
         else if (r.ambiguous) toast(t('franchiseAmbiguous'));
-        else if (discoveries.length) toast(unavailable ? t('autoLinksUnavailable') : added ? t('autoLinksAdded', added) : t('autoLinksNotFound'), unavailable ? 'error' : '');
+        else toast(t('additionBackgroundStarted'));
       } catch { btn.disabled = false; btn.textContent = originalLabel; }
     };
     const search = async () => {
@@ -1405,6 +1445,9 @@ function openSettings() {
     const theme = h('select', { class: 'input select', value: st.theme || 'default' },
       h('option', { value: 'default' }, t('default')),
       h('option', { value: 'compact' }, t('compact')));
+    const descriptionMode=h('select',{class:'input select',value:st.descriptionMode||'translated'},
+      h('option',{value:'translated'},t('descriptionTranslated')),
+      h('option',{value:'original'},t('descriptionOriginal')));
     const language = h('select', { class: 'input select', value: st.language || 'en' },
       h('option', { value: 'en' }, 'English'),
       h('option', { value: 'it' }, 'Italiano'));
@@ -1433,10 +1476,10 @@ function openSettings() {
       sec(t('secPlayback'),
         toggle(auto, t('autoplay')), toggle(skipOpening, t('autoSkipOpening')), toggle(skipEnding, t('autoSkipEnding')),
         h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang))),
-      sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language))),
+      sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language),field(t('descriptionMode'),descriptionMode))),
       sec(t('secAdvanced'), field(t('userAgent'), ua), field(t('extraArgs'), extra)),
       h('div', { class: 'foot' }, h('span', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`), h('button', { class: 'btn', onclick: close }, t('cancel')),
-        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
+        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value,descriptionMode:descriptionMode.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
   });
 }
 
@@ -1505,6 +1548,7 @@ function openSetup() {
     Object.assign(entry,payload);updateRatingsStatus(payload.id);
   });
   api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null; render(); });
+  api.on('addition:progress', ({task})=>{if(!task)return;state.additions=state.additions.filter(item=>item.id!==task.id).concat(task);renderRail();});
   api.on('series:sourcesDiscovered', ({ id, sourceDiscovery, lib }) => {
     state.lib = lib; state.stats = null; render();
     notifySourceDiscovery(sourceDiscovery, getSeries(id)?.title);
@@ -1516,6 +1560,7 @@ function openSetup() {
   api.on('player:language-fallback', showLanguageFallback);
   api.on('player:language-warning', message => toast(message));
   state.lib = await api.invoke('lib:get');
+  state.additions=await api.invoke('series:addTasks').catch(()=>[]);
   state.presets = await api.invoke('presets:list');
   state.version = await api.invoke('app:version');
   state.player = await api.invoke('player:state');

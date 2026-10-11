@@ -1,5 +1,6 @@
 node_modules/
 dist/
+dist-phase4*/
 .env
 .env.*
 !.env.example

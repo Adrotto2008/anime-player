@@ -2,7 +2,7 @@
 const {discoverRelatedWorks}=require('./franchise-discovery');
 const Model=require('./franchise-model');
 const {resolveFranchise,applyFranchiseMetadata}=require('./franchise');
-function createFranchiseService({store,metadata,addSeries,sourceQueue,player,loadRatings}) {
+function createFranchiseService({store,metadata,addSeries,sourceQueue,player,loadRatings,cancelAddition=()=>{}}) {
   const links=require('./franchise-link-service').createFranchiseLinkService({store,metadata,sourceQueue,loadRatings});
   const scans=new Map();store._deletingFranchises=new Set();
   const available=id=>{const group=store.getFranchise(id);if(!group || store._deletingFranchises.has(id))throw new Error('Franchise non disponibile.');return group;};
@@ -47,7 +47,7 @@ function createFranchiseService({store,metadata,addSeries,sourceQueue,player,loa
     scan(id){const key=store.scope+':'+id;if(scans.has(key))return scans.get(key);const task=scan(id).finally(()=>scans.delete(key));scans.set(key,task);return task;},
     async delete(id){
       const group=available(id),ids=store.franchiseMembers(id).map(s=>s.id);store._deletingFranchises.add(id);sourceQueue.cancel?.(ids);
-      try{for(const sid of ids)await player.stopIfSeries(sid);if(store.getFranchise(id)!==group)throw new Error('Franchise modificato; ripeti l’operazione.');store.deleteFranchise(id);return store.snapshot();}
+      try{for(const sid of ids){cancelAddition(sid);await player.stopIfSeries(sid);}if(store.getFranchise(id)!==group)throw new Error('Franchise modificato; ripeti l’operazione.');store.deleteFranchise(id);return store.snapshot();}
       finally{store._deletingFranchises.delete(id);}
     },
     accept(id,anilistId,category){const group=available(id),candidate=(group.suggestions || []).find(s=>String(s.anilistId)===String(anilistId));

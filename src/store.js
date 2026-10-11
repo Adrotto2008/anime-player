@@ -11,6 +11,7 @@ const Franchise = require('./franchise-model');
 const Parts = require('./content-parts');
 const Identity = require('./content-identity');
 const Links = require('./franchise-links');
+const Descriptions=require('./descriptions');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -18,6 +19,7 @@ const DEFAULT_SETTINGS = {
   defaultPreset: 'aa-hq',
   theme: 'default',
   language: 'en',
+  descriptionMode:'translated',
   onboardingComplete: false,
   autoplayNext: true,
   alang: 'jpn,ja,eng,en',
@@ -110,6 +112,7 @@ function validateLibraryData(input) {
     if (!Number.isFinite(lastWatchedAt)) throw new Error(`Data di visione non valida nella serie "${rawSeries.title}".`);
     return {
       ...rawSeries,
+      ...Descriptions.descriptionFields(rawSeries),
       videoPreference: Language.preference(rawSeries.videoPreference),
       sourcePatternLanguage: Language.classification(rawSeries.sourcePatternLanguage),
       title: rawSeries.title.trim() || 'Senza titolo',
@@ -130,6 +133,7 @@ function validateLibraryData(input) {
   const settings = { ...DEFAULT_SETTINGS, ...(input.settings || {}) };
   if (input.settings && input.settings.language == null) settings.language = 'it';
   if (!['en', 'it'].includes(settings.language)) settings.language = DEFAULT_SETTINGS.language;
+  if (!['translated','original'].includes(settings.descriptionMode))settings.descriptionMode=DEFAULT_SETTINGS.descriptionMode;
   if (!['default', 'compact'].includes(settings.theme)) settings.theme = DEFAULT_SETTINGS.theme;
   if (!settings.defaultPreset || settings.defaultPreset === 'a-fast') settings.defaultPreset = DEFAULT_SETTINGS.defaultPreset;
   if (!input.settings || input.settings.onboardingComplete == null) {
@@ -164,6 +168,7 @@ class Store extends EventEmitter {
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
       if(!Object.hasOwn(raw,'settingsUpdatedAt'))this._pendingMigrationBackup=true;
+      if(!Object.hasOwn(raw.settings||{},'descriptionMode'))this._pendingMigrationBackup=true;
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
       this.data.franchises = raw.franchises || [];
       try{this.data.franchiseLinks = Links.validateLinks(raw.franchiseLinks);}catch(error){linkError=error;throw error;}
@@ -187,6 +192,7 @@ class Store extends EventEmitter {
       if (!['default', 'compact'].includes(this.data.settings.theme)) this.data.settings.theme = DEFAULT_SETTINGS.theme;
       if (raw.settings && raw.settings.language == null) this.data.settings.language = 'it';
       if (!['en', 'it'].includes(this.data.settings.language)) this.data.settings.language = DEFAULT_SETTINGS.language;
+      if (!['translated','original'].includes(this.data.settings.descriptionMode))this.data.settings.descriptionMode=DEFAULT_SETTINGS.descriptionMode;
       if (!this.data.settings.defaultPreset || this.data.settings.defaultPreset === 'a-fast') this.data.settings.defaultPreset = DEFAULT_SETTINGS.defaultPreset;
       // Librerie create prima dell'onboarding: se erano già configurate,
       // non devono essere bloccate dalla nuova procedura di primo avvio.
@@ -402,11 +408,12 @@ class Store extends EventEmitter {
     const now = Date.now();
     const s = {
       id: uid(), title: 'Senza titolo', anilistId: null, kitsuId: null, imdbId: null, imdbChart: null, cover: null, banner: null,
-      description: '', genres: [], score: null, scoreSource: null, year: null, format: null, episodeCount: null, status: null,
+      description: '',descriptionLanguage:'unknown',descriptionSource:'unknown',descriptionTranslations:{},genres: [], score: null, scoreSource: null, year: null, format: null, episodeCount: null, status: null,
       nextAiringAt: null, nextEpisode: null, malId: null, personalRating: null,
       preset: null, referer: '', addedAt: now, updatedAt: now, lastWatchedAt: 0, episodes: [], ...meta,
     };
     if (!Array.isArray(s.episodes)) s.episodes = [];
+    Object.assign(s,Descriptions.descriptionFields(s));
     s.introDuration = nonNegativeSeconds(s.introDuration);
     s.outroDuration = nonNegativeSeconds(s.outroDuration);
     s.personalRating = personalRating(s.personalRating);
@@ -420,7 +427,8 @@ class Store extends EventEmitter {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources', 'franchiseEvidence', 'franchiseRelations', 'related','relationTags'];
+    this._applyDescriptionFields(s,patch);
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources', 'franchiseEvidence', 'franchiseRelations', 'related','relationTags'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     if(Object.hasOwn(patch,'personalRating'))s.personalRatingUpdatedAt=Math.max(Date.now(),(s.personalRatingUpdatedAt || 0)+1);
     if (Object.hasOwn(patch,'movieSources')) {delete s.movieSourcesMigrated;this.migrateParts(s);}
@@ -770,7 +778,8 @@ class Store extends EventEmitter {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'cover', 'banner', 'description', 'genres', 'cast', 'related','relationTags', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating'];
+    this._applyDescriptionFields(s,fields);
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'cover', 'banner', 'genres', 'cast', 'related','relationTags', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) {
       if (['cover','banner'].includes(key) && !fields[key]) continue;
       if (key==='titleAliases') s[key]=[...new Set([...(s[key]||[]),...(fields[key]||[])])];
@@ -812,6 +821,28 @@ class Store extends EventEmitter {
     s.updatedAt = Date.now();
     this.save();
     return s;
+  }
+
+  _applyDescriptionFields(series,fields={}){
+    const provided=Object.hasOwn(fields,'descriptionOriginal')||Object.hasOwn(fields,'description');
+    if(!provided)return;
+    const original=String(fields.descriptionOriginal ?? fields.description ?? '');
+    const prior=Descriptions.descriptionFields(series),incoming=Descriptions.descriptionFields({...series,...fields,descriptionOriginal:original});
+    series.description=original;series.descriptionOriginal=original;
+    series.descriptionLanguage=Object.hasOwn(fields,'descriptionLanguage')?incoming.descriptionLanguage:prior.descriptionLanguage;
+    series.descriptionSource=Object.hasOwn(fields,'descriptionSource')?incoming.descriptionSource:prior.descriptionSource;
+    const combined={...prior.descriptionTranslations,...incoming.descriptionTranslations};
+    series.descriptionTranslations=Descriptions.descriptionFields({descriptionOriginal:original,descriptionTranslations:combined}).descriptionTranslations;
+  }
+
+  setDescriptionTranslation(id,language,translation){
+    const series=this.getSeries(id);if(!series||!['en','it'].includes(language))return false;
+    const original=String(series.descriptionOriginal ?? series.description ?? '');
+    if(!translation||typeof translation.text!=='string'||!translation.text.trim()||typeof translation.provider!=='string'
+      ||translation.originalHash!==Descriptions.hashDescription(original))return false;
+    const entry={text:translation.text,provider:translation.provider,originalHash:translation.originalHash,updatedAt:Math.max(0,Number(translation.updatedAt)||Date.now())};
+    series.descriptionTranslations={...Descriptions.descriptionFields(series).descriptionTranslations,[language]:entry};
+    series.updatedAt=Date.now();this.save();return true;
   }
 
   statistics() {

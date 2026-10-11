@@ -11,6 +11,7 @@ const Language = require('./source-language');
 const Franchise = require('./franchise-model');
 const Identity = require('./content-identity');
 const Links = require('./franchise-links');
+const Descriptions=require('./descriptions');
 
 function newest(values) {
   return values.filter(Boolean).sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0) || JSON.stringify(b).localeCompare(JSON.stringify(a)))[0];
@@ -30,7 +31,7 @@ function mergeParts(first=[],second=[]) {
 }
 
 const PROJECT_REF = 'gbdcdserzrujiuacefca'; // anime-player; deliberately excludes the old haxball2 project.
-const CLOUD_SETTINGS = ['theme', 'language', 'defaultPreset', 'autoplayNext', 'skipOpening', 'skipEnding', 'alang', 'slang'];
+const CLOUD_SETTINGS = ['theme', 'language', 'descriptionMode', 'defaultPreset', 'autoplayNext', 'skipOpening', 'skipEnding', 'alang', 'slang'];
 const DEVICE_SETTINGS = ['mpvPath', 'mpvInstallDirectory', 'onboardingComplete'];
 const uuid = () => crypto.randomUUID();
 const nowIso = (value = Date.now()) => new Date(value).toISOString();
@@ -104,6 +105,7 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
     const movieSources = new Map([...(current.movieSources || []), ...(item.movieSources || [])].filter((source) => source?.url).map((source) => [source.url, source]));
     const patternOwner = item.sourcePattern ? item : current;
     series.set(item.id, { ...winner, ...franchise, ...(member ? {franchiseMembership:member} : {}),
+      ...mergeDescriptions(winner,older,current,item),
       ...Identity.mergePersonalRating(item,current),
       ...(item.mediaParts || current.mediaParts ? {mediaParts:mergeParts(current.mediaParts,item.mediaParts)} : {}),
       videoPreference:Language.mergePreference(item.videoPreference, current.videoPreference),
@@ -149,10 +151,23 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
 function validCloudSetting(key, value) {
   if (key === 'theme') return ['default', 'compact'].includes(value);
   if (key === 'language') return ['en', 'it'].includes(value);
+  if (key === 'descriptionMode')return ['translated','original'].includes(value);
   if (key === 'defaultPreset') return Object.hasOwn(PRESETS, value);
   if (['autoplayNext', 'skipOpening', 'skipEnding'].includes(key)) return typeof value === 'boolean';
   if (['alang', 'slang'].includes(key)) return typeof value === 'string' && value.length <= 256;
   return false;
+}
+
+function mergeDescriptions(winner,older,...records){
+  const original=String(winner.descriptionOriginal ?? winner.description ?? older.descriptionOriginal ?? older.description ?? '');
+  const translations={};
+  for(const record of records)for(const [language,entry] of Object.entries(Descriptions.descriptionFields(record).descriptionTranslations)){
+    if(entry.originalHash!==Descriptions.hashDescription(original))continue;
+    const previous=translations[language];if(!previous||entry.updatedAt>previous.updatedAt)translations[language]=entry;
+  }
+  const source=winner.descriptionOriginal!=null||winner.description!=null?winner:older;
+  return{description:original,descriptionOriginal:original,
+    descriptionLanguage:source.descriptionLanguage||'unknown',descriptionSource:source.descriptionSource||'legacy',descriptionTranslations:translations};
 }
 
 function compressLibraryForCloud(input) {

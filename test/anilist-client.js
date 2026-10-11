@@ -26,6 +26,15 @@ function clockClient(fetcher, extra = {}) {
   const queue = clockClient(async () => { inFlight++; maxConcurrent = Math.max(inFlight, maxConcurrent); await Promise.resolve(); inFlight--; return response(200); });
   await Promise.all([1, 2, 3].map(id => queue.client.request('different', { id })));
   assert.strictEqual(maxConcurrent, 1); assert.deepStrictEqual(queue.calls.map(t => t - queue.calls[0]), [0, 2200, 4400]);
+  let releaseFirst,enteredFirst;const gate=new Promise(resolve=>releaseFirst=resolve),started=new Promise(resolve=>enteredFirst=resolve);const priorityOrder=[];
+  const prioritized=createAniListClient({intervalMs:0,fetchImpl:async(_url,options)=>{const id=JSON.parse(options.body).variables.id;priorityOrder.push(id);if(id===1){enteredFirst();await gate;}return response(200);}});
+  const foreground=prioritized.request('q',{id:1});await started;
+  const background=prioritized.request('q',{id:2},{priority:'background'});
+  const interactive=prioritized.request('q',{id:3},{priority:'interactive'});
+  const queuedBackground=prioritized.request('q',{id:4},{priority:'background'});
+  const boosted=prioritized.request('q',{id:4},{priority:'interactive'});
+  releaseFirst();await Promise.all([foreground,background,interactive,queuedBackground,boosted]);
+  assert.deepStrictEqual(priorityOrder,[1,3,4,2], 'interactive work jumps ahead and a duplicate raises its queued job priority');
   const exhausted = clockClient(async () => response(200, undefined, { 'x-ratelimit-remaining': '0', 'x-ratelimit-reset': '1700000008' }));
   await exhausted.client.request('one', {}); await exhausted.client.request('two', {});
   assert.strictEqual(exhausted.calls[1] - exhausted.calls[0], 8000, 'successful response with remaining=0 pauses other work');

@@ -2,6 +2,8 @@
 const anilistClient = require('./anilist-client').createAniListClient();
 const KITSU = 'https://kitsu.io/api/edge';
 const ANISKIP = 'https://api.aniskip.com/v2/skip-times';
+const Descriptions=require('./descriptions');
+const descriptionService=Descriptions.createDescriptionService();
 
 const stripHtml = (s) => String(s || '').replace(/<br\s*\/?>/gi, '\n').replace(/<[^>]+>/g, '').replace(/&quot;/g, '"').replace(/&amp;/g, '&').replace(/&#039;/g, "'").trim();
 const normalizeRating = (value) => {
@@ -11,26 +13,7 @@ const normalizeRating = (value) => {
   return n > 10 ? n / 10 : n;
 };
 
-async function anilist(query, variables) {
-  return anilistClient.request(query, variables);
-}
-
-async function translateDescriptionToItalian(description) {
-  const source = stripHtml(description);
-  if (!source) return source;
-  const text = source.slice(0, 4500);
-  const url = `https://translate.googleapis.com/translate_a/single?client=gtx&sl=auto&tl=it&dt=t&q=${encodeURIComponent(text)}`;
-  try {
-    const r = await fetch(url, { headers: { Accept: 'application/json' } });
-    if (!r.ok) throw new Error(`Google Translate ha risposto ${r.status}`);
-    const data = await r.json();
-    const translated = Array.isArray(data[0]) ? data[0].map((part) => part && part[0]).filter(Boolean).join('') : '';
-    return translated.trim() || source;
-  } catch (err) {
-    console.warn('Traduzione descrizione non disponibile:', err.message);
-    return source;
-  }
-}
+async function anilist(query, variables, options) { return anilistClient.request(query, variables, options); }
 
 const FIELDS = `id idMal title { romaji english native } synonyms duration coverImage { extraLarge large medium } bannerImage description(asHtml: false)
   genres tags { id name rank isMediaSpoiler } averageScore episodes seasonYear format status nextAiringEpisode { airingAt episode } streamingEpisodes { title thumbnail }
@@ -48,6 +31,7 @@ function normalize(m) {
     cover: m.coverImage && (m.coverImage.extraLarge || m.coverImage.large || m.coverImage.medium),
     banner: m.bannerImage || null,
     description: stripHtml(m.description),
+    descriptionOriginal:stripHtml(m.description),descriptionLanguage:'unknown',descriptionSource:'AniList',descriptionTranslations:{},
     relationTags: (m.tags || []).map(({id,name,rank,isMediaSpoiler})=>({id,name,rank,isMediaSpoiler})),
     genres: m.genres || [],
     score: m.averageScore ? m.averageScore / 10 : null,
@@ -96,24 +80,20 @@ async function fetchAniSkipTimes(malId, episodeNumber, episodeLength) {
 }
 
 async function searchAnime(text) {
-  const d = await anilist(`query($s:String){Page(perPage:12){media(search:$s,type:ANIME,sort:SEARCH_MATCH){${FIELDS}}}}`, { s: text });
+  const d = await anilist(`query($s:String){Page(perPage:12){media(search:$s,type:ANIME,sort:SEARCH_MATCH){${FIELDS}}}}`, { s: text },{priority:'interactive'});
   return d.Page.media.map(normalize);
 }
 
 async function getAnime(id, options = {}) {
   const cached = anilistClient.getMedia(id);
-  const media = cached || (await anilist(`query($id:Int){Media(id:$id,type:ANIME){${FIELDS}}}`, { id: Number(id) })).Media;
-  const anime = normalize(media);
-  if (options.language === 'it' && anime.description) anime.description = await translateDescriptionToItalian(anime.description);
-  return anime;
+  const media = cached || (await anilist(`query($id:Int){Media(id:$id,type:ANIME){${FIELDS}}}`, { id: Number(id) },{priority:options.priority})).Media;
+  return normalize(media);
 }
 
 async function getCachedAnime(id, options = {}) {
   const cached = anilistClient.getMedia(id);
   if (!cached) return null;
-  const anime = normalize(cached);
-  if (options.language === 'it' && anime.description) anime.description = await translateDescriptionToItalian(anime.description);
-  return anime;
+  return normalize(cached);
 }
 
 async function getAnimeBatch(ids, options = {}) {
@@ -121,28 +101,24 @@ async function getAnimeBatch(ids, options = {}) {
   if (!uniqueIds.length) return [];
   const cached = new Map(uniqueIds.map(id => [id, anilistClient.getMedia(id)]));
   const missing = uniqueIds.filter(id => !cached.get(id));
-  const fetched = missing.length ? (await anilist(`query($ids:[Int]){Page(perPage:24){media(id_in:$ids,type:ANIME){${FIELDS}}}}`, { ids: missing.sort((a, b) => a - b) })).Page.media || [] : [];
+  const fetched = missing.length ? (await anilist(`query($ids:[Int]){Page(perPage:24){media(id_in:$ids,type:ANIME){${FIELDS}}}}`, { ids: missing.sort((a, b) => a - b) },{priority:options.priority})).Page.media || [] : [];
   for (const media of fetched) cached.set(Number(media.id), media);
-  const results = uniqueIds.map(id => cached.get(id)).filter(Boolean).map(normalize);
-  if (options.language === 'it') {
-    for (const anime of results) if (anime.description) anime.description = await translateDescriptionToItalian(anime.description);
-  }
-  return results;
+  return uniqueIds.map(id => cached.get(id)).filter(Boolean).map(normalize);
 }
 
-async function kitsuJson(url) {
-  const r = await fetch(url, { headers: { Accept: 'application/vnd.api+json' } });
+async function kitsuJson(url,{signal}={}) {
+  const r = await fetch(url, { headers: { Accept: 'application/vnd.api+json' },signal:signal||AbortSignal.timeout(15000) });
   if (!r.ok) throw new Error(`Kitsu ha risposto ${r.status}`);
   return r.json();
 }
 
-async function kitsuIdFor(anilistId, title) {
+async function kitsuIdFor(anilistId, title,signal) {
   try {
-    const j = await kitsuJson(`${KITSU}/mappings?filter[externalSite]=anilist/anime&filter[externalId]=${anilistId}&include=item`);
+    const j = await kitsuJson(`${KITSU}/mappings?filter[externalSite]=anilist/anime&filter[externalId]=${anilistId}&include=item`,{signal});
     const item = (j.included || []).find((x) => x.type === 'anime');
     if (item) return item.id;
   } catch { /* si prova la ricerca testuale */ }
-  const j = await kitsuJson(`${KITSU}/anime?filter[text]=${encodeURIComponent(title)}&page[limit]=12`);
+  const j = await kitsuJson(`${KITSU}/anime?filter[text]=${encodeURIComponent(title)}&page[limit]=12`,{signal});
   const {titleKey} = require('./animeworld');
   const matches=(j.data || []).filter(item=>[item.attributes?.canonicalTitle,...Object.values(item.attributes?.titles || {}),...(item.attributes?.abbreviatedTitles || [])]
     .some(name=>titleKey(name)===titleKey(title)));
@@ -150,13 +126,13 @@ async function kitsuIdFor(anilistId, title) {
 }
 
 // Ritorna [{number, title, thumb, rating}]; se Kitsu non basta usa gli streamingEpisodes di AniList.
-async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, episodeCount }) {
+async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, episodeCount,signal }) {
   const out = new Map();
-  let kid = kitsuId;
+  let kid = kitsuId,issue=null;
   try {
-    if (!kid) kid = await kitsuIdFor(anilistId, title);
+    if (!kid) kid = await kitsuIdFor(anilistId, title,signal);
     for (let offset = 0; kid && offset < 400; offset += 20) {
-      const j = await kitsuJson(`${KITSU}/anime/${kid}/episodes?page[limit]=20&page[offset]=${offset}&sort=number`);
+      const j = await kitsuJson(`${KITSU}/anime/${kid}/episodes?page[limit]=20&page[offset]=${offset}&sort=number`,{signal});
       for (const e of j.data) {
         const a = e.attributes;
         if (!a.number) continue;
@@ -174,7 +150,7 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, epi
       }
       if (!j.links || !j.links.next) break;
     }
-  } catch { /* si va avanti con quello che c'è */ }
+  } catch { if(signal?.aborted)return{kitsuId:kid,episodes:[],status:'cancelled',cancelled:true};issue='provider_unavailable'; }
   for (const s of streamingEpisodes || []) {
     const m = /^Episode\s+(\d+)\s*[-–:]\s*(.*)$/i.exec(s.title || '');
     if (!m) continue;
@@ -184,7 +160,7 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, epi
     if (!cur.title) cur.title = m[2]; if (!cur.thumb) cur.thumb = s.thumbnail || null;
     out.set(n, cur);
   }
-  return { kitsuId: kid, episodes: [...out.values()].sort((a, b) => a.number - b.number) };
+  return { kitsuId: kid, episodes: [...out.values()].sort((a, b) => a.number - b.number),status:issue?'partial':'completed',...(issue?{issue,unavailable:true}:{}) };
 }
 
 const { cleanTitleForImdb } = require('./imdb-client');
@@ -218,6 +194,7 @@ module.exports = {
   getAnime,
   getCachedAnime,
   getAnimeBatch,
+  resolveDescription:(record,language)=>descriptionService.resolve(record,language),
   fetchEpisodes,
   fetchAniSkipTimes,
   aniSkipUrl,

@@ -22,7 +22,7 @@ function fixture(t) {
 }
 function mainFixture(store,player,manager) {
   const handlers={},events={},req=require('module').createRequire(path.join(repo,'main.js'));
-  const electron={app:{requestSingleInstanceLock:()=>true,whenReady:()=>({then:()=>{}}),on:(ch,fn)=>events[ch]=fn,quit:()=>{}},
+  const electron={app:{requestSingleInstanceLock:()=>true,whenReady:()=>({then:()=>{}}),on:(ch,fn)=>{const prior=events[ch];events[ch]=prior?(...args)=>{prior(...args);fn(...args);}:fn;},quit:()=>{}},
     ipcMain:{handle:(ch,fn)=>handlers[ch]=(...args)=>fn(null,...args)}};
   const context={require:n=>n==='electron'?electron:req(n),__dirname:repo,module:{exports:{}},process,console,setTimeout,clearTimeout};
   vm.runInNewContext(fs.readFileSync(path.join(repo,'main.js'),'utf8')+'\nmodule.exports.fixture=(s,p,m)=>{store=s;player=p;mpvManager=m;register();};',context);

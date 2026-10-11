@@ -41,7 +41,7 @@ app.whenReady().then(async () => {
   handle('series:ratings',()=>store.snapshot()); handle('series:delete',(id)=>{if(failDeleteOnce){failDeleteOnce=false;throw new Error('Deletion failed (IPC fixture)');}store.deleteSeries(id);return store.snapshot();});
   handle('series:search',text=>text==='new film'?[{anilistId:700,title:'Added film',format:'MOVIE'}]:[{anilistId:195604,title:'Black Clover Season 2',format:'TV'}]);
   const chart={imdbId:'tt7441658',title:'Black Clover',maxEpisodes:1,seasons:[{season:2,episodes:[{number:1,id:'tt9150376',title:"Whoever's Strongest Wins",rating:7.8}]},{season:5,episodes:[{number:1,id:'tt46662871',title:'The Battle Begins',rating:9.4}]}]};
-  handle('series:create',payload=>{
+  const createResult=payload=>{
     if(payload.franchiseId){const s=store.addSeries({title:payload.anilistId===195604?'Added season':'Added film',anilistId:payload.anilistId,
       format:payload.anilistId===195604?'TV':'MOVIE'});store.setMembership(s.id,{franchiseId:payload.franchiseId,category:payload.category});return{id:s.id,lib:store.snapshot()};}
     const base=store.addSeries({title:'Black Clover',anilistId:97940,episodeCount:170,franchiseId:'black',franchiseType:'season',franchiseOrder:1,franchiseTitle:'Black Clover',imdbChart:chart});
@@ -54,7 +54,10 @@ app.whenReady().then(async () => {
       {number:1,url:'https://manual.test/Ep_01.mp4',mediaTracks:{audio:[{id:1,lang:null}],subtitles:[],checkedAt:Date.now(),origin:'mpv'}}]);
     const first=store.ensureEpisode(base,52);first.duration=1380;first.progress.duration=2460;
     return {id:s.id,lib:store.snapshot(),franchiseId:'black',franchiseCount:2};
-  });
+  };
+  handle('series:create',createResult);
+  handle('series:addStart',payload=>({...createResult(payload),taskId:'fixture-addition'}));
+  handle('series:addTasks',()=>[]);
   win = new BrowserWindow({show:false,webPreferences:{preload:path.join(__dirname,'../preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!screenshotDir}});
   win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message)});
   store.on('changed',()=>win.webContents.send('lib:changed',store.snapshot()));

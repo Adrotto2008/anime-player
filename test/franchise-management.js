@@ -109,7 +109,7 @@ const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return{p
 
     const additionGate=deferred(),additionStarted=deferred(),additionStore=create('addition-cancel.json');
     const additionGroup=additionStore.ensureFranchise({title:'Pending group'});
-    const addPending=createSeriesAdder({store:additionStore,sourceQueue:queue,metadata:{...metadata,fetchImdbData:async()=>{additionStarted.resolve();await additionGate.promise;return null}}});
+    const addPending=createSeriesAdder({store:additionStore,sourceQueue:queue,metadata:{...metadata,fetchEpisodes:async()=>{additionStarted.resolve();await additionGate.promise;return{episodes:[]}},fetchImdbData:async()=>null}});
     const adding=addPending({anilistId:3,franchiseId:additionGroup.id});await additionStarted.promise;
     await createFranchiseService({store:additionStore,metadata,addSeries:addPending,sourceQueue:queue,player:{stopIfSeries:async()=>{}}}).delete(additionGroup.id);
     additionGate.resolve();assert.strictEqual((await adding).cancelled,true);assert.strictEqual(additionStore.data.series.length,0);
