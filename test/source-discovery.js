@@ -99,7 +99,8 @@ async function main() {
 
     // Execute the real renderer's retry button even with links already present.
     const renderer = fs.readFileSync(path.join(__dirname, '../renderer/app.js'), 'utf8');
-    const viewCode = renderer.slice(renderer.indexOf('function seriesView(s) {'), renderer.indexOf('function getRatingTier(score) {'));
+    const viewCode = renderer.slice(renderer.indexOf('function classificationHint(record) {'),renderer.indexOf('function castRelatedSection(s) {'))
+      + renderer.slice(renderer.indexOf('function seriesView(s) {'), renderer.indexOf('function getRatingTier(score) {'));
     const uiCalls = []; let notified;
     const context = { state: { player: {} }, h: (tag, props, ...children) => ({ tag, props, children: children.flat(Infinity), append(...nodes) {this.children.push(...nodes);} }),
       t: (key) => key, icon: () => null, defaultPreset: () => 'aa-hq', resumeTarget: () => null,

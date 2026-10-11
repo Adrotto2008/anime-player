@@ -1,0 +1,1634 @@
+{
+  "source": "https://graphql.anilist.co",
+  "capturedAt": "2026-10-11T12:30:54.982Z",
+  "roots": [
+    9253,
+    21127,
+    21355,
+    104454
+  ],
+  "records": [
+    {
+      "anilistId": 9253,
+      "title": "Steins;Gate",
+      "altTitle": "Steins;Gate",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 24,
+      "averageDuration": 1440,
+      "year": 2011,
+      "related": [
+        {
+          "id": 10863,
+          "title": "Steins;Gate: Egoistic Poriomania",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 1,
+          "averageDuration": 1500,
+          "year": 2012,
+          "relation": "SEQUEL"
+        },
+        {
+          "id": 20907,
+          "title": "Steins;Gate: Soumei Eichi no Cognitive Computing",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 4,
+          "averageDuration": 240,
+          "year": 2014,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 21624,
+          "title": "Steins;Gate 0: 23β -Divide by Zero-",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 1,
+          "averageDuration": 1440,
+          "year": 2015,
+          "relation": "ALTERNATIVE"
+        },
+        {
+          "id": 11577,
+          "title": "Steins;Gate The Movie – Load Region of Déjà Vu",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 5400,
+          "year": 2013,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 10519,
+          "title": "Puella Magi Sonico Magica",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 1,
+          "averageDuration": 60,
+          "year": 2011,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 4975,
+          "title": "ChäoS;HEAd",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1620,
+          "year": 2008,
+          "relation": "OTHER"
+        },
+        {
+          "id": 13599,
+          "title": "Robotics;Notes",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 22,
+          "averageDuration": 1380,
+          "year": 2012,
+          "relation": "OTHER"
+        },
+        {
+          "id": 21708,
+          "title": "Occultic;Nine",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2016,
+          "relation": "OTHER"
+        }
+      ]
+    },
+    {
+      "anilistId": 21127,
+      "title": "Steins;Gate 0",
+      "altTitle": "Steins;Gate 0",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 23,
+      "averageDuration": 1440,
+      "year": 2018,
+      "related": [
+        {
+          "id": 21624,
+          "title": "Steins;Gate 0: 23β -Divide by Zero-",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 1,
+          "averageDuration": 1440,
+          "year": 2015,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 104174,
+          "title": "Steins;Gate 0: Valentine's of Crystal Polymorphism -Bittersweet Intermedio-",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 1,
+          "averageDuration": 1440,
+          "year": 2019,
+          "relation": "SIDE_STORY"
+        }
+      ]
+    },
+    {
+      "anilistId": 21355,
+      "title": "Re:ZERO -Starting Life in Another World-",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 25,
+      "averageDuration": 1500,
+      "year": 2016,
+      "related": [
+        {
+          "id": 21780,
+          "title": "Re:ZERO ~Starting Break Time From Zero~",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 11,
+          "averageDuration": 180,
+          "year": 2016,
+          "relation": "SPIN_OFF"
+        },
+        {
+          "id": 21891,
+          "title": "Re:PETIT ~Re: Starting Life in Another World From PETIT~",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 14,
+          "averageDuration": 180,
+          "year": 2016,
+          "relation": "SPIN_OFF"
+        },
+        {
+          "id": 100049,
+          "title": "Re:ZERO -Starting Life in Another World- OVAs",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 2,
+          "averageDuration": 4080,
+          "year": 2018,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 108632,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1560,
+          "year": 2020,
+          "relation": "SEQUEL"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2020,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 6720,
+          "year": 2022,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 166093,
+          "title": "Snack Basue",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1440,
+          "year": 2024,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 11,
+          "averageDuration": 720,
+          "year": 2025,
+          "relation": "CHARACTER"
+        }
+      ]
+    },
+    {
+      "anilistId": 104454,
+      "title": "Isekai Quartet",
+      "altTitle": "Isekai Quartet",
+      "type": "ANIME",
+      "format": "TV_SHORT",
+      "episodeCount": 12,
+      "averageDuration": 720,
+      "year": 2019,
+      "related": [
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1440,
+          "year": 2015,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 10,
+          "averageDuration": 1380,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2017,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2020,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 4975,
+      "title": "ChäoS;HEAd",
+      "altTitle": "ChäoS;HEAd",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 12,
+      "averageDuration": 1620,
+      "year": 2008,
+      "related": [
+        {
+          "id": 21126,
+          "title": "Chaos;Child",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1380,
+          "year": 2017,
+          "relation": "SEQUEL"
+        },
+        {
+          "id": 10519,
+          "title": "Puella Magi Sonico Magica",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 1,
+          "averageDuration": 60,
+          "year": 2011,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "OTHER"
+        },
+        {
+          "id": 13599,
+          "title": "Robotics;Notes",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 22,
+          "averageDuration": 1380,
+          "year": 2012,
+          "relation": "OTHER"
+        },
+        {
+          "id": 21708,
+          "title": "Occultic;Nine",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2016,
+          "relation": "OTHER"
+        }
+      ]
+    },
+    {
+      "anilistId": 10519,
+      "title": "Puella Magi Sonico Magica",
+      "altTitle": "Mahou Shoujo Sonico☆Magica",
+      "type": "ANIME",
+      "format": "ONA",
+      "episodeCount": 1,
+      "averageDuration": 60,
+      "year": 2011,
+      "related": [
+        {
+          "id": 20455,
+          "title": "Soni-Ani: SUPER SONICO THE ANIMATION",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2014,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 5682,
+          "title": "Phantom: Requiem for the Phantom",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 26,
+          "averageDuration": 1440,
+          "year": 2009,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 4975,
+          "title": "ChäoS;HEAd",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1620,
+          "year": 2008,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 9756,
+          "title": "Puella Magi Madoka Magica",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "OTHER"
+        },
+        {
+          "id": 1067,
+          "title": "Demonbane",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1500,
+          "year": 2006,
+          "relation": "CHARACTER"
+        }
+      ]
+    },
+    {
+      "anilistId": 10863,
+      "title": "Steins;Gate: Egoistic Poriomania",
+      "altTitle": "Steins;Gate: Oukoubakko no Poriomania",
+      "type": "ANIME",
+      "format": "OVA",
+      "episodeCount": 1,
+      "averageDuration": 1500,
+      "year": 2012,
+      "related": [
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 11577,
+          "title": "Steins;Gate The Movie – Load Region of Déjà Vu",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 5400,
+          "year": 2013,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 11577,
+      "title": "Steins;Gate The Movie – Load Region of Déjà Vu",
+      "altTitle": "Steins;Gate: Fuka Ryouiki no Déjà vu",
+      "type": "ANIME",
+      "format": "MOVIE",
+      "episodeCount": 1,
+      "averageDuration": 5400,
+      "year": 2013,
+      "related": [
+        {
+          "id": 10863,
+          "title": "Steins;Gate: Egoistic Poriomania",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 1,
+          "averageDuration": 1500,
+          "year": 2012,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "PARENT"
+        }
+      ]
+    },
+    {
+      "anilistId": 13599,
+      "title": "Robotics;Notes",
+      "altTitle": "Robotics;Notes",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 22,
+      "averageDuration": 1380,
+      "year": 2012,
+      "related": [
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "OTHER"
+        },
+        {
+          "id": 4975,
+          "title": "ChäoS;HEAd",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1620,
+          "year": 2008,
+          "relation": "OTHER"
+        },
+        {
+          "id": 21708,
+          "title": "Occultic;Nine",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2016,
+          "relation": "OTHER"
+        }
+      ]
+    },
+    {
+      "anilistId": 20832,
+      "title": "Overlord",
+      "altTitle": "Overlord",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 13,
+      "averageDuration": 1440,
+      "year": 2015,
+      "related": [
+        {
+          "id": 87489,
+          "title": "Overlord: Ple Ple Pleiades - Nazarick Saidai no Kiki",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 1,
+          "averageDuration": 1860,
+          "year": 2016,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 98437,
+          "title": "Overlord II",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1440,
+          "year": 2018,
+          "relation": "SEQUEL"
+        },
+        {
+          "id": 98873,
+          "title": "Overlord: The Undead King",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 6300,
+          "year": 2017,
+          "relation": "SUMMARY"
+        },
+        {
+          "id": 98874,
+          "title": "Overlord: The Dark Hero",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 5580,
+          "year": 2017,
+          "relation": "SUMMARY"
+        },
+        {
+          "id": 21305,
+          "title": "Overlord: Ple Ple Pleiades",
+          "type": "ANIME",
+          "format": "SPECIAL",
+          "episodeCount": 8,
+          "averageDuration": 240,
+          "year": 2015,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2020,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 6720,
+          "year": 2022,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 166035,
+          "title": "Overlord: Ple Ple Pleiades Tokubetsu-hen",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 1,
+          "averageDuration": 300,
+          "year": 2015,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 11,
+          "averageDuration": 720,
+          "year": 2025,
+          "relation": "CHARACTER"
+        }
+      ]
+    },
+    {
+      "anilistId": 20907,
+      "title": "Steins;Gate: Soumei Eichi no Cognitive Computing",
+      "altTitle": "Steins;Gate: Soumei Eichi no Cognitive Computing",
+      "type": "ANIME",
+      "format": "ONA",
+      "episodeCount": 4,
+      "averageDuration": 240,
+      "year": 2014,
+      "related": [
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "PARENT"
+        }
+      ]
+    },
+    {
+      "anilistId": 21202,
+      "title": "KONOSUBA -God's blessing on this wonderful world!",
+      "altTitle": "Kono Subarashii Sekai ni Shukufuku wo!",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 10,
+      "averageDuration": 1380,
+      "year": 2016,
+      "related": [
+        {
+          "id": 21574,
+          "title": "KONOSUBA -God's blessing on this wonderful world!: God's Blessings On This Wonderful Choker!",
+          "type": "ANIME",
+          "format": "OVA",
+          "episodeCount": 1,
+          "averageDuration": 1440,
+          "year": 2016,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 21699,
+          "title": "KONOSUBA -God's blessing on this wonderful world! 2",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 10,
+          "averageDuration": 1380,
+          "year": 2017,
+          "relation": "SEQUEL"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2020,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 6720,
+          "year": 2022,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 150075,
+          "title": "KONOSUBA -An Explosion on This Wonderful World!",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2023,
+          "relation": "SPIN_OFF"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 11,
+          "averageDuration": 720,
+          "year": 2025,
+          "relation": "CHARACTER"
+        }
+      ]
+    },
+    {
+      "anilistId": 21613,
+      "title": "Saga of Tanya the Evil",
+      "altTitle": "Youjo Senki",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 12,
+      "averageDuration": 1440,
+      "year": 2017,
+      "related": [
+        {
+          "id": 98186,
+          "title": "Youjo Shenki",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 13,
+          "averageDuration": 180,
+          "year": 2017,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 100878,
+          "title": "Saga of Tanya the Evil - the Movie -",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 5880,
+          "year": 2019,
+          "relation": "SEQUEL"
+        },
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2020,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 135866,
+          "title": "Saga of Tanya the Evil: Operation Desert Pasta",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 1,
+          "averageDuration": 1020,
+          "year": 2021,
+          "relation": "SIDE_STORY"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 6720,
+          "year": 2022,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 11,
+          "averageDuration": 720,
+          "year": 2025,
+          "relation": "CHARACTER"
+        }
+      ]
+    },
+    {
+      "anilistId": 21624,
+      "title": "Steins;Gate 0: 23β -Divide by Zero-",
+      "altTitle": "Steins;Gate: Kyoukaimenjou no Missing Link - Divide By Zero",
+      "type": "ANIME",
+      "format": "OVA",
+      "episodeCount": 1,
+      "averageDuration": 1440,
+      "year": 2015,
+      "related": [
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "ALTERNATIVE"
+        },
+        {
+          "id": 21127,
+          "title": "Steins;Gate 0",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 23,
+          "averageDuration": 1440,
+          "year": 2018,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 21708,
+      "title": "Occultic;Nine",
+      "altTitle": "Occultic;Nine",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 12,
+      "averageDuration": 1440,
+      "year": 2016,
+      "related": [
+        {
+          "id": 13599,
+          "title": "Robotics;Notes",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 22,
+          "averageDuration": 1380,
+          "year": 2012,
+          "relation": "OTHER"
+        },
+        {
+          "id": 4975,
+          "title": "ChäoS;HEAd",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1620,
+          "year": 2008,
+          "relation": "OTHER"
+        },
+        {
+          "id": 9253,
+          "title": "Steins;Gate",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 24,
+          "averageDuration": 1440,
+          "year": 2011,
+          "relation": "OTHER"
+        }
+      ]
+    },
+    {
+      "anilistId": 21780,
+      "title": "Re:ZERO ~Starting Break Time From Zero~",
+      "altTitle": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time)",
+      "type": "ANIME",
+      "format": "TV_SHORT",
+      "episodeCount": 11,
+      "averageDuration": 180,
+      "year": 2016,
+      "related": [
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "PARENT"
+        },
+        {
+          "id": 21891,
+          "title": "Re:PETIT ~Re: Starting Life in Another World From PETIT~",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 14,
+          "averageDuration": 180,
+          "year": 2016,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 21891,
+      "title": "Re:PETIT ~Re: Starting Life in Another World From PETIT~",
+      "altTitle": "Re:Petit kara Hajimeru Isekai Seikatsu",
+      "type": "ANIME",
+      "format": "TV_SHORT",
+      "episodeCount": 14,
+      "averageDuration": 180,
+      "year": 2016,
+      "related": [
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "PARENT"
+        },
+        {
+          "id": 21780,
+          "title": "Re:ZERO ~Starting Break Time From Zero~",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 11,
+          "averageDuration": 180,
+          "year": 2016,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 120700,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 13,
+          "averageDuration": 180,
+          "year": 2020,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 100049,
+      "title": "Re:ZERO -Starting Life in Another World- OVAs",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu OVAs",
+      "type": "ANIME",
+      "format": "OVA",
+      "episodeCount": 2,
+      "averageDuration": 4080,
+      "year": 2018,
+      "related": [
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "PARENT"
+        }
+      ]
+    },
+    {
+      "anilistId": 104174,
+      "title": "Steins;Gate 0: Valentine's of Crystal Polymorphism -Bittersweet Intermedio-",
+      "altTitle": "Steins;Gate 0: Kesshou Takei no Valentine - Bittersweet Day",
+      "type": "ANIME",
+      "format": "OVA",
+      "episodeCount": 1,
+      "averageDuration": 1440,
+      "year": 2019,
+      "related": [
+        {
+          "id": 21127,
+          "title": "Steins;Gate 0",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 23,
+          "averageDuration": 1440,
+          "year": 2018,
+          "relation": "PARENT"
+        }
+      ]
+    },
+    {
+      "anilistId": 108632,
+      "title": "Re:ZERO -Starting Life in Another World- Season 2",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 13,
+      "averageDuration": 1560,
+      "year": 2020,
+      "related": [
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 119661,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2 Part 2",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1800,
+          "year": 2021,
+          "relation": "SEQUEL"
+        },
+        {
+          "id": 120700,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 13,
+          "averageDuration": 180,
+          "year": 2020,
+          "relation": "SPIN_OFF"
+        }
+      ]
+    },
+    {
+      "anilistId": 110178,
+      "title": "Isekai Quartet 2",
+      "altTitle": "Isekai Quartet 2",
+      "type": "ANIME",
+      "format": "TV_SHORT",
+      "episodeCount": 12,
+      "averageDuration": 720,
+      "year": 2020,
+      "related": [
+        {
+          "id": 104454,
+          "title": "Isekai Quartet",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2019,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1440,
+          "year": 2015,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 10,
+          "averageDuration": 1380,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2017,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 99263,
+          "title": "The Rising of the Shield Hero",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1440,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 105156,
+          "title": "Cautious Hero: The Hero Is Overpowered but Overly Cautious",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 6720,
+          "year": 2022,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 117074,
+      "title": "Isekai Quartet The Movie: Another World",
+      "altTitle": "Isekai Quartet: Another World",
+      "type": "ANIME",
+      "format": "MOVIE",
+      "episodeCount": 1,
+      "averageDuration": 6720,
+      "year": 2022,
+      "related": [
+        {
+          "id": 110178,
+          "title": "Isekai Quartet 2",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 12,
+          "averageDuration": 720,
+          "year": 2020,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2017,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 99263,
+          "title": "The Rising of the Shield Hero",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1440,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1440,
+          "year": 2015,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 10,
+          "averageDuration": 1380,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 194447,
+          "title": "Isekai Quartet 3",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 11,
+          "averageDuration": 720,
+          "year": 2025,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 166093,
+      "title": "Snack Basue",
+      "altTitle": "Snack Basue",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 13,
+      "averageDuration": 1440,
+      "year": 2024,
+      "related": [
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "CHARACTER"
+        }
+      ]
+    },
+    {
+      "anilistId": 194447,
+      "title": "Isekai Quartet 3",
+      "altTitle": "Isekai Quartet 3",
+      "type": "ANIME",
+      "format": "TV_SHORT",
+      "episodeCount": 11,
+      "averageDuration": 720,
+      "year": 2025,
+      "related": [
+        {
+          "id": 117074,
+          "title": "Isekai Quartet The Movie: Another World",
+          "type": "ANIME",
+          "format": "MOVIE",
+          "episodeCount": 1,
+          "averageDuration": 6720,
+          "year": 2022,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 20832,
+          "title": "Overlord",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1440,
+          "year": 2015,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21202,
+          "title": "KONOSUBA -God's blessing on this wonderful world!",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 10,
+          "averageDuration": 1380,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21613,
+          "title": "Saga of Tanya the Evil",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2017,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 21355,
+          "title": "Re:ZERO -Starting Life in Another World-",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1500,
+          "year": 2016,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 99263,
+          "title": "The Rising of the Shield Hero",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 25,
+          "averageDuration": 1440,
+          "year": 2019,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 130298,
+          "title": "The Eminence in Shadow",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 20,
+          "averageDuration": 1440,
+          "year": 2022,
+          "relation": "CHARACTER"
+        },
+        {
+          "id": 105156,
+          "title": "Cautious Hero: The Hero Is Overpowered but Overly Cautious",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1440,
+          "year": 2019,
+          "relation": "CHARACTER"
+        }
+      ]
+    },
+    {
+      "anilistId": 119661,
+      "title": "Re:ZERO -Starting Life in Another World- Season 2 Part 2",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season Part 2",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 12,
+      "averageDuration": 1800,
+      "year": 2021,
+      "related": [
+        {
+          "id": 108632,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1560,
+          "year": 2020,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 128306,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season Part 2",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 12,
+          "averageDuration": 180,
+          "year": 2021,
+          "relation": "SPIN_OFF"
+        },
+        {
+          "id": 163134,
+          "title": "Re:ZERO -Starting Life in Another World- Season 3",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 16,
+          "averageDuration": 1440,
+          "year": 2024,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 120700,
+      "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season",
+      "altTitle": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season",
+      "type": "ANIME",
+      "format": "ONA",
+      "episodeCount": 13,
+      "averageDuration": 180,
+      "year": 2020,
+      "related": [
+        {
+          "id": 21891,
+          "title": "Re:PETIT ~Re: Starting Life in Another World From PETIT~",
+          "type": "ANIME",
+          "format": "TV_SHORT",
+          "episodeCount": 14,
+          "averageDuration": 180,
+          "year": 2016,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 108632,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 13,
+          "averageDuration": 1560,
+          "year": 2020,
+          "relation": "PARENT"
+        },
+        {
+          "id": 128306,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season Part 2",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 12,
+          "averageDuration": 180,
+          "year": 2021,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 128306,
+      "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season Part 2",
+      "altTitle": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season Part 2",
+      "type": "ANIME",
+      "format": "ONA",
+      "episodeCount": 12,
+      "averageDuration": 180,
+      "year": 2021,
+      "related": [
+        {
+          "id": 120700,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 13,
+          "averageDuration": 180,
+          "year": 2020,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 119661,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2 Part 2",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1800,
+          "year": 2021,
+          "relation": "PARENT"
+        },
+        {
+          "id": 182417,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 3rd Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 16,
+          "averageDuration": 180,
+          "year": 2024,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 163134,
+      "title": "Re:ZERO -Starting Life in Another World- Season 3",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 3rd Season",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 16,
+      "averageDuration": 1440,
+      "year": 2024,
+      "related": [
+        {
+          "id": 119661,
+          "title": "Re:ZERO -Starting Life in Another World- Season 2 Part 2",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 12,
+          "averageDuration": 1800,
+          "year": 2021,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 182417,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 3rd Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 16,
+          "averageDuration": 180,
+          "year": 2024,
+          "relation": "SPIN_OFF"
+        },
+        {
+          "id": 189046,
+          "title": "Re:ZERO -Starting Life in Another World- Season 4",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 19,
+          "averageDuration": 1440,
+          "year": 2026,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 182417,
+      "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 3rd Season",
+      "altTitle": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 3rd Season",
+      "type": "ANIME",
+      "format": "ONA",
+      "episodeCount": 16,
+      "averageDuration": 180,
+      "year": 2024,
+      "related": [
+        {
+          "id": 128306,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 2nd Season Part 2",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 12,
+          "averageDuration": 180,
+          "year": 2021,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 163134,
+          "title": "Re:ZERO -Starting Life in Another World- Season 3",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 16,
+          "averageDuration": 1440,
+          "year": 2024,
+          "relation": "PARENT"
+        },
+        {
+          "id": 210687,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 4th Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 19,
+          "averageDuration": 180,
+          "year": 2026,
+          "relation": "SEQUEL"
+        }
+      ]
+    },
+    {
+      "anilistId": 189046,
+      "title": "Re:ZERO -Starting Life in Another World- Season 4",
+      "altTitle": "Re:Zero kara Hajimeru Isekai Seikatsu 4th Season",
+      "type": "ANIME",
+      "format": "TV",
+      "episodeCount": 19,
+      "averageDuration": 1440,
+      "year": 2026,
+      "related": [
+        {
+          "id": 163134,
+          "title": "Re:ZERO -Starting Life in Another World- Season 3",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 16,
+          "averageDuration": 1440,
+          "year": 2024,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 210687,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 4th Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 19,
+          "averageDuration": 180,
+          "year": 2026,
+          "relation": "SPIN_OFF"
+        }
+      ]
+    },
+    {
+      "anilistId": 210687,
+      "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 4th Season",
+      "altTitle": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 4th Season",
+      "type": "ANIME",
+      "format": "ONA",
+      "episodeCount": 19,
+      "averageDuration": 180,
+      "year": 2026,
+      "related": [
+        {
+          "id": 182417,
+          "title": "Re:Zero kara Hajimeru Kyuukei Jikan (Break Time) 3rd Season",
+          "type": "ANIME",
+          "format": "ONA",
+          "episodeCount": 16,
+          "averageDuration": 180,
+          "year": 2024,
+          "relation": "PREQUEL"
+        },
+        {
+          "id": 189046,
+          "title": "Re:ZERO -Starting Life in Another World- Season 4",
+          "type": "ANIME",
+          "format": "TV",
+          "episodeCount": 19,
+          "averageDuration": 1440,
+          "year": 2026,
+          "relation": "PARENT"
+        }
+      ]
+    }
+  ]
+}

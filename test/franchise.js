@@ -19,7 +19,7 @@ const graph = new Map([
   ['1', media(1, 'Saga', 'TV', [link(2, 'Saga Season 2', 'TV', 'SEQUEL')])],
   ['2', media(2, 'Saga Season 2', 'TV', [link(1, 'Saga', 'TV', 'PREQUEL'), link(3, 'Saga Season 3', 'TV', 'SEQUEL'), link(4, 'Saga Movie', 'MOVIE', 'SIDE_STORY'), link(5, 'Bad spin-off', 'TV', 'SPIN_OFF'), link(6, 'Recap', 'TV', 'SUMMARY'), link(7, 'Alternate', 'TV', 'ALTERNATIVE'), link(8, 'Same universe', 'TV', 'PARENT')])],
   ['3', media(3, 'Saga Season 3', 'TV', [link(2, 'Saga Season 2', 'TV', 'PREQUEL')])],
-  ['4', media(4, 'Saga Movie', 'MOVIE')],
+  ['4', media(4, 'Saga Movie', 'MOVIE', [link(2, 'Saga Season 2', 'TV', 'PARENT')])],
   ['5', media(5, 'Bad spin-off')], ['6', media(6, 'Recap')], ['7', media(7, 'Alternate')], ['8', media(8, 'Same universe')],
 ]);
 const fetchByIds = async (ids) => ids.map((id) => graph.get(String(id))).filter(Boolean);

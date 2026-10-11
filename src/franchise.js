@@ -1,6 +1,7 @@
 'use strict';
 
-const SEASON_FORMATS = new Set(['TV', 'TV_SHORT', 'ONA']);
+const Model = require('./franchise-model');
+const SEASON_FORMATS = Model.SEASON_FORMATS;
 const MOVIE_RELATIONS = new Set(['PREQUEL', 'SEQUEL', 'SIDE_STORY']);
 
 function relationNodes(media) {
@@ -10,7 +11,7 @@ function relationNodes(media) {
 // PREQUEL/SEQUEL describes story chronology, not necessarily another season.
 // A known one-shot must not become the root of a series (including ONA releases).
 function isSeason(media) {
-  return SEASON_FORMATS.has(media?.format) && Number(media.episodeCount) !== 1;
+  return Model.seasonWork(media);
 }
 
 function orderSeasons(mains) {
@@ -18,7 +19,7 @@ function orderSeasons(mains) {
   const byId = new Map(mains.map((media) => [String(media.anilistId), media]));
   const incoming = new Map(); const outgoing = new Map();
   for (const media of mains) for (const rel of relationNodes(media)) {
-    if(['SPIN_OFF','SUMMARY','ALTERNATIVE','ALTERNATIVE_VERSION'].includes(rel.relation) && byId.has(String(rel.id)))return null;
+    if(Model.WEAK.has(rel.relation) && byId.has(String(rel.id)))return null;
     if (!['PREQUEL', 'SEQUEL'].includes(rel.relation) || !byId.has(String(rel.id))) continue;
     const from = String(rel.relation === 'PREQUEL' ? rel.id : media.anilistId);
     const to = String(rel.relation === 'PREQUEL' ? media.anilistId : rel.id);
@@ -87,6 +88,7 @@ async function resolveFranchise(seedId, fetchByIds, { maxItems = 24 } = {}) {
     for (const media of movieRecords || []) if (media?.anilistId != null && media.format === 'MOVIE') mediaById.set(String(media.anilistId), media);
   }
   const movies = [...movieIds].map((id) => mediaById.get(id)).filter((item) => item?.format === 'MOVIE')
+    .map(item=>Model.evaluateRelated(item,ordered)).filter(item=>item.franchiseEvidence.automatic)
     .sort((a, b) => (Number(a.year) || 0) - (Number(b.year) || 0) || String(a.title).localeCompare(String(b.title)));
   return { seed, items: ordered, movies, ambiguous: false, requests };
 }
@@ -99,10 +101,14 @@ function applyFranchiseMetadata(records, { franchiseId, franchiseTitle, items })
     const chartSeason = explicitSeason ? Number(explicitSeason.slice(1).find(Boolean)) : null;
     return {
       ...record,
+      franchiseEvidence:record.franchiseEvidence || {provider:'AniList',kind:!isSeason(record)?Model.category(record)==='spinoff'?'spinoff':relationNodes(record).some(r=>r.relation==='PARENT')?'side_story':'standalone'
+        :number===1?'main':/\bpart\s*\d+\b/i.test(record.title || '')?'part':'sequel',
+        reason:isSeason(record)?'confirmed_season_chain':'work_format',automatic:isSeason(record),edges:relationNodes(record).filter(r=>!isSeason(record) || items.some(m=>String(m.anilistId)===String(r.id)))
+          .map(r=>({from:String(record.anilistId),to:String(r.id),relation:r.relation})),path:[]},
       franchiseId: String(franchiseId), franchiseTitle,
       franchiseOrder: number || null,
-      franchiseType: record.category || (record.format === 'MOVIE' ? 'movie' : ['SPECIAL', 'OVA'].includes(record.format) ? 'special' : 'season'),
-      ...(number ? { franchiseSeasonNumber: chartSeason } : {}),
+      franchiseType: record.category || Model.category({...record,franchiseMembership:undefined,franchiseType:undefined}),
+      ...(number && isSeason(record) ? { franchiseSeasonNumber: chartSeason } : {}),
     };
   });
 }

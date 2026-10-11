@@ -1,51 +1,51 @@
 'use strict';
 const Model=require('./franchise-model');
-const weak=new Set(['SPIN_OFF','ALTERNATIVE','ALTERNATIVE_VERSION','SUMMARY','CHARACTER','OTHER']);
-const strong=new Set(['SIDE_STORY','PREQUEL','SEQUEL']);
 
-// Only confirmed main works and side stories are traversed. A suggestion never
-// opens a second franchise through its own parents, sequels or shared characters.
+// All entry paths use Model.evaluateRelated. Weak links never become trusted
+// anchors; a one-shot alternate bridge may expose a proposal, never an import.
 async function discoverRelatedWorks(anchors,fetchByIds,{maxItems=96,maxDepth=2}={}) {
-  const known=new Map(anchors.filter(m=>m?.anilistId != null).map(m=>[String(m.anilistId),m]));
-  const anchorIds=new Set(known.keys()),evidence=new Map(),fetched=new Set(known.keys());
-  const automatic=new Map(),suggestions=new Map();let frontier=[...known.values()],requests=0,truncated=false;
-  for (let depth=0;depth<maxDepth && frontier.length;depth++) {
-    for (const source of frontier) for (const rel of source.related || []) {
-      if (!rel?.id || rel.type !== 'ANIME' || anchorIds.has(String(rel.id))) continue;
-      const id=String(rel.id);
-      if (!evidence.has(id)) evidence.set(id,{id,stub:{anilistId:rel.id,title:rel.title,format:rel.format,year:rel.year},relations:new Set(),from:new Set()});
-      const entry=evidence.get(id);entry.relations.add(rel.relation);entry.from.add(String(source.anilistId));
+  const known=new Map(anchors.filter(m=>m?.anilistId!=null).map(m=>[String(m.anilistId),m]));
+  const anchorIds=new Set(known.keys()),attempted=new Set(known.keys()),evidence=new Map();
+  const trusted=new Map(known),bridges=new Map();let frontier=[...known.values()],requests=0,truncated=false;
+  for(let depth=0;depth<maxDepth && (frontier.length || bridges.size);depth++) {
+    const sources=[...frontier,...bridges.values()];bridges.clear();
+    for(const source of sources)for(const rel of Model.animeRelations(source)) {
+      const id=String(rel.id);if(anchorIds.has(id))continue;
+      const inherited=source._bridge;
+      if(inherited && !['PREQUEL','SEQUEL','ALTERNATIVE'].includes(rel.relation))continue;
+      if(!evidence.has(id))evidence.set(id,{stub:{anilistId:rel.id,title:rel.title,format:rel.format,episodeCount:rel.episodeCount},bridge:null});
+      if(inherited)evidence.get(id).bridge={via:String(source.anilistId),path:[...inherited.path,id],
+        edges:[...inherited.edges,{from:String(source.anilistId),to:id,relation:rel.relation}]};
     }
-    const missing=[...evidence.keys()].filter(id=>!fetched.has(id));
-    const room=Math.max(0,maxItems-(fetched.size-anchorIds.size));
-    const selected=missing.slice(0,room);if(selected.length < missing.length)truncated=true;
-    for (let offset=0;offset<selected.length;offset+=24) {
-      const ids=selected.slice(offset,offset+24);ids.forEach(id=>fetched.add(id));
-      const records=await fetchByIds(ids);requests++;
-      for (const record of records || []) if(record?.anilistId != null) known.set(String(record.anilistId),record);
+    const missing=[...evidence.keys()].filter(id=>!attempted.has(id));
+    const selected=missing.slice(0,Math.max(0,maxItems-(attempted.size-anchorIds.size)));
+    if(selected.length<missing.length)truncated=true;
+    for(let offset=0;offset<selected.length;offset+=24){const ids=selected.slice(offset,offset+24);ids.forEach(id=>attempted.add(id));
+      const records=await fetchByIds(ids);requests++;for(const m of records || [])if(m?.anilistId!=null && ids.includes(String(m.anilistId)))known.set(String(m.anilistId),m);
     }
-    const next=[];
-    for (const id of selected) {
-      const entry=evidence.get(id),record=known.get(id) || entry.stub;
-      const relations=[...entry.relations].filter(Boolean);
-      const category=Model.category({...record,franchiseType:undefined,franchiseMembership:undefined,franchiseRelations:relations});
-      const parent=(record.related || []).some(r=>r.relation === 'PARENT' && anchorIds.has(String(r.id)));
-      const reliable=known.has(id) && ['movie','special'].includes(category) && parent
-        && relations.some(r=>strong.has(r)) && !relations.some(r=>weak.has(r));
-      const item={...record,franchiseRelations:relations,category,linkedFrom:[...entry.from],
-        reason:reliable?'confirmed_parent_and_side_story':!known.has(id)?'metadata_unavailable':'confirm_related_work'};
-      if (reliable) {automatic.set(id,item);suggestions.delete(id);next.push(record);}
-      else {suggestions.set(id,item);automatic.delete(id);}
+    frontier=[];
+    for(const id of selected){const entry=evidence.get(id),record=known.get(id) || entry.stub;
+      const item=Model.evaluateRelated(record,[...trusted.values()],{missing:!known.has(id),bridge:entry.bridge});
+      if(item.franchiseEvidence.automatic){trusted.set(id,record);frontier.push(record);}
+      else if(!entry.bridge && known.has(id) && Number(record.episodeCount)===1
+        && Model.animeRelations(record).some(r=>r.relation==='ALTERNATIVE')) {
+        const edge=item.franchiseEvidence.edges.find(e=>e.to===id) || item.franchiseEvidence.edges.find(e=>e.from===id);
+        if(edge)bridges.set(id,{...record,_bridge:{path:[edge.to===id?edge.from:edge.to,id],edges:item.franchiseEvidence.edges}});
+      }
     }
-    frontier=next;
-    if (depth === maxDepth-1 && frontier.some(m=>(m.related || []).some(r=>r.type === 'ANIME' && !fetched.has(String(r.id))))) truncated=true;
+    if(depth===maxDepth-1 && [...frontier,...bridges.values()].some(m=>Model.animeRelations(m).some(r=>!attempted.has(String(r.id)))))truncated=true;
   }
-  // Re-evaluate relation evidence accumulated from multiple trusted anchors.
-  for (const [id,item] of automatic) {
-    const relations=[...evidence.get(id).relations].filter(Boolean);
-    if (relations.some(r=>weak.has(r))) {automatic.delete(id);suggestions.set(id,{...item,franchiseRelations:relations,
-      category:Model.category({...item,franchiseType:undefined,franchiseMembership:undefined,franchiseRelations:relations}),reason:'confirm_multiple_relations'});}
+  // Reconsider all accumulated evidence, including late contradictions.
+  let changed=true;
+  while(changed){changed=false;for(const id of [...trusted.keys()])if(!anchorIds.has(id)){
+    const entry=evidence.get(id),item=Model.evaluateRelated(known.get(id),[...trusted.values()].filter(m=>String(m.anilistId)!==id),{bridge:entry?.bridge});
+    if(!item.franchiseEvidence.automatic){trusted.delete(id);changed=true;}
+  }}
+  const automatic=[],suggestions=[];
+  for(const [id,entry]of evidence){const record=known.get(id) || entry.stub;
+    const item=Model.evaluateRelated(record,[...trusted.values()].filter(m=>String(m.anilistId)!==id),{missing:!known.has(id),bridge:entry.bridge});
+    if(trusted.has(id) && item.franchiseEvidence.automatic)automatic.push(item);else suggestions.push(item);
   }
-  return {automatic:[...automatic.values()],suggestions:[...suggestions.values()],requests,truncated};
+  return{automatic,suggestions,requests,truncated};
 }
 module.exports={discoverRelatedWorks};

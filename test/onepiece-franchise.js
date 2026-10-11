@@ -12,7 +12,7 @@ const graph = new Map(fixture.records.map(record => [String(record.anilistId), r
 const rel = (id, format, relation) => ({ id, type: 'ANIME', format, relation });
 const media = (id, format, episodeCount, related = []) => ({ anilistId: id, title: `Series ${id}`, format, episodeCount, related });
 const fetchGraph = async ids => ids.map(id => graph.get(String(id))).filter(Boolean);
-const groupFields = ['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber','franchiseMembership'];
+const groupFields = ['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber','franchiseMembership','franchiseEvidence','franchiseRelations'];
 const preserved = records => records.map(record => Object.fromEntries(Object.entries(record)
   .filter(([key]) => ![...groupFields, 'updatedAt'].includes(key))));
 

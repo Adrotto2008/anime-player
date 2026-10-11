@@ -38,6 +38,16 @@ function h(tag, props, ...kids) {
   if (props && props.value != null) el.value = props.value;
   return el;
 }
+function classificationHint(record) {
+  const evidence=record.franchiseEvidence,member=record.franchiseMembership;
+  if(!evidence && !member?.manual)return null;
+  const role=member?.role || evidence?.kind;
+  const origin=member?.manual?t('manualClassification'):evidence?.provider || 'AniList';
+  const reason=evidence?.reason ? t('classificationReason_'+evidence.reason) : '';
+  const proof=(evidence?.edges || []).map(e=>`${e.from} → ${e.to}: ${e.relation}`).join('\n');
+  return h('p',{class:'muted small','data-classification':role || 'manual',title:proof},
+    [origin,role?t('relationKind_'+role):null,member?.manual?t('manualClassificationPriority'):reason].filter(Boolean).join(' · '));
+}
 function castRelatedSection(s) {
   const cast = Array.isArray(s.cast) ? s.cast.slice(0, 8) : [];
   const related = Array.isArray(s.related) ? s.related.slice(0, 8) : [];
@@ -757,7 +767,7 @@ function franchiseView(id) {
           h('div',{class:'cover',style:bg(series.cover)},series.cover ? null : series.title.slice(0,1),
             h('span',{class:'poster-badge'},category==='season' && series.franchiseSeasonNumber ? t('season')+' '+series.franchiseSeasonNumber : series.format || t('category_'+category))),
           h('div',{class:'t'},series.title),h('div',{class:'poster-meta'},[series.year,series.score != null ? '★ '+Number(series.score).toFixed(1) : null].filter(Boolean).join(' · '))),
-        h('div',{class:'row franchise-member-actions'},
+        classificationHint(series),h('div',{class:'row franchise-member-actions'},
           h('button',{class:'btn sm ghost',title:t('moveUp'),'aria-label':t('moveUp'),disabled:list.indexOf(series)===0,onclick:()=>moveFranchiseMember(id,series.id,-1)},'↑'),
           h('button',{class:'btn sm ghost',title:t('moveDown'),'aria-label':t('moveDown'),disabled:list.indexOf(series)===list.length-1,onclick:()=>moveFranchiseMember(id,series.id,1)},'↓'),
           h('button',{class:'btn sm ghost',onclick:()=>openMembershipDialog(series)},t('manageContent')))))))];
@@ -766,7 +776,7 @@ function franchiseView(id) {
   const candidates=suggestions.length ? h('section',{class:'section franchise-suggestions'},
     h('div',{class:'section-head'},h('h2',null,t('relatedCandidates'),h('span',{class:'count'},suggestions.length))),
     suggestions.map(candidate=>h('div',{class:'res'},h('div',{class:'c',style:bg(candidate.cover)}),
-      h('div',null,h('b',null,candidate.title),h('p',{class:'muted small'},[t('category_'+candidate.category),candidate.format,(candidate.franchiseRelations || []).join(' / ')].filter(Boolean).join(' · '))),
+      h('div',null,h('b',null,candidate.title),h('p',{class:'muted small'},[t('category_'+candidate.category),candidate.format,(candidate.franchiseRelations || []).join(' / ')].filter(Boolean).join(' · ')),classificationHint(candidate)),
       h('button',{class:'btn sm primary',onclick:async event=>{event.currentTarget.disabled=true;try{const r=await call('franchise:accept',id,candidate.anilistId,candidate.category);state.lib=r.lib;render();}catch{event.currentTarget.disabled=false;}}},t('add')),
       h('button',{class:'btn sm ghost',onclick:()=>mutate('franchise:reject',id,candidate.anilistId)},t('dismissRelated'))))) : null;
   const counts=Object.fromEntries(FranchiseModel.CATEGORIES.map(category=>[category,members.filter(s=>FranchiseModel.category(s)===category).length]));
@@ -810,11 +820,13 @@ function openMembershipDialog(series) {
       ...(state.lib.franchises || []).map(group=>h('option',{value:group.id},group.title)),h('option',{value:'__new'},t('newFranchise')));
     select.value=series.franchiseId || '';
     const category=categorySelect(FranchiseModel.category(series)),order=h('input',{class:'input',type:'number',min:'0',value:series.franchiseOrder || 1});
-    return [h('p',null,series.title),field(t('destination'),select),field(t('contentCategory'),category),field(t('contentOrder'),order),
+    const role=h('select',{class:'input select','aria-label':t('relationKind')},h('option',{value:''},t('providerRelation')),
+      FranchiseModel.ROLES.map(kind=>h('option',{value:kind},t('relationKind_'+kind))));role.value=series.franchiseMembership?.role || '';
+    return [h('p',null,series.title),classificationHint(series),field(t('destination'),select),field(t('contentCategory'),category),field(t('relationKind'),role),field(t('contentOrder'),order),
       h('p',{class:'muted small'},t('membershipHint')),h('div',{class:'foot'},h('button',{class:'btn',onclick:close},t('cancel')),
         h('button',{class:'btn primary',onclick:async()=>{
           let id=select.value;if(id==='__new'){const result=await call('franchise:create',series.id);state.lib=result.lib;id=result.id;}
-          state.lib=await call('franchise:member',series.id,{franchiseId:id || null,category:category.value,order:Number(order.value)});close();render();
+          state.lib=await call('franchise:member',series.id,{franchiseId:id || null,category:category.value,role:role.value || null,order:Number(order.value)});close();render();
         }},t('save')))];
   });
 }
@@ -965,7 +977,7 @@ function seriesView(s) {
       s.status === 'RELEASING' && s.nextAiringAt ? h('div', { class: 'muted small airing-next' }, icon('clock', 14), `${t('nextEpisode')}: ${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleString()}`) : null,
       single ? null : knownSkip ? h('div', { class: 'muted small skip-summary' }, t('skipAvailable') + ` · ${knownSkip} ${t('episodes').toLowerCase()}`) : h('div', { class: 'muted small skip-summary' }, t('skipCheckedOnPlay')),
       total ? h('div', { class: 'series-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: (seen / total) * 100 + '%' } })), h('span', { class: 'muted small' }, t('watchedOf', seen, total))) : null,
-      desc, more, rate, actions));
+      desc, more, classificationHint(s), rate, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
     h('button', { class: 'link back', onclick: () => go(s.franchiseId ? {name:'franchise',id:s.franchiseId} : { name: 'home' }) }, icon('back', 16),
       s.franchiseId ? s.franchiseTitle || t('seasons') : t('backLibrary').replace(/^←\s*/, '')), heroBody);

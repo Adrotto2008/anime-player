@@ -375,7 +375,7 @@ class Store extends EventEmitter {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources'];
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources', 'franchiseEvidence', 'franchiseRelations', 'related'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     if(Object.hasOwn(patch,'personalRating'))s.personalRatingUpdatedAt=Math.max(Date.now(),(s.personalRatingUpdatedAt || 0)+1);
     if (Object.hasOwn(patch,'movieSources')) {delete s.movieSourcesMigrated;this.migrateParts(s);}
@@ -422,7 +422,7 @@ class Store extends EventEmitter {
     for (const record of this.franchiseMembers(id)) record.franchiseTitle = group.title;
     this.save(); return group;
   }
-  setMembership(sid, {franchiseId,category,order}, {manual=true}={}) {
+  setMembership(sid, {franchiseId,category,order,role}, {manual=true}={}) {
     const record = this.getSeries(sid); if (!record) throw new Error('Opera non trovata.');
     if (!manual && record.franchiseMembership?.manual) return record;
     const group = franchiseId != null ? this.getFranchise(franchiseId) : null;
@@ -433,10 +433,15 @@ class Store extends EventEmitter {
     }
     const kind = category || Franchise.category(record);
     if (!Franchise.CATEGORIES.includes(kind)) throw new Error('Categoria non valida.');
-    const position = order == null ? Math.max(0,...(group ? this.franchiseMembers(group.id).map(s=>Number(s.franchiseOrder)||0):[]))+1 : Number(order);
+    if (role != null && !Franchise.ROLES.includes(role)) throw new Error('Relazione non valida.');
+    const savedRole=role===null ? undefined : role || record.franchiseMembership?.role;
+    const position = order == null && !manual && record.franchiseId===group?.id ? Number(record.franchiseOrder)||0
+      : order == null ? Math.max(0,...(group ? this.franchiseMembers(group.id).map(s=>Number(s.franchiseOrder)||0):[]))+1 : Number(order);
     if (!Number.isFinite(position) || position < 0) throw new Error('Ordine non valido.');
+    const previous=record.franchiseMembership;
+    if(!manual && previous && previous.franchiseId===(group?.id || null) && previous.category===kind && previous.order===position && previous.role===savedRole)return record;
     const updatedAt = Math.max(Date.now(),(Number(record.franchiseMembership?.updatedAt)||0)+1);
-    Franchise.mirror(record,{franchiseId:group?.id || null,category:kind,order:position,manual,updatedAt},group);
+    Franchise.mirror(record,{franchiseId:group?.id || null,category:kind,order:position,manual,updatedAt,...(savedRole?{role:savedRole}: {})},group);
     record.updatedAt = Math.max(record.updatedAt||0,updatedAt);
     if (group && record.anilistId != null) group.excludedAniListIds = (group.excludedAniListIds || []).filter(id=>String(id)!==String(record.anilistId));
     this.save(); return record;

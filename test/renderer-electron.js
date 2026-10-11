@@ -180,9 +180,11 @@ app.whenReady().then(async () => {
   assert.strictEqual(await js(`document.querySelector('.hero h1').textContent`),'Added season');
   const addedMember=store.data.series.find(s=>s.title==='Added season');assert.strictEqual(addedMember.franchiseId,groupId);
   await js(`Array.from(document.querySelectorAll('.actions button')).find(x=>x.textContent.includes(window.i18n.t('manageContent'))).click()`);await tick();
-  await js(`document.querySelector('#dialog-root select[aria-label="'+window.i18n.t('contentCategory')+'"]').value='spinoff';document.querySelector('#dialog-root .foot .primary').click()`);await tick();
+  await js(`document.querySelector('#dialog-root select[aria-label="'+window.i18n.t('contentCategory')+'"]').value='spinoff';document.querySelector('#dialog-root select[aria-label="'+window.i18n.t('relationKind')+'"]').value='remake';document.querySelector('#dialog-root .foot .primary').click()`);await tick();
   assert.strictEqual(addedMember.franchiseType,'spinoff');
+  assert.strictEqual(addedMember.franchiseMembership.role,'remake');
   await openGroup();assert.strictEqual(await js(`document.querySelectorAll('[data-franchise-category="spinoff"] .franchise-child').length`),1);
+  assert.ok((await js(`document.querySelector('[data-classification="remake"]').textContent`)).includes('Manual classification'));
   await capture('franchise');
   await js(`document.querySelector('[data-franchise-category="movie"] .franchise-child').click()`);await tick();
   assert.ok(await js(`!!document.querySelector('#video-version')`),'film exposes video versions');

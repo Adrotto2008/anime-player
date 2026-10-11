@@ -18,10 +18,15 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
   };
 
   const inFlight=new Map();
-  const add = async ({ anilistId, title, franchiseId, category, onlySelected=false, automatic=false }) => {
+  const add = async ({ anilistId, title, franchiseId, category, onlySelected=false, automatic=false, relationEvidence, relationOrder, relationRole }) => {
+    const scope=store.scope;
     const target=franchiseId ? store.getFranchise(franchiseId) : null;
     if (franchiseId && (!target || store._deletingFranchises?.has(franchiseId))) throw new Error('Franchise non disponibile.');
     const initial=store.data.series.find(s=>String(s.anilistId)===String(anilistId));
+    const initialMembership=JSON.stringify(initial?.franchiseMembership || null);let membershipCommitted=false;
+    const valid=()=>store.scope===scope && (!initial || store.getSeries(initial.id)) && (!target || store.getFranchise(target.id) && !store._deletingFranchises?.has(target.id))
+      && (!target || automatic || !initial || membershipCommitted || JSON.stringify(store.getSeries(initial.id)?.franchiseMembership || null)===initialMembership);
+    const cancelled=()=>({cancelled:true,lib:store.snapshot()});
     if(!target && initial?.franchiseMembership?.manual && initial.franchiseId === null)onlySelected=true;
     if (!anilistId) {
       const series = store.addSeries({ title: String(title || '').trim() || 'Senza titolo' });
@@ -40,6 +45,7 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
       } else graph = await resolveFranchise(anilistId, (ids) => metadata.getAnimeBatch(ids, { language }));
     }
     catch (error) {
+      if(!valid())return cancelled();
       console.warn('AniList franchise lookup failed; adding the selected title only:', error.message);
       // A search result already contains the selected record. A throttled
       // franchise traversal must not issue another request into the same limit.
@@ -49,14 +55,19 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
       if (!seed) throw error;
       graph = { seed, items: [seed], movies: [], ambiguous: true, deferred: error.status === 429 };
     }
-    if ((initial && !store.getSeries(initial.id)) || target && !store.getFranchise(target.id)) return {cancelled:true,lib:store.snapshot()};
+    if (!valid()) return cancelled();
     let related={automatic:[],suggestions:[]};
     if (!target && !onlySelected && !graph.ambiguous) {
       try {related=await discoverRelatedWorks([...graph.items,...graph.movies],ids=>metadata.getAnimeBatch(ids,{language}));}
       catch(error){graph.relatedDeferred=true;console.warn('Related AniList content deferred:',error.message);}
     }
-    if ((initial && !store.getSeries(initial.id)) || target && !store.getFranchise(target.id)) return {cancelled:true,lib:store.snapshot()};
-    const allTitles = [...graph.items, ...graph.movies,...related.automatic];
+    if (!valid()) return cancelled();
+    // A selected short work's PARENT edge establishes a side story, not a
+    // spin-off. Only the parent's explicit reverse edge can prove SPIN_OFF.
+    const parents=Model.animeRelations(graph.seed).filter(r=>r.relation==='PARENT').map(r=>String(r.id));
+    const parentRecords=[...related.automatic,...related.suggestions].filter(m=>parents.includes(String(m.anilistId)) && Array.isArray(m.related));
+    const selectedEvidence=parentRecords.length ? Model.evaluateRelated(graph.seed,parentRecords) : null;
+    const allTitles = [...graph.items.map(m=>selectedEvidence && String(m.anilistId)===String(anilistId) ? selectedEvidence : m), ...graph.movies,...related.automatic];
     const grouped = Boolean(target) || !graph.ambiguous && (allTitles.length > 1 || related.suggestions.length > 0);
     let group=target;
     if(grouped && !group && initial?.franchiseMembership?.manual && initial.franchiseId === null) group=null;
@@ -71,16 +82,22 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
     const sourceIds = []; let selectedId;
     const library=target ? [...store.data.series].sort((a,b)=>Number(a.franchiseId===target.id)-Number(b.franchiseId===target.id)) : store.data.series;
     for (const { media, existing:planned } of planFranchiseAddition(records, library)) {
+      if(!valid())return cancelled();
       if(group && (!store.getFranchise(group.id) || store._deletingFranchises?.has(group.id))) return {cancelled:true,lib:store.snapshot()};
       if(!target && group?.excludedAniListIds?.includes(String(media.anilistId)) && String(media.anilistId)!==String(anilistId))continue;
       // Other additions can finish while episode/rating metadata is awaited.
       // Recheck identity before creating each work from the earlier graph plan.
       const existing=planned && store.getSeries(planned.id) || planFranchiseAddition([media],store.data.series)[0]?.existing;
+      if(target && !automatic && !initial && existing?.franchiseMembership?.manual)return cancelled();
       const single = Model.singleWork(media);
       const incomplete = existing && media.episodeCount && existing.episodes.length < media.episodeCount;
       let series = existing;
       if (existing) {
         const patch = {};
+        for(const key of ['franchiseEvidence','franchiseRelations','related']) {
+          const value=key==='franchiseEvidence' ? relationEvidence || media[key] : media[key];
+          if(value!==undefined && JSON.stringify(value)!==JSON.stringify(series[key]))patch[key]=value;
+        }
         if (group && !series.franchiseMembership?.manual) for (const key of ['franchiseSeasonNumber']) {
           if (media[key] !== undefined) patch[key] = media[key];
         }
@@ -95,8 +112,10 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
         const safeFields={...fields};for(const key of ['franchiseId','franchiseTitle','franchiseOrder','franchiseType'])delete safeFields[key];
         series = store.addSeries({ ...safeFields, episodes: [], ...(single ? {mediaParts:[],...(media.format==='MOVIE'?{movieSources:[]}: {})} : {}) });
       }
-      if(group)store.setMembership(series.id,{franchiseId:group.id,category:target ? category || Model.category(media) : media.category || media.franchiseType,
-        order:media.franchiseOrder || undefined},{manual:Boolean(target) && !automatic});
+      if(relationEvidence && !existing)store.updateSeries(series.id,{franchiseEvidence:relationEvidence});
+      membershipCommitted=true;
+      if(group && (target && !automatic || !series.franchiseId || series.franchiseId===group.id))store.setMembership(series.id,{franchiseId:group.id,category:target ? category || Model.category(media) : media.category || media.franchiseType,
+        order:relationOrder ?? media.franchiseOrder ?? undefined,...(target && !automatic && relationRole?{role:relationRole}: {})},{manual:Boolean(target) && !automatic});
       if (String(media.anilistId) === String(anilistId)) selectedId = series.id;
 
       if (!single && media.episodeCount > 0 && media.episodeCount <= 300) {
@@ -114,12 +133,13 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
         try {
           const { kitsuId, episodes } = await metadata.fetchEpisodes({ anilistId: media.anilistId, title: media.altTitle || media.title,
             streamingEpisodes: media.streamingEpisodes, episodeCount: media.episodeCount });
-          if (store.getSeries(series.id)) {
+          if (valid() && store.getSeries(series.id)) {
             store.updateSeries(series.id, { kitsuId }); store.mergeEpisodeMeta(series.id, episodes);
           }
         } catch (error) { console.warn(`Episode metadata failed for ${media.title}:`, error.message); }
       }
       if (!existing) await addRatings(series, media);
+      if(!valid())return cancelled();
     }
     if(group && store.getFranchise(group.id) && !target) {
       const memberIds=new Set(store.franchiseMembers(group.id).map(s=>String(s.anilistId)));
@@ -135,7 +155,7 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
       sourceDiscoveryPending: sourceIds.length > 0, lib: store.snapshot() };
   };
   return options=>{
-    const key=options.anilistId ? `${options.anilistId}:${options.franchiseId || ''}` : null;
+    const key=options.anilistId ? `${store.scope}:${options.anilistId}:${options.franchiseId || ''}` : null;
     if(key && inFlight.has(key))return inFlight.get(key);
     const promise=add(options).finally(()=>{if(key)inFlight.delete(key)});
     if(key)inFlight.set(key,promise);return promise;

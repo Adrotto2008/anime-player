@@ -4,16 +4,58 @@
   else root.FranchiseModel = factory();
 })(typeof globalThis !== 'undefined' ? globalThis : this, function () {
   const CATEGORIES = ['season', 'movie', 'special', 'spinoff', 'other'];
+  const ROLES = ['main','prequel','sequel','part','side_story','spinoff','shared_characters','crossover','alternative','remake','reboot','related','standalone'];
+  const SEASON_FORMATS = new Set(['TV','TV_SHORT','ONA']);
+  const WEAK = new Set(['SPIN_OFF','CHARACTER','ALTERNATIVE','ALTERNATIVE_VERSION','SUMMARY','COMPILATION','OTHER','SAME_UNIVERSE','REMAKE','REBOOT']);
+  const animeRelations = media => (media?.related || []).filter(r=>r?.id && r.type==='ANIME');
+  function seasonWork(media) {
+    return SEASON_FORMATS.has(media?.format) && Number(media.episodeCount)!==1
+      && !(['TV_SHORT','ONA'].includes(media.format) && animeRelations(media).some(r=>r.relation==='PARENT'));
+  }
   function category(media) {
     const saved = media?.franchiseMembership?.category || media?.franchiseType;
     if (CATEGORIES.includes(saved)) return saved;
     const relations = media?.franchiseRelations || [];
     if (relations.includes('SPIN_OFF')) return 'spinoff';
-    if (relations.some(r => ['SUMMARY', 'ALTERNATIVE', 'ALTERNATIVE_VERSION'].includes(r))) return 'other';
+    if (relations.some(r => WEAK.has(r))) return 'other';
     if (media?.format === 'MOVIE') return 'movie';
     if (['OVA', 'SPECIAL'].includes(media?.format)) return 'special';
+    if (media?.format==='TV_SHORT' && animeRelations(media).some(r=>r.relation==='PARENT')) return 'special';
+    if (media?.format==='ONA' && relations.includes('SIDE_STORY')) return 'special';
+    if (media?.format==='ONA' && animeRelations(media).some(r=>r.relation==='PARENT')) return 'special';
     if (['TV', 'TV_SHORT', 'ONA'].includes(media?.format) && Number(media.episodeCount) !== 1) return 'season';
     return 'other';
+  }
+  // Shared policy for initial imports and later discovery. Relations describe
+  // evidence between provider IDs, independently of persistent local identity.
+  function evaluateRelated(record, anchors, {missing=false, bridge=null}={}) {
+    const id=String(record.anilistId),anchorIds=new Set(anchors.map(m=>String(m.anilistId)));
+    const edges=[];
+    for(const source of anchors) for(const r of animeRelations(source)) if(String(r.id)===id)
+      edges.push({from:String(source.anilistId),to:id,relation:r.relation});
+    for(const r of animeRelations(record)) if(anchorIds.has(String(r.id)))edges.push({from:id,to:String(r.id),relation:r.relation});
+    const forward=edges.filter(e=>e.to===id),types=[...new Set(edges.map(e=>e.relation).filter(Boolean))];
+    const incoming=[...new Set(forward.map(e=>e.relation).filter(Boolean))];
+    const kind=bridge?'alternative':incoming.includes('SPIN_OFF')?'spinoff':incoming.includes('REMAKE')?'remake':incoming.includes('REBOOT')?'reboot'
+      :incoming.some(r=>['ALTERNATIVE','ALTERNATIVE_VERSION'].includes(r))?'alternative':incoming.includes('CHARACTER')?'shared_characters'
+      :incoming.includes('PARENT')?'main'
+      :incoming.includes('SIDE_STORY')?'side_story':incoming.includes('PREQUEL')?'prequel':incoming.includes('SEQUEL')
+        ?(/\bpart\s*\d+\b/i.test(record.title || '')?'part':'sequel'):'related';
+    const categoryValue=category({...record,franchiseMembership:undefined,franchiseType:undefined,
+      franchiseRelations:bridge?['ALTERNATIVE']:incoming.includes('PARENT')?['OTHER']:incoming});
+    const parents=animeRelations(record).filter(r=>r.relation==='PARENT');
+    const foreignParent=parents.some(r=>!anchorIds.has(String(r.id)));
+    const contradictory=forward.some(e=>['PREQUEL','SEQUEL'].includes(e.relation)
+      && edges.some(back=>back.from===id && back.to===e.from && back.relation===e.relation));
+    const corroborated=forward.some(e=>edges.some(back=>back.from===id && back.to===e.from
+      && (e.relation==='SIDE_STORY' && back.relation==='PARENT' || e.relation==='SEQUEL' && back.relation==='PREQUEL' || e.relation==='PREQUEL' && back.relation==='SEQUEL')));
+    const weak=types.some(r=>WEAK.has(r));
+    const automatic=!missing && !bridge && !foreignParent && !contradictory && !weak && corroborated && ['movie','special'].includes(categoryValue);
+    const reason=missing?'metadata_unavailable':bridge?'alternative_bridge':foreignParent?'conflicting_parent':contradictory?'contradictory_relations'
+      :weak?'independent_relation':automatic?'confirmed_reciprocal_relation':'confirm_related_work';
+    const evidence={provider:'AniList',kind,reason,automatic,edges:[...(bridge?.edges || []),...edges],path:bridge?.path || [],
+      ...(bridge?{via:bridge.via}: {})};
+    return {...record,category:categoryValue,franchiseRelations:types,linkedFrom:[...new Set(forward.map(e=>e.from))],reason,franchiseEvidence:evidence};
   }
   function singleWork(media) {
     return media?.format === 'MOVIE' || ['OVA','SPECIAL','ONA'].includes(media?.format) && Number(media?.episodeCount) === 1;
@@ -24,7 +66,8 @@
     if (!CATEGORIES.includes(value.category)) return null;
     return {franchiseId:value.franchiseId ?? null,category:value.category,
       order:Number.isFinite(Number(value.order)) ? Math.max(0,Number(value.order)) : 0,
-      manual:Boolean(value.manual),updatedAt:Math.max(0,Number(value.updatedAt)||0)};
+      manual:Boolean(value.manual),updatedAt:Math.max(0,Number(value.updatedAt)||0),
+      ...(ROLES.includes(value.role)?{role:value.role}: {})};
   }
   function mirror(record, value, group) {
     record.franchiseMembership = membership(value);
@@ -59,5 +102,5 @@
   }
   function units(series) { return [...(series?.episodes || []), ...(series?.mediaParts || [])]; }
   function partOrder(part) { const n=Number(String(part.key || '').split(':').pop());return Number.isFinite(n)?n:part.number; }
-  return {CATEGORIES,category,singleWork,membership,mirror,migrate,units,partOrder};
+  return {CATEGORIES,ROLES,SEASON_FORMATS,WEAK,animeRelations,seasonWork,evaluateRelated,category,singleWork,membership,mirror,migrate,units,partOrder};
 });
