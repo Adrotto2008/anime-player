@@ -2,7 +2,7 @@
 
 const cheerio = require('cheerio');
 const { redact } = require('./source-state');
-const { titleKey, selectExactMatch, selectVariantMatches, candidateDiagnostics, searchTitles } = require('./source-match');
+const { titleKey, selectExactMatch, selectVariantMatches, candidateDiagnostics, searchTitles, evaluateCandidate } = require('./source-match');
 const { classifyProvider } = require('./source-language');
 
 const DEFAULT_BASE_URL = 'https://www.animeworld.ac';
@@ -68,7 +68,7 @@ class AnimeWorldClient {
     if (!Array.isArray(data.animes)) throw new Error('Formato della ricerca AnimeWorld non riconosciuto.');
     return (Array.isArray(data.animes) ? data.animes : []).map((item) => ({
       name: item.name || '', anilistId: Number(item.anilistId) || null, malId: Number(item.malId) || null,
-      format: item.animeTypeName === 'Movie' ? 'MOVIE' : ['OVA', 'ONA', 'Special'].includes(item.animeTypeName) ? item.animeTypeName.toUpperCase() : null,
+      format: item.animeTypeName === 'Movie' ? 'MOVIE' : ['OVA', 'ONA', 'Special', 'TV'].includes(item.animeTypeName) ? item.animeTypeName.toUpperCase() : item.animeTypeName === 'TV Short' ? 'TV_SHORT' : null,
       status: item.stateName || null, year: item.year == null || item.year === '??' ? null : Number(item.year),
       altTitle: item.jtitle || '', aliases: [item.choseTitle].filter(Boolean),
       episodes: item.episodes == null || item.episodes === '??' ? null : Number(item.episodes),
@@ -90,7 +90,31 @@ class AnimeWorldClient {
     }).get();
   }
 
-  async _episodeSources(animeUrl, {year,episodeCount,isAiring,episodeNumbers} = {}) {
+  async _candidateDetails(candidate) {
+    const url = new URL(candidate.link);
+    if (url.origin !== new URL(this.baseUrl).origin || !url.pathname.startsWith('/play/')) return candidate;
+    const response = await this._request(url.toString(), {referer: `${this.baseUrl}/`});
+    const $ = cheerio.load(await response.text());
+    const info = $('.info').text().replace(/\s+/g, ' ');
+    const label = info.match(/Categoria:\s*(TV[ _-]?Short|Movie|OVA|ONA|Special|TV)\b/i)?.[1];
+    const year = info.match(/Data di Uscita:\s*.*?\b((?:19|20)\d{2})\b/i)?.[1];
+    const episodes = info.match(/Episodi:\s*(\d+)\b/i)?.[1];
+    const details = {...candidate};
+    if (label) details.format = label.toUpperCase().replace(/[ _-]+/g, '_');
+    if (year) details.year = Number(year);
+    if (episodes) details.episodes = Number(episodes);
+    $('a[href]').each((_i, node) => {
+      try {
+        const link = new URL($(node).attr('href'), this.baseUrl);
+        const id = link.pathname.match(/^\/anime\/(\d+)(?:\/|$)/)?.[1];
+        if (id && /^(www\.)?anilist\.co$/i.test(link.hostname)) details.anilistId = Number(id);
+        if (id && /^(www\.)?myanimelist\.net$/i.test(link.hostname)) details.malId = Number(id);
+      } catch { /* Ignore malformed outbound metadata links. */ }
+    });
+    return details;
+  }
+
+  async _episodeSources(animeUrl, {year,episodeCount,isAiring,episodeNumbers,contentMode} = {}) {
     this.lastDiscovery ||= {errors:[]};
     const response = await this._request(animeUrl, { referer: `${this.baseUrl}/` });
     const $ = cheerio.load(await response.text());
@@ -105,7 +129,8 @@ class AnimeWorldClient {
       if (!/^\d+$/.test(serverId || '')) return;
       $(`div[class*="server"][data-name="${serverId}"] li.episode > a`).each((_episodeIndex, anchor) => {
         const element = $(anchor);
-        const number = Number(element.attr('data-episode-num'));
+        const rawNumber=element.attr('data-episode-num');
+        const number = contentMode === 'parts' && rawNumber == null ? _episodeIndex+1 : Number(rawNumber);
         const episodeId = element.attr('data-episode-id');
         const serverDataId = element.attr('data-id');
         if (!Number.isSafeInteger(number) || number < 0 || !episodeId || !serverDataId) return;
@@ -138,7 +163,8 @@ class AnimeWorldClient {
             if (typeof info.grabber !== 'string' || !info.grabber) continue;
             const url = new URL(info.grabber, `${this.baseUrl}/`);
             if (!['http:', 'https:'].includes(url.protocol)) continue;
-            results.push({ number: item.number, url: url.toString(), providerEpisodeId: item.episodeId, providerSourceId: serverDataId, providerTitleUrl: animeUrl, resolutionState: 'resolved' });
+            results.push({ number: item.number, url: url.toString(), providerEpisodeId: item.episodeId, providerSourceId: serverDataId, providerTitleUrl: animeUrl, resolutionState: 'resolved',
+              ...(contentMode==='parts'?{providerPartNumbers:entries.map(entry=>entry.number)}:{}) });
           } catch (error) { this.lastDiscovery.errors.push({number:item.number,phase:'episode',message:redact(error.message)}); }
         }
       }
@@ -171,6 +197,20 @@ class AnimeWorldClient {
       }
       matches = selectVariantMatches([...candidates.values()], aliases, options);
     }
+    if (['MOVIE', 'OVA', 'SPECIAL', 'ONA'].includes(options.format)) {
+      let remaining = 6;
+      for (const [link, candidate] of candidates) {
+        const result = evaluateCandidate(candidate, aliases, options);
+        // Inspect only exact aliases needing independent format evidence.
+        // Metadata from an unrelated search suggestion cannot create a match.
+        if (!remaining || result.method !== 'exact_title' || !result.reasons.length
+          || result.reasons.some(reason => !['variant_mismatch','insufficient_format_metadata'].includes(reason)) || candidate.format) continue;
+        remaining--;
+        try { candidates.set(link, await this._candidateDetails(candidate)); }
+        catch (error) { this.lastDiscovery.errors.push({phase:'title_details',message:redact(error.message)}); }
+      }
+      matches = selectVariantMatches([...candidates.values()], aliases, options);
+    }
     this.lastDiscovery.candidates = candidateDiagnostics([...candidates.values()], aliases, options, matches);
     if (!matches.length) { this.lastDiscovery.status = candidates.size ? 'title_rejected' : 'title_not_found'; return []; }
     this.lastDiscovery.matchedTitle = matches.map(match => match.name).join(' / ');
@@ -178,7 +218,7 @@ class AnimeWorldClient {
     for (const match of matches) {
       try {
         this.lastDiscovery.requestedEpisodesFound = 0; this.lastDiscovery.episodeNumbers = [];
-        const found = await this._episodeSources(match.link,{year,episodeCount,isAiring,episodeNumbers});
+        const found = await this._episodeSources(match.link,{year,episodeCount,isAiring,episodeNumbers,contentMode:options.contentMode});
         requested += this.lastDiscovery.requestedEpisodesFound || 0;
         (this.lastDiscovery.episodeNumbers || []).forEach(number => numbers.add(number));
         sources.push(...found.map(source => ({ ...source, provider: 'animeworld', providerTitleUrl: match.link, language: classifyProvider(match, source) })));

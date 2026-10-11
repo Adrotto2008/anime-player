@@ -88,8 +88,11 @@ function icon(name, size) {
   el.innerHTML = `<svg viewBox="0 0 24 24" width="${size || 18}" height="${size || 18}" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
   return el;
 }
-let openMenu = null;
-function closeMenu() { if (openMenu) { openMenu.remove(); openMenu = null; } }
+let openMenu = null, pendingMenuRender=false;
+function closeMenu() {
+  if (openMenu) { openMenu.remove(); openMenu = null; }
+  if(pendingMenuRender){pendingMenuRender=false;queueMicrotask(render);}
+}
 document.addEventListener('mousedown', (e) => { if (openMenu && !openMenu.contains(e.target) && !e.target.closest('.menu-btn')) closeMenu(); });
 document.addEventListener('keydown', (e) => { if (e.key === 'Escape') closeMenu(); });
 window.addEventListener('resize', closeMenu);
@@ -100,7 +103,7 @@ function menuButton(label, items) {
     e.stopPropagation();
     if (openMenu && openMenu._owner === btn) { closeMenu(); return; }
     closeMenu();
-    const menu = h('div', { class: 'menu', role: 'menu' }, items.map((it) => h('button', { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', onclick: () => { closeMenu(); it.action(); } }, icon(it.icon), h('span', null, it.label))));
+    const menu = h('div', { class: 'menu', role: 'menu' }, items.map((it) => h('button', { class: 'menu-item' + (it.danger ? ' danger' : ''), role: 'menuitem', onclick: () => { closeMenu(); Promise.resolve().then(it.action).catch(()=>{}); } }, icon(it.icon), h('span', null, it.label))));
     menu._owner = btn; document.body.append(menu);
     const r = btn.getBoundingClientRect();
     menu.style.top = Math.max(8, Math.min(window.innerHeight - menu.offsetHeight - 8, r.bottom + 6)) + 'px';
@@ -254,7 +257,7 @@ function renderPlayer() {
   el.hidden = !p.playing;
   if (!p.playing) return;
   const s = p.seriesId && getSeries(p.seriesId);
-  const ep = s && s.episodes.find((item) => item.id === p.episodeId);
+  const ep = s && FranchiseModel.units(s).find((item) => item.id === p.episodeId);
   const hasIntro = ep && Array.isArray(ep.skipTimes) && ep.skipTimes.some((x) => ['op', 'mixed-op'].includes(x.skipType));
   const hasEnding = ep && Array.isArray(ep.skipTimes) && ep.skipTimes.some((x) => ['ed', 'mixed-ed', 'mixed-ending'].includes(x.skipType));
   const skipIntro = s && (hasIntro || Number(s.introDuration) > 0)
@@ -273,6 +276,7 @@ function renderPlayer() {
 
 /* ---------- navigazione ---------- */
 function go(view) {
+  closeMenu();
   state.view = view; render(); $('#main').scrollTop = 0;
   if (view.name === 'series' && view.episodeId) {
     requestAnimationFrame(() => document.querySelector(`[data-episode-id="${CSS.escape(view.episodeId)}"]`)?.scrollIntoView({ behavior: 'smooth', block: 'center' }));
@@ -286,7 +290,10 @@ async function loadSeriesRatings(id) {
   try { state.lib = await call('series:ratings', id); state.stats = null; render(); } catch { /* stored metadata remains visible */ }
 }
 function render() {
-  closeMenu();
+  // Background saves/source discovery must not dismiss a management menu while
+  // the user is choosing an action. Apply the fresh snapshot after it closes.
+  if(openMenu){pendingMenuRender=true;return;}
+  pendingMenuRender=false;
   if (['series', 'ratings-chart'].includes(state.view.name) && !getSeries(state.view.id)
     || state.view.name === 'franchise' && !franchiseGroups().has(String(state.view.id))) state.view = { name: 'home' };
   for (const series of state.lib.series || []) if (series.imdbChart) window.EpisodeRatings.apply(series,series.imdbChart);
@@ -407,20 +414,21 @@ function socialView() {
 function continueItems() {
   const out = [];
   for (const s of state.lib.series) {
-    const activity = s.episodes.filter((e) => e.progress.updatedAt).sort((a, b) => b.progress.updatedAt - a.progress.updatedAt);
+    const units=FranchiseModel.units(s).sort((a,b)=>a.kind==='part' && b.kind==='part' && a.layout===b.layout?FranchiseModel.partOrder(a)-FranchiseModel.partOrder(b):a.number-b.number);
+    const activity = units.filter((e) => e.progress.updatedAt).sort((a, b) => b.progress.updatedAt - a.progress.updatedAt);
     const inProgress = activity.find((e) => e.sources.length && !e.progress.watched && e.progress.pos > 0);
     const last = activity[0];
     const target = inProgress || (last && last.progress.watched
-      ? s.episodes.slice(s.episodes.indexOf(last) + 1).find((e) => e.sources.length && !e.progress.watched)
+      ? units.slice(units.indexOf(last) + 1).find((e) => e.sources.length && !e.progress.watched && (!last.kind || e.layout === last.layout))
       : last && last.sources.length && !last.progress.watched ? last : null);
     if (target) out.push({ s, e: target, updatedAt: target.progress.updatedAt || s.lastWatchedAt || 0 });
   }
   return out.sort((a, b) => b.updatedAt - a.updatedAt).slice(0, 8);
 }
 const pct = (e) => (e.progress.duration > 0 && e.progress.pos > 0 ? Math.min(100, (e.progress.pos / e.progress.duration) * 100) : 0);
-const episodeTotal = (s) => Array.isArray(s.episodes) ? s.episodes.length : 0;
+const episodeTotal = (s) => (s.episodes || []).length+(s.mediaParts || []).length;
 function resumeTarget(s) {
-  const episodes = (s.episodes || []).filter((e) => e.sources && e.sources.length);
+  const episodes = [...(s.episodes || []),...(s.mediaParts || [])].filter((e) => e.sources && e.sources.length);
   const inProgress = episodes
     .filter((e) => !e.progress.watched && e.progress.pos > 0)
     .sort((a, b) => (b.progress.updatedAt || 0) - (a.progress.updatedAt || 0))[0];
@@ -429,7 +437,7 @@ function resumeTarget(s) {
 }
 function seriesMatches(s, filter) {
   if (filter === 'all') return true;
-  const episodes = s.episodes.filter((e) => e.sources.length);
+  const episodes = FranchiseModel.units(s).filter((e) => e.sources.length);
   const watched = episodes.filter((e) => e.progress.watched);
   if (filter === 'watched') return episodes.length > 0 && watched.length === episodes.length;
   if (filter === 'unwatched') return episodes.some((e) => !e.progress.watched);
@@ -450,9 +458,9 @@ function libraryEntries() {
   const groups = franchiseGroups(); const emitted = new Set(); const entries = [];
   for (const series of state.lib.series || []) {
     const id = String(series.franchiseId || ''); const members = id ? groups.get(id) : null;
-    if (members?.length > 1) {
+    if (members?.length && (members.length > 1 || state.lib.franchises?.some(g=>g.id === id))) {
       if (emitted.has(id)) continue;
-      emitted.add(id); entries.push({ kind: 'franchise', id, title: series.franchiseTitle || series.title, members });
+      emitted.add(id); entries.push({ kind: 'franchise', id, title: state.lib.franchises?.find(g=>g.id===id)?.title || series.franchiseTitle || series.title, members });
     } else entries.push({ kind: 'series', series, title: series.title });
   }
   return entries;
@@ -514,25 +522,26 @@ function homeView() {
     h('option', { value: 'recent' }, t('sortRecent')),
     h('option', { value: 'rating' }, t('sortRating')));
   const posterCard = (s) => {
-    const total = episodeTotal(s); const seen = s.episodes.filter((e) => e.progress.watched).length;
+    const total = episodeTotal(s); const seen = FranchiseModel.units(s).filter((e) => e.progress.watched).length;
     const personal = effectivePersonalRating(s); const seenPct = total ? (seen / total) * 100 : 0;
     return h('button', { class: 'poster', onclick: () => go({ name: 'series', id: s.id }) },
       h('div', { class: 'cover', style: bg(s.cover) },
         s.cover ? null : s.title.slice(0, 1).toUpperCase(),
         h('span', { class: 'poster-play', 'aria-hidden': 'true' }, icon('play', 18)),
-        total ? h('span', { class: 'poster-badge' }, `${total} EP`) : null,
+        total ? h('span', { class: 'poster-badge' }, FranchiseModel.singleWork(s)?t('videoFiles',total):`${total} EP`) : null,
         s.status === 'RELEASING' ? h('span', { class: 'poster-live' }, t('airing')) : null,
         seenPct > 0 ? h('div', { class: 'bar' }, h('i', { style: { width: seenPct + '%' } })) : null),
       h('div', { class: 't' }, s.title),
-      h('div', { class: 'poster-meta' }, [total ? t('watchedOf', seen, total) : t('noEpisodes'), personal != null ? `★ ${personal.toFixed(1)}` : null].filter(Boolean).join('  ·  ')));
+      h('div', { class: 'poster-meta' }, [total ? t('watchedOf', seen, total) : FranchiseModel.singleWork(s)?s.format:t('noEpisodes'), personal != null ? `★ ${personal.toFixed(1)}` : null].filter(Boolean).join('  ·  ')));
   };
   const franchiseCard = (entry) => {
-    const seasons = entry.members.filter((item) => item.franchiseType !== 'movie' && item.format !== 'MOVIE' && item.franchiseType !== 'special');
-    const movies = entry.members.filter((item) => item.franchiseType === 'movie' || item.format === 'MOVIE');
+    const seasons = entry.members.filter((item) => FranchiseModel.category(item) === 'season');
+    const movies = entry.members.filter((item) => FranchiseModel.category(item) === 'movie');
     const primary = [...seasons].sort((a, b) => (a.franchiseOrder || 999) - (b.franchiseOrder || 999))[0] || entry.members[0];
     const episodes = seasons.flatMap((item) => item.episodes || []); const watched = episodes.filter((item) => item.progress.watched).length;
     const rating = franchiseRating(entry.members, primary);
-    const cover = primary.cover || entry.members.find(item=>item.cover)?.cover;
+    const group=state.lib.franchises?.find(g=>g.id===entry.id);
+    const cover = group?.custom?.cover ? group.cover : group?.cover || primary.cover || entry.members.find(item=>item.cover)?.cover;
     return h('button', { class: 'poster franchise-poster', onclick: () => go({ name: 'franchise', id: entry.id }) },
       h('div', { class: 'cover', style: bg(cover) }, cover ? null : entry.title.slice(0, 1).toUpperCase(),
         h('span', { class: 'poster-badge' }, `${seasons.length} ${t('seasonsShort')} · ${movies.length} ${t('moviesShort')}`),
@@ -551,7 +560,7 @@ function homeView() {
         [featured.year, featured.format && featured.format.replace('_', ' '), episodeTotal(featured) ? `${episodeTotal(featured)} ${t('episodes').toLowerCase()}` : null, statusLabel(featured)].filter(Boolean).map((x) => h('span', { class: 'meta-item' }, x))),
       featured.description ? h('p', null, featured.description) : null,
       h('div', { class: 'row wrap featured-actions' },
-        h('button', { class: 'btn primary lg', onclick: () => featuredTarget ? play(featured.id, featuredTarget.id) : go({ name: 'series', id: featured.id }) }, icon('play', 16), featuredTarget ? `${resuming ? t('resume') : t('watch')} · ${t('episode', featuredTarget.number)}` : t('details')),
+        h('button', { class: 'btn primary lg', onclick: () => featuredTarget ? play(featured.id, featuredTarget.id) : go({ name: 'series', id: featured.id }) }, icon('play', 16), featuredTarget ? `${resuming ? t('resume') : t('watch')}${featuredTarget.kind==='part'?'':' · '+t('episode',featuredTarget.number)}` : t('details')),
         h('button', { class: 'btn ghost lg', onclick: () => go({ name: 'series', id: featured.id }) }, t('details'))),
       resuming && pct(featuredTarget) ? h('div', { class: 'featured-progress', 'aria-hidden': 'true' }, h('div', { class: 'bar' }, h('i', { style: { width: pct(featuredTarget) + '%' } }))) : null),
     featured.cover ? h('div', { class: 'featured-poster', style: bg(featured.cover) }) : null) : null;
@@ -562,7 +571,7 @@ function homeView() {
       pct(e) ? h('div', { class: 'bar' }, h('i', { style: { width: pct(e) + '%' } })) : null);
     const meta = h('div', { class: 'meta' },
       h('b', null, s.title),
-      h('span', { class: 'muted small' }, `${t('episode', e.number)}${e.title ? ' · ' + e.title : ''}`),
+      h('span', { class: 'muted small' }, e.kind==='part' ? e.title || t('parts') : `${t('episode', e.number)}${e.title ? ' · ' + e.title : ''}`),
       pct(e) ? h('span', { class: 'progress-label' }, `${Math.round(pct(e))}%`) : null);
     return h('button', { class: 'resume', onclick: () => play(s.id, e.id) }, media, meta);
   });
@@ -600,7 +609,7 @@ function formatDuration(seconds) {
 
 function effectivePersonalRating(s) {
   if (s.personalRating != null) return Number(s.personalRating);
-  const ratings = (s.episodes || []).map((e) => e.personalRating).filter((x) => x != null && Number.isFinite(Number(x)));
+  const ratings = FranchiseModel.units(s).map((e) => e.personalRating).filter((x) => x != null && Number.isFinite(Number(x)));
   return ratings.length ? ratings.reduce((sum, x) => sum + Number(x), 0) / ratings.length : null;
 }
 function statusLabel(s) {
@@ -660,7 +669,7 @@ function statsView() {
         .map(([ico, value, label, kind]) => h('div', { class: 'stat-card' + (kind ? ' ' + kind : '') }, h('span', { class: 'stat-ico' }, icon(ico, 20)), h('div', null, h('b', null, value), h('span', { class: 'muted' }, label))))),
     h('section', { class: 'section stats-activity' }, h('div', { class: 'section-head' }, h('h2', null, t('recentActivity'))),
       activity.length ? h('div', { class: 'activity-list' }, activity.map((item) => h('button', { class: 'activity', onclick: () => go({ name: 'series', id: item.seriesId }) },
-        h('span', { class: 'activity-thumb', style: bg((getSeries(item.seriesId) || {}).cover) }), h('span', null, h('b', null, item.seriesTitle), h('span', { class: 'muted small' }, `${t('episode', item.episodeNumber)} · ${item.title}`)),
+        h('span', { class: 'activity-thumb', style: bg((getSeries(item.seriesId) || {}).cover) }), h('span', null, h('b', null, item.seriesTitle), h('span', { class: 'muted small' }, item.kind==='part'?item.title:`${t('episode', item.episodeNumber)} · ${item.title}`)),
         h('time', { class: 'muted small' }, new Date(item.updatedAt).toLocaleDateString())))) :
         h('div', { class: 'empty' }, t('noActivity'))),
     h('section', { class: 'section stats-activity' }, h('div', { class: 'section-head' }, h('h2', null, t('perAnime'))), perSeries));
@@ -668,67 +677,144 @@ function statsView() {
 
 /* ---------- serie ---------- */
 function franchiseView(id) {
-  const members = franchiseGroups().get(String(id)) || [];
-  if (!members.length) return h('div', { class: 'empty' }, t('noResults'));
-  const seasons = members.filter((item) => item.franchiseType === 'season' || (!item.franchiseType && item.format !== 'MOVIE'))
-    .sort((a, b) => (a.franchiseOrder || a.franchiseSeasonNumber || 999) - (b.franchiseOrder || b.franchiseSeasonNumber || 999));
-  const movies = members.filter((item) => item.franchiseType === 'movie' || item.format === 'MOVIE')
-    .sort((a, b) => (a.franchiseOrder || 999) - (b.franchiseOrder || 999) || (a.year || 0) - (b.year || 0));
-  const specials = members.filter((item) => item.franchiseType === 'special' || ['SPECIAL', 'OVA'].includes(item.format));
-  const primary = seasons[0] || members[0];
-  const groupCover = primary.cover || members.find(item=>item.cover)?.cover;
-  const rating = franchiseRating(members, primary);
-  const episodes = seasons.flatMap((item) => item.episodes || []);
-  const watched = episodes.filter((episode) => episode.progress.watched).length;
-  const childCard = (series, label) => h('button', { class: 'poster franchise-child', onclick: () => go({ name: 'series', id: series.id }) },
-    h('div', { class: 'cover', style: bg(series.cover) }, series.cover ? null : series.title.slice(0, 1).toUpperCase(),
-      label ? h('span', { class: 'poster-badge' }, label) : null,
-      series.format === 'RELEASING' ? h('span', { class: 'poster-live' }, t('airing')) : null),
-    h('div', { class: 't' }, series.title),
-    h('div', { class: 'poster-meta' }, [series.year, series.score != null ? `★ ${Number(series.score).toFixed(1)}` : null].filter(Boolean).join(' · ')));
-  const movieCards = movies.length ? h('div', { class: 'grid' }, movies.map((movie) => h('article', { class: 'franchise-movie' },
-    h('button', { class: 'poster', onclick: () => go({ name: 'series', id: movie.id }) },
-      h('div', { class: 'cover', style: bg(movie.cover) }, movie.cover ? null : movie.title.slice(0, 1).toUpperCase(), h('span', { class: 'poster-badge' }, t('movie'))),
-      h('div', { class: 't' }, movie.title), h('div', { class: 'poster-meta' }, [movie.year, movie.score != null ? `★ ${Number(movie.score).toFixed(1)}` : null].filter(Boolean).join(' · '))),
-    h('div', { class: 'movie-sources' }, (movie.movieSources || []).map((source, index) => h('button', { class: 'btn sm', onclick: async () => {
-      try { await call('movie:play', movie.id, index); } catch (error) { if (String(error.message).includes('MPV_NOT_CONFIGURED')) openSetup(); else toast(cleanErr(error), 'error'); }
-    } }, icon('play', 13), source.label || t('playMovie'))),
-    h('button', { class: 'btn sm ghost', onclick: () => addMovieLinkDialog(movie) }, icon('plus', 13), t('addMovieLink'))))))
-    : h('div', { class: 'empty' }, t('noMovies'));
-  const chartSource = members.find((item) => item.imdbChart) || primary;
-  return h('div', { class: 'page franchise-page' },
-    h('section', { class: 'hero', style: { '--bg': primary.banner || primary.cover ? `url("${primary.banner || primary.cover}")` : 'none' } },
-      h('button', { class: 'link back', onclick: () => go({ name: 'home' }) }, icon('back', 16), t('backLibrary').replace(/^←\s*/, '')),
-      h('div', { class: 'body' }, h('div', { class: 'cover', style: bg(groupCover) }),
-        h('div', { class: 'info' }, h('h1', null, primary.franchiseTitle || primary.title),
-          h('div', { class: 'meta-row' }, rating.score != null ? scorePill(rating.score) : null,
-            h('span', { class: 'meta-item' }, t('franchiseCounts', seasons.length, movies.length)),
-            episodes.length ? h('span', { class: 'meta-item' }, t('watchedOf', watched, episodes.length)) : null),
-          h('div', { class: 'desc' }, primary.description || t('noDescription')),
-          chartSource?.imdbChart ? h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: chartSource.id }) }, icon('chart', 16), t('ratingsChart')) : null))),
-    h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('seasons'), h('span', { class: 'count' }, seasons.length))),
-      h('div', { class: 'grid' }, seasons.map((season) => childCard(season, season.franchiseSeasonNumber ? `${t('season')} ${season.franchiseSeasonNumber}` : null)))),
-    h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('movies'), h('span', { class: 'count' }, movies.length))), movieCards),
-    specials.length ? h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('specials'))), h('div', { class: 'grid' }, specials.map((item) => childCard(item, item.format)))) : null);
+  const members=franchiseGroups().get(String(id)) || [];
+  const group=state.lib.franchises?.find(g=>g.id===String(id));
+  if(!members.length && !group)return h('div',{class:'empty'},t('noResults'));
+  const seen=new Set(),duplicates=[];
+  const ordered=[...members].sort((a,b)=>(a.franchiseOrder || 999)-(b.franchiseOrder || 999) || a.title.localeCompare(b.title)).filter(record=>{
+    const key=record.anilistId != null ? 'anilist:'+record.anilistId : record.id;
+    if(seen.has(key)){duplicates.push(record);return false;}seen.add(key);return true;
+  });
+  const primary=ordered.find(s=>FranchiseModel.category(s)==='season') || ordered[0] || {title:group.title,episodes:[]};
+  const title=group?.title || primary.franchiseTitle || primary.title;
+  const cover=group?.custom?.cover ? group.cover : group?.cover || primary.cover;
+  const banner=group?.custom?.banner ? group.banner : group?.banner || primary.banner || cover;
+  const rating=franchiseRating(ordered,primary),chartSource=ordered.find(s=>s.imdbChart);
+  const episodes=ordered.filter(s=>FranchiseModel.category(s)==='season').flatMap(s=>s.episodes || []);
+  const sections=FranchiseModel.CATEGORIES.flatMap(category=>{
+    const list=ordered.filter(s=>FranchiseModel.category(s)===category);
+    if(!list.length)return [];
+    return [h('section',{class:'section','data-franchise-category':category},
+      h('div',{class:'section-head'},h('h2',null,t('category_'+category),h('span',{class:'count'},list.length))),
+      h('div',{class:'grid'},list.map(series=>h('article',{class:'franchise-member'},
+        h('button',{class:'poster franchise-child',onclick:()=>go({name:'series',id:series.id})},
+          h('div',{class:'cover',style:bg(series.cover)},series.cover ? null : series.title.slice(0,1),
+            h('span',{class:'poster-badge'},category==='season' && series.franchiseSeasonNumber ? t('season')+' '+series.franchiseSeasonNumber : series.format || t('category_'+category))),
+          h('div',{class:'t'},series.title),h('div',{class:'poster-meta'},[series.year,series.score != null ? '★ '+Number(series.score).toFixed(1) : null].filter(Boolean).join(' · '))),
+        h('div',{class:'row franchise-member-actions'},
+          h('button',{class:'btn sm ghost',title:t('moveUp'),'aria-label':t('moveUp'),disabled:list.indexOf(series)===0,onclick:()=>moveFranchiseMember(id,series.id,-1)},'↑'),
+          h('button',{class:'btn sm ghost',title:t('moveDown'),'aria-label':t('moveDown'),disabled:list.indexOf(series)===list.length-1,onclick:()=>moveFranchiseMember(id,series.id,1)},'↓'),
+          h('button',{class:'btn sm ghost',onclick:()=>openMembershipDialog(series)},t('manageContent')))))))];
+  });
+  const suggestions=(group?.suggestions || []).filter(candidate=>!members.some(s=>String(s.anilistId)===String(candidate.anilistId)) && !(group.excludedAniListIds || []).includes(String(candidate.anilistId)));
+  const candidates=suggestions.length ? h('section',{class:'section franchise-suggestions'},
+    h('div',{class:'section-head'},h('h2',null,t('relatedCandidates'),h('span',{class:'count'},suggestions.length))),
+    suggestions.map(candidate=>h('div',{class:'res'},h('div',{class:'c',style:bg(candidate.cover)}),
+      h('div',null,h('b',null,candidate.title),h('p',{class:'muted small'},[t('category_'+candidate.category),candidate.format,(candidate.franchiseRelations || []).join(' / ')].filter(Boolean).join(' · '))),
+      h('button',{class:'btn sm primary',onclick:async event=>{event.currentTarget.disabled=true;try{const r=await call('franchise:accept',id,candidate.anilistId,candidate.category);state.lib=r.lib;render();}catch{event.currentTarget.disabled=false;}}},t('add')),
+      h('button',{class:'btn sm ghost',onclick:()=>mutate('franchise:reject',id,candidate.anilistId)},t('dismissRelated'))))) : null;
+  const counts=Object.fromEntries(FranchiseModel.CATEGORIES.map(category=>[category,members.filter(s=>FranchiseModel.category(s)===category).length]));
+  const management=menuButton(t('manageFranchise'),[
+    {icon:'plus',label:t('addContent'),action:()=>openAddSeries({franchiseId:id})},
+    {icon:'refresh',label:t('findRelated'),action:async()=>{const r=await call('franchise:discover',id);state.lib=r.lib;render();}},
+    {icon:'link',label:t('mergeFranchises'),action:()=>openMergeFranchise(id)},
+    {icon:'settings',label:t('editFranchise'),action:()=>openEditFranchise(id)},
+    {icon:'trash',label:t('deleteFranchise'),danger:true,action:()=>confirmAction(t('deleteFranchiseConfirm',title,counts),async()=>{
+      state.lib=await call('franchise:delete',id);state.filter='';state.progressFilter='all';state.stats=null;state.ratingLoads={};go({name:'home'});
+    })},
+  ]);
+  return h('div',{class:'page franchise-page'},
+    h('section',{class:'hero',style:{'--bg':banner ? 'url("'+banner+'")' : 'none'}},
+      h('button',{class:'link back',onclick:()=>go({name:'home'})},icon('back',16),t('backLibrary').replace(/^←\s*/,'')),
+      h('div',{class:'body'},h('div',{class:'cover',style:bg(cover)}),h('div',{class:'info'},h('h1',null,title),
+        h('div',{class:'meta-row'},rating.score != null ? scorePill(rating.score) : null,FranchiseModel.CATEGORIES.filter(c=>counts[c]).map(c=>h('span',{class:'meta-item'},counts[c]+' '+t('category_'+c))),
+          episodes.length ? h('span',{class:'meta-item'},t('watchedOf',episodes.filter(e=>e.progress.watched).length,episodes.length)) : null),
+        h('div',{class:'desc'},primary.description || ''),h('div',{class:'row wrap'},management,
+          chartSource ? h('button',{class:'btn ghost',onclick:()=>go({name:'ratings-chart',id:chartSource.id})},icon('chart',16),t('ratingsChart')) : null),
+        group?.discoveryTruncated ? h('p',{class:'muted small'},t('relatedLimit')) : null))),
+    ...sections,duplicates.length ? h('section',{class:'section'},h('h2',null,t('duplicateNotice',duplicates.length)),
+      duplicates.map(record=>h('div',{class:'row wrap'},h('span',null,record.title),h('button',{class:'btn',onclick:()=>go({name:'series',id:record.id})},t('details')),
+        h('button',{class:'btn ghost',onclick:()=>openMembershipDialog(record)},t('manageContent'))))) : null,candidates);
+}
+
+async function moveFranchiseMember(id,sid,delta) {
+  const members=[...(franchiseGroups().get(String(id)) || [])].sort((a,b)=>(a.franchiseOrder || 999)-(b.franchiseOrder || 999));
+  const current=members.find(s=>s.id===sid),section=members.filter(s=>FranchiseModel.category(s)===FranchiseModel.category(current));
+  const other=section[section.indexOf(current)+delta];if(!other)return;
+  const a=members.indexOf(current),b=members.indexOf(other);[members[a],members[b]]=[members[b],members[a]];
+  await mutate('franchise:reorder',id,members.map(s=>s.id));
+}
+function categorySelect(value='',auto=false) {
+  const select=h('select',{class:'input select','aria-label':t('contentCategory')},auto ? h('option',{value:''},t('categoryAuto')) : null,
+    FranchiseModel.CATEGORIES.map(category=>h('option',{value:category},t('category_'+category))));select.value=value;return select;
+}
+function openMembershipDialog(series) {
+  openDialog(t('manageContent'),close=>{
+    const select=h('select',{class:'input select','aria-label':t('destination')},h('option',{value:''},t('unlinkFranchise')),
+      ...(state.lib.franchises || []).map(group=>h('option',{value:group.id},group.title)),h('option',{value:'__new'},t('newFranchise')));
+    select.value=series.franchiseId || '';
+    const category=categorySelect(FranchiseModel.category(series)),order=h('input',{class:'input',type:'number',min:'0',value:series.franchiseOrder || 1});
+    return [h('p',null,series.title),field(t('destination'),select),field(t('contentCategory'),category),field(t('contentOrder'),order),
+      h('p',{class:'muted small'},t('membershipHint')),h('div',{class:'foot'},h('button',{class:'btn',onclick:close},t('cancel')),
+        h('button',{class:'btn primary',onclick:async()=>{
+          let id=select.value;if(id==='__new'){const result=await call('franchise:create',series.id);state.lib=result.lib;id=result.id;}
+          state.lib=await call('franchise:member',series.id,{franchiseId:id || null,category:category.value,order:Number(order.value)});close();render();
+        }},t('save')))];
+  });
+}
+function openEditFranchise(id) {
+  const group=state.lib.franchises?.find(g=>g.id===id);if(!group)return;
+  openDialog(t('editFranchise'),close=>{
+    const title=h('input',{class:'input',value:group.title}),cover=h('input',{class:'input',value:group.cover || ''}),banner=h('input',{class:'input',value:group.banner || ''});
+    return [field(t('title'),title),field(t('coverURL'),cover),field(t('bannerURL'),banner),h('div',{class:'foot'},
+      h('button',{class:'btn',onclick:close},t('cancel')),h('button',{class:'btn primary',onclick:async()=>{state.lib=await call('franchise:update',id,{title:title.value,cover:cover.value,banner:banner.value});close();render();}},t('save')))];
+  });
+}
+function openMergeFranchise(sourceId) {
+  openDialog(t('mergeFranchises'),close=>{
+    const destination=h('select',{class:'input select','aria-label':t('destination')},
+      (state.lib.franchises || []).filter(g=>g.id!==sourceId).map(g=>h('option',{value:g.id},g.title)));
+    const preview=h('div',{class:'merge-preview'}),keep=h('input',{type:'checkbox'});let plan,inspection=0;
+    const accept=h('button',{class:'btn primary',disabled:true,onclick:async()=>{
+      if(!plan || plan.target.id!==destination.value)return;
+      state.lib=await call('franchise:merge',sourceId,destination.value,{duplicatePolicy:plan.duplicates.length && keep.checked ? 'detach' : undefined});close();go({name:'franchise',id:destination.value});
+    }},t('mergeConfirm'));
+    const inspect=async()=>{const request=++inspection;accept.disabled=true;keep.checked=false;plan=null;preview.replaceChildren();
+      const result=await call('franchise:mergePreview',sourceId,destination.value);if(request!==inspection)return;plan=result;
+      preview.replaceChildren(h('p',null,plan.source.title+' → '+plan.target.title),h('p',null,plan.members.map(s=>s.title).join(' · ')),h('p',{class:'muted small'},t('mergeDestinationMetadata')),
+        plan.duplicates.length ? h('div',null,h('p',{class:'muted'},t('duplicateNotice',plan.duplicates.length)),
+          ...plan.duplicates.map(d=>h('p',{class:'small'},d.title+' · AniList '+d.anilistId+' · '+t('keepRecord')+': '+d.targetId+' · '+t('duplicateRecord')+': '+d.sourceId)),
+          h('label',{class:'row'},keep,t('keepDuplicates'))) : null);
+      accept.disabled=plan.duplicates.length>0;
+    };
+    keep.onchange=()=>{accept.disabled=!plan || Boolean(plan.duplicates.length && !keep.checked);};destination.onchange=inspect;
+    return [field(t('destination'),destination),h('button',{class:'btn',disabled:!destination.children.length,onclick:inspect},t('mergePreview')),preview,
+      h('div',{class:'foot'},h('button',{class:'btn',onclick:close},t('cancel')),accept)];
+  });
 }
 
 function addMovieLinkDialog(movie) {
   openDialog(t('addMovieLink'), (close) => {
     const input = h('input', { class: 'input', type: 'url', placeholder: 'https://…' });
-    return [field(t('movieLink'), input), h('div', { class: 'foot' },
+    const part=h('input',{class:'input',type:'number',min:'1',value:'1'}),language=h('select',{class:'input select'},
+      ['unknown','it','ja-sub-it'].map(mode=>h('option',{value:mode},t('video_'+mode))));
+    const layout=h('select',{class:'input select'},h('option',{value:'single'},t('completeContent')),h('option',{value:'multipart'},t('multipartContent')));
+    part.oninput=()=>{if(Number(part.value)>1)layout.value='multipart';};
+    return [field(t('contentLink'), input),field(t('contentLayout'),layout),field(t('partNumber'),part),field(t('videoVersion'),language), h('div', { class: 'foot' },
       h('button', { class: 'btn', onclick: close }, t('cancel')),
       h('button', { class: 'btn primary', onclick: async () => {
-        try { state.lib = await call('movie:addLink', movie.id, input.value); close(); render(); }
+        try { state.lib = await call('content:addLink', movie.id, {url:input.value,partNumber:Number(part.value),mode:language.value,layout:layout.value}); close(); render(); }
         catch (error) { toast(cleanErr(error), 'error'); }
       } }, t('save')))];
   });
 }
 
 function videoVersionControl(s) {
-  const counts = SourceLanguage.availability(s);
+  const counts = SourceLanguage.availability({...s,episodes:FranchiseModel.units(s)});
+  const countLabel=FranchiseModel.singleWork(s)?'videoFiles':'videoEpisodes';
   const select = h('select', {class:'input select',id:'video-version','aria-label':t('videoVersion'),onchange:async event=>{
     try { await mutate('series:videoPreference',s.id,event.target.value); } catch { render(); }
-  }}, SourceLanguage.MODES.map(mode=>h('option',{value:mode},t('video_'+mode)+(mode==='auto' ? '' : ` · ${counts[mode] ? t('videoEpisodes',counts[mode]) : t('videoMissing')}`))));
+  }}, SourceLanguage.MODES.map(mode=>h('option',{value:mode},t('video_'+mode)+(mode==='auto' ? '' : ` · ${counts[mode] ? t(countLabel,counts[mode]) : t('videoMissing')}`))));
   select.value = SourceLanguage.preference(s.videoPreference)?.mode || 'auto';
   return h('label',{class:'video-version'},h('span',{class:'muted small'},t('videoVersion')),select);
 }
@@ -755,6 +841,8 @@ function showLanguageFallback(offer) {
 }
 
 function seriesView(s) {
+  const single=typeof FranchiseModel !== 'undefined' ? FranchiseModel.singleWork(s) : s.format === 'MOVIE';
+  const units=[...(s.episodes || []),...(s.mediaParts || [])];
   const eff = s.preset || defaultPreset();
   const effMode = eff === 'off' ? 'off' : (eff.split('-')[0]); const effTier = eff === 'off' ? 'fast' : eff.split('-')[1];
   const MODES = [['a', 'A'], ['b', 'B'], ['c', 'C'], ['aa', 'A+A'], ['bb', 'B+B'], ['ca', 'C+A']];
@@ -772,11 +860,11 @@ function seriesView(s) {
   const more = s.description && s.description.length > 260 ? h('button', { class: 'link', onclick: (e) => { desc.classList.toggle('open'); e.target.textContent = desc.classList.contains('open') ? t('showLess') : t('readMore'); } }, t('readMore')) : null;
   const target = resumeTarget(s);
   const resuming = target && target.progress.pos > 0 && !target.progress.watched;
-  const total = episodeTotal(s); const seen = s.episodes.filter((e) => e.progress.watched).length;
+  const total = episodeTotal(s); const seen = units.filter((e) => e.progress.watched).length;
   const metaParts = [
     s.year,
     s.format && s.format.replace('_', ' '),
-    total ? `${total} ${t('episodes').toLowerCase()}` : null,
+    total ? `${total} ${t(single?'parts':'episodes').toLowerCase()}` : null,
   ].filter(Boolean);
   const knownSkip = s.episodes.filter((e) => Array.isArray(e.skipTimes) && e.skipTimes.some((x) => ['op', 'ed', 'mixed-op', 'mixed-ed'].includes(x.skipType))).length;
   const ratingBtn = h('button', {
@@ -789,17 +877,18 @@ function seriesView(s) {
   const rate = h('label', { class: 'rate-inline' }, icon('star', 14), h('span', null, t('personalRating')),
     h('input', { class: 'input rating-input', type: 'number', min: '0', max: '10', step: '0.1', value: personal == null ? '' : personal, placeholder: s.personalRating == null && s.episodes.some((e) => e.personalRating != null) ? t('episodeAverage') : '—', onchange: (e) => mutate('series:update', s.id, { personalRating: e.target.value === '' ? null : Number(e.target.value) }) }));
   const actions = h('div', { class: 'row wrap actions' },
-    target ? h('button', { class: 'btn primary lg', onclick: () => play(s.id, target.id) }, icon('play', 16), `${resuming ? t('resume') : t('watch')} · ${t('episode', target.number)}`) : null,
-    h('button', { class: target ? 'btn' : 'btn primary', onclick: () => s.format === 'MOVIE' ? addMovieLinkDialog(s) : openAddLinks(s) }, icon('plus', 16), s.format === 'MOVIE' ? t('addMovieLink') : t('addLinks')),
-    s.format !== 'MOVIE' ? h('button', { class: 'btn ghost', onclick: async (event) => {
+    target ? h('button', { class: 'btn primary lg', onclick: () => play(s.id, target.id) }, icon('play', 16), `${resuming ? t('resume') : t('watch')}${target.kind==='part' ? '' : ' · '+t('episode',target.number)}`) : null,
+    h('button', { class: target ? 'btn' : 'btn primary', onclick: () => single ? addMovieLinkDialog(s) : openAddLinks(s) }, icon('plus', 16), single ? t('contentLink') : t('addLinks')),
+    h('button', { class: 'btn ghost', onclick: async (event) => {
       const button = event.currentTarget; button.disabled = true; button.textContent = t('findingSources');
       try {
         const result = await call('series:discoverSources', s.id);
         state.lib = result.lib; state.stats = null; render();
         notifySourceDiscovery(result.sourceDiscovery);
       } catch { button.disabled = false; button.textContent = t('discoverLinks'); }
-    } }, icon('search', 16), t('discoverLinks')) : null,
-    s.format !== 'MOVIE' && typeof SourceLanguage !== 'undefined' ? videoVersionControl(s) : null,
+    } }, icon('search', 16), t('discoverLinks')),
+    typeof SourceLanguage !== 'undefined' ? videoVersionControl(s) : null,
+    typeof FranchiseModel !== 'undefined' ? h('button',{class:'btn ghost',onclick:()=>openMembershipDialog(s)},t('manageContent')) : null,
     h('button', { class: 'btn ghost', onclick: () => go({ name: 'ratings-chart', id: s.id }) }, icon('chart', 16), t('ratingsChart')),
     s.anilistId ? h('button', { class: 'btn ghost', onclick: async () => { toast(t('infoUpdating')); await mutate('series:refresh', s.id); toast(t('infoUpdated')); } }, icon('refresh', 16), t('updateInfo')) : null,
     h('span', { class: 'spacer' }),
@@ -818,7 +907,7 @@ function seriesView(s) {
     h('div', { class: 'info' }, h('h1', null, s.title), metaRow,
       h('div', { class: 'chips' }, (s.genres || []).slice(0, 6).map((g) => h('span', { class: 'chip' }, g)), statusLabel(s) ? h('span', { class: 'chip active' }, statusLabel(s)) : null),
       s.status === 'RELEASING' && s.nextAiringAt ? h('div', { class: 'muted small airing-next' }, icon('clock', 14), `${t('nextEpisode')}: ${t('episode', s.nextEpisode || '?')} · ${new Date(s.nextAiringAt).toLocaleString()}`) : null,
-      knownSkip ? h('div', { class: 'muted small skip-summary' }, t('skipAvailable') + ` · ${knownSkip} ${t('episodes').toLowerCase()}`) : h('div', { class: 'muted small skip-summary' }, t('skipCheckedOnPlay')),
+      single ? null : knownSkip ? h('div', { class: 'muted small skip-summary' }, t('skipAvailable') + ` · ${knownSkip} ${t('episodes').toLowerCase()}`) : h('div', { class: 'muted small skip-summary' }, t('skipCheckedOnPlay')),
       total ? h('div', { class: 'series-progress' }, h('div', { class: 'bar' }, h('i', { style: { width: (seen / total) * 100 + '%' } })), h('span', { class: 'muted small' }, t('watchedOf', seen, total))) : null,
       desc, more, rate, actions));
   const hero = h('section', { class: 'hero', style: { '--bg': s.banner || s.cover ? `url("${s.banner || s.cover}")` : 'none' } },
@@ -828,7 +917,7 @@ function seriesView(s) {
     Object.entries(s.sourceDiscovery.providers).map(([name,result])=>h('p',null,
       `${name === 'animeunity' ? 'AnimeUnity' : 'AnimeWorld'}: ${t('providerStatus_'+result.status)}${result.linksFound ? ` · ${result.linksFound} ${t('linksFound')} · ${result.linksResolved || 0} ${t('linksResolved')}` : ''}`,
       result.error ? ` · ${result.error}` : '', (result.errors || []).length ? ` · ${result.errors[0].message} (${result.errors.length})` : '')),
-    h('span',null,t('playbackVerifiedCount',s.episodes.flatMap(ep=>ep.sources).filter(source=>source.playbackVerifiedAt && !source.playbackFailedAt).length))) : null;
+    h('span',null,t('playbackVerifiedCount',units.flatMap(ep=>ep.sources).filter(source=>source.playbackVerifiedAt && !source.playbackFailedAt).length))) : null;
   const advanced = h('details', { class: 'adv' }, h('summary', null, t('advanced')),
     field(t('referer'), h('input', { class: 'input', value: s.referer || '', placeholder: 'https://…', onchange: (e) => mutate('series:update', s.id, { referer: e.target.value.trim() }) })),
     h('div', { class: 'two' },
@@ -842,17 +931,18 @@ function seriesView(s) {
       h('div', { class: 'ctl' }, h('span', { class: 'ctl-label' }, t('quality')), h('div', { class: 'seg', role: 'group', 'aria-label': t('quality') }, tierBtns))),
     advanced);
   if (sourceDiagnostics) heroBody.append(sourceDiagnostics);
-  const episodeContent = s.format === 'MOVIE'
-    ? h('div', { class: 'movie-playback' }, ...(s.movieSources || []).map((source, index) => h('button', { class: 'btn primary', onclick: async () => {
-      try { await call('movie:play', s.id, index); } catch (error) { if (String(error.message).includes('MPV_NOT_CONFIGURED')) openSetup(); else toast(cleanErr(error), 'error'); }
-    } }, icon('play', 15), source.label || t('playMovie'))),
-      h('button', { class: 'btn', onclick: () => addMovieLinkDialog(s) }, icon('plus', 15), t('addMovieLink')))
+  const episodeContent = single
+    ? h('div', { class: 'content-parts' }, [...(s.mediaParts || [])].sort((a,b)=>(a.layout || '').localeCompare(b.layout || '') || FranchiseModel.partOrder(a)-FranchiseModel.partOrder(b)).map(part=>h('div',{class:'content-part row wrap','data-part-id':part.id},
+      h('b',null,part.title || s.title),h('span',{class:'muted small'},part.progress.watched ? t('watched') : t('sources',part.sources.length)),
+      h('button',{class:'btn primary',disabled:!part.sources.length,onclick:()=>play(s.id,part.id)},icon('play',15),part.progress.pos>0 ? t('resume') : t('watch')),
+      h('button',{class:'btn ghost',onclick:()=>openEditLinks(s,part)},t('link')))),
+      h('button',{class:'btn',onclick:()=>addMovieLinkDialog(s)},icon('plus',15),t('contentLink')))
     : s.episodes.length
     ? h('div', { class: 'eps' }, s.episodes.map((e) => episodeRow(s, e)))
     : h('div', { class: 'empty' }, h('h2', null, t('noEpisodeYet')), t('addLinksHint'),
       h('div', null, h('button', { class: 'btn primary', onclick: () => openAddLinks(s) }, icon('plus', 16), t('addLinks'))));
-  return h('div', { class: 'page' }, hero, castRelatedSection(s), a4k, s.format === 'MOVIE'
-    ? h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('movie'))), episodeContent)
+  return h('div', { class: 'page' }, hero, castRelatedSection(s), a4k, single
+    ? h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('parts'))), episodeContent)
     : h('section', { class: 'section' }, h('div', { class: 'section-head' }, h('h2', null, t('episodes'), h('span', { class: 'count' }, s.episodes.length))), episodeContent));
 }
 
@@ -1017,20 +1107,22 @@ async function play(sid, eid) {
 function notifySourceDiscovery(result, title) {
   if (!result || result.cancelled) return;
   const found = result.episodesFound || result.episodesAdded || 0;
-  const message = result.unavailable ? t('autoLinksUnavailable') : found ? t('autoLinksAdded', found) : t('autoLinksNotFound');
+  const message = result.unavailable ? t('autoLinksUnavailable') : found ? t(result.contentKind==='parts'?'autoContentLinksAdded':'autoLinksAdded', found) : t('autoLinksNotFound');
   toast(title ? `${title} · ${message}` : message, result.unavailable ? 'error' : '');
 }
 
 /* ---------- dialoghi ---------- */
-function openAddSeries() {
+function openAddSeries(context={}) {
   openDialog(t('addSeriesTitle'), (close) => {
     const q = h('input', { class: 'input', placeholder: t('animeTitlePlaceholder'), 'aria-label': t('animeTitlePlaceholder') });
     const results = h('div', { class: 'results' });
+    const category=context.franchiseId ? categorySelect('',true) : null;
     const add = async (payload, btn) => {
       const originalLabel = btn.textContent;
       btn.disabled = true; btn.textContent = t('adding');
       try {
-        const r = await call('series:create', payload); state.lib = r.lib; close();
+        const r = await call('series:create', {...payload,...(context.franchiseId ? {franchiseId:context.franchiseId,category:category.value || undefined} : {})}); state.lib = r.lib; close();
+        if(r.cancelled){render();return;}
         go({ name: 'series', id: r.id });
         const discoveries = Array.isArray(r.sourceDiscovery) ? r.sourceDiscovery.map((item) => item.sourceDiscovery).filter(Boolean) : [r.sourceDiscovery].filter(Boolean);
         const added = discoveries.reduce((sum, item) => sum + Number(item.episodesAdded || 0), 0);
@@ -1056,7 +1148,13 @@ function openAddSeries() {
       const title = q.value.trim(); if (!title) { toast(t('writeTitleFirst'), 'error'); return; }
       await add({ title }, event.currentTarget);
     } }, t('addWithoutSearch'));
-    return [h('div', { class: 'row' }, q, h('button', { class: 'btn primary', onclick: search }, t('search'))), results, h('div', { style: { marginTop: '14px' } }, manual), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')))];
+    const existing=context.franchiseId ? h('select',{class:'input select','aria-label':t('linkExisting')},
+      h('option',{value:''},t('linkExisting')),...state.lib.series.map(s=>h('option',{value:s.id},s.title+(s.franchiseTitle ? ' · '+s.franchiseTitle : '')))) : null;
+    return [category ? field(t('contentCategory'),category) : null,
+      existing ? h('div',{class:'row'},existing,h('button',{class:'btn',onclick:async()=>{
+        if(!existing.value)return;state.lib=await call('franchise:member',existing.value,{franchiseId:context.franchiseId,category:category.value || undefined});close();render();
+      }},t('linkExisting'))) : null,
+      h('div', { class: 'row' }, q, h('button', { class: 'btn primary', onclick: search }, t('search'))), results, h('div', { style: { marginTop: '14px' } }, manual), h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')))];
   });
 }
 
@@ -1126,7 +1224,7 @@ function openAddLinks(s) {
 }
 
 function openEditLinks(s, e) {
-  openDialog(t('editEpisodeLinks', e.number), (close) => {
+  openDialog(e.kind==='part' ? t('contentLink') : t('editEpisodeLinks', e.number), (close) => {
     const ta = h('textarea', { class: 'input', value: e.sources.map((x) => x.url).join('\n') });
     const statusNames = { checking: t('linkChecking'), available: t('linkAvailable'), redirect: t('linkRedirect'), missing: t('linkMissing'), unreachable: t('linkUnreachable'), unknown: t('linkUnknown'), invalid: t('linkInvalid'), unsupported: t('linkUnsupported') };
     const statusRows = h('div', { style: { display: 'grid', gap: '7px', margin: '10px 0 14px' }, title: t('linkStatusInfo') });

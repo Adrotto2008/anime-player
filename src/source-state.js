@@ -21,6 +21,7 @@ function urlLifetime(value) {
 
 function sourceMetadata(source) {
   return {
+    ...(Number.isSafeInteger(source.providerNumber) && source.providerNumber >= 0 ? {providerNumber:source.providerNumber} : {}),
     ...require('./source-language').metadata(source),
     ...(['found', 'resolved'].includes(source.resolutionState) ? { resolutionState: source.resolutionState } : {}),
     ...(source.provider === 'animeunity' && Number.isSafeInteger(source.providerEpisodeId) && source.providerEpisodeId > 0 ? { providerEpisodeId: source.providerEpisodeId } : {}),

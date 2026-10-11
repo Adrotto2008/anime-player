@@ -1,9 +1,20 @@
 # Anime Player
 
-Anime Player **v0.5.33** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.34** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Manageable franchises and linked content — 0.5.34
+
+- Franchises are persistent entities with stable IDs, title, cover, banner and suggestions. Existing group IDs and saved work/episode IDs remain intact. Separate Seasons, Movies, OVAs and specials, Spin-offs and Other content sections appear only when populated. Manual membership, category, order and per-field artwork/title changes survive metadata updates and cloud snapshot conflicts.
+- Group management supports adding an AniList work or an existing library record, moving, detaching, reclassifying and reordering. Merge previews identify repeated AniList IDs; merging requires an explicit choice to keep duplicate records standalone, preserving every record's independent links, progress, ratings and preferences. The destination artwork/title is used, and source group custom metadata is archived in the merged entity.
+- Complete deletion confirms the name and counts for all categories, stops member playback, cancels queued sources and rejects late metadata/discovery writes. Series and group tombstones prevent stale snapshots from recreating deleted groups. The renderer remains responsive to native keyboard search after confirmation or cancellation.
+- Related-work discovery follows trusted works for at most two additional levels and 96 related records. Confirmed parent/side-story evidence can add movies, OVAs and specials; spin-offs, summaries, alternatives and ambiguous links are proposed for confirmation and never traversed into another franchise. A work appears once per group; legacy duplicate records remain accessible for explicit conflict handling. Size/depth limits are shown, with manual search available for additional works.
+- Movies and one-shot OVA/SPECIAL/ONA records use file/part units instead of synthetic television episodes. Existing single-work episodes and old movie links migrate without changing saved IDs, progress, ratings or headers. Removed migrated links stay removed on restart. Complete-film releases and multipart releases remain separate, including a complete DUB version versus split SUB files. Each provider multipart release keeps its own layout: equal file counts do not prove identical cuts. Episodic OVA/specials retain their ordinary episode structure.
+- Each work exposes source search and manual links, video language preference, managed playback, signed URL renewal, fallback and progress. Provider numbering remains separate from file identity. AnimeWorld checks detail-page format/external IDs for exact aliases whose movie/OVA marker is omitted; insufficient format evidence, TV conflicts, recap/remake conflicts and ambiguous candidates remain rejected. Search can retrieve the franchise prefix of a colon-delimited film title without using that prefix as identity evidence.
+- New entities, manual membership and film progress/manual links survive import/export and cloud snapshot merging; automatic film URLs stay local and are rediscovered. No Supabase schema/auth change is needed. Old binaries do not manage the new entities; concurrent use of older versions is not supported. Film/part progress uses the library snapshot, without inventing entries in the cloud TV episode catalogue.
+- Isolated regression libraries cover migrations, reopen/import/cloud merge, all management operations, duplicate preservation, async cancellation, file layouts and source lifecycle. Real mpv fixtures exercise AU failure → AW same-language fallback and renewal. Bounded live probes observed playback of AniList 192809 on AnimeWorld and Naruto movie 442 (SUB) on AnimeUnity; Naruto DUB resolved but was not played. Live One Piece graph discovery kept Monsters as a proposal. Other provider works, live two-device cloud synchronization and GPU Anime4K rendering remain unverified.
 
 ## Franchise roots and one-shot prequels — 0.5.33
 

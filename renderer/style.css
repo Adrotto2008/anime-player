@@ -479,3 +479,10 @@ details.adv .two { max-width: 480px; }
 /* Season video preference uses the existing compact controls. */
 .video-version { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
 .video-version select { width: auto; max-width: 310px; }
+/* Franchise management uses the existing poster, dialog and action styles. */
+.franchise-member .poster { width:100%; }
+.franchise-member-actions { justify-content:flex-end; gap:4px; padding:6px 0; }
+.content-part { padding:12px 0; border-bottom:1px solid var(--line); }
+.content-part b { flex:1; }
+.franchise-suggestions .res { gap:12px; }
+.merge-preview { overflow-wrap:anywhere; }

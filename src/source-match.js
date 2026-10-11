@@ -70,7 +70,13 @@ function evaluateCandidate(item, titles, options = {}) {
   }
   const format = mediaFormat(item.format); const targetFormat = mediaFormat(options.format);
   if (format && targetFormat && format !== targetFormat) reasons.push('format_mismatch');
-  if (candidate.variant !== target.variant && (candidate.variant || target.variant)) reasons.push('variant_mismatch');
+  if (['MOVIE','OVA','SPECIAL','ONA'].includes(targetFormat) && !format && !sameId && mediaFormat(candidate.variant) !== targetFormat) reasons.push('insufficient_format_metadata');
+  // A provider may omit "The Movie" from an exact AniList translation. Only
+  // explicit format/identity evidence can confirm that missing marker; recap,
+  // remake and conflicting explicit variants still veto the candidate.
+  const omittedMarker = !candidate.variant && ['MOVIE', 'OVA', 'SPECIAL'].includes(target.variant)
+    && targetFormat === target.variant && (format === targetFormat || sameId);
+  if (candidate.variant !== target.variant && (candidate.variant || target.variant) && !omittedMarker) reasons.push('variant_mismatch');
   if (candidate.variant && targetFormat && mediaFormat(candidate.variant) && candidate.variant !== targetFormat && !reasons.includes('format_mismatch')) reasons.push('format_mismatch');
   if (target.season && candidate.season && target.season !== candidate.season) reasons.push('season_mismatch');
   const count = positive(item.episodeCount ?? item.episodes); const wantedCount = positive(options.episodeCount);
@@ -153,6 +159,10 @@ function searchTitles(titles, options = {}) {
   const aliases = (Array.isArray(titles) ? titles : [titles]).map(value => String(value || '').trim()).filter(Boolean);
   const queries = [...aliases];
   for (const title of aliases) {
+    if (['MOVIE', 'OVA', 'SPECIAL', 'ONA'].includes(options.format)) {
+      const prefix = title.match(/^(.{2,}?)\s*[:：]\s*/)?.[1]?.trim();
+      if (prefix) queries.push(prefix);
+    }
     const parsed = parseTitle(title);
     if (!parsed.explicitSeason || !parsed.base) continue;
     const base = parsed.queryBase || parsed.base;

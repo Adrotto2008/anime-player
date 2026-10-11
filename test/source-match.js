@@ -34,6 +34,7 @@ function rejected(item, titles, options, reason) {
   assert.ok(searchTitles(['Jujutsu Kaisen Season 3: The Culling Game Part 1']).includes('Jujutsu Kaisen 3'));
   assert.ok(searchTitles(['Re:Zero kara Hajimeru Isekai Seikatsu 2nd Season']).includes('Re:Zero kara Hajimeru Isekai Seikatsu 2'));
   assert.ok(searchTitles(['Example'], { franchiseTitle: 'Related Franchise' }).includes('Related Franchise'));
+  assert.ok(searchTitles(['Example: Story – The Movie'],{format:'MOVIE'}).includes('Example'));
   assert.strictEqual(matchOptions({ franchiseOrder: 4 }).seasonNumber, undefined, 'split-cour graph order is not a season number');
 
   for (const [anilistId, title, provider, year, episodeCount] of seasons) {
@@ -68,6 +69,16 @@ function rejected(item, titles, options, reason) {
   rejected(record('Mob Psycho 100 III'), ['Mob Psycho 100'], {});
   rejected(record('86'), ['86 Season 2'], options);
   matches(record('作品の名前'), ['English Title', '作品の名前'], {});
+  const filmTitles = ['Example: The Movie', 'Example: Arc'];
+  const filmOptions = {anilistId: 800, format: 'MOVIE', year: 2025};
+  matches(record('Example: Arc', {format:'MOVIE',year:2025}), filmTitles, filmOptions);
+  matches(record('Example: Arc', {anilistId:800}), filmTitles, filmOptions);
+  rejected(record('Example: Arc'), filmTitles, filmOptions, 'variant_mismatch');
+  rejected(record('Example: Arc', {format:'TV'}), filmTitles, filmOptions, 'format_mismatch');
+  rejected(record('Example: Arc Recap', {anilistId:800,format:'MOVIE'}), filmTitles, filmOptions, 'variant_mismatch');
+  rejected(record('Example: Arc Remake', {anilistId:800,format:'MOVIE'}), filmTitles, filmOptions, 'variant_mismatch');
+  rejected(record('Plain title'), ['Plain title'], {format:'MOVIE'}, 'insufficient_format_metadata');
+  matches(record('Plain title',{format:'MOVIE'}),['Plain title'],{format:'MOVIE'});
   matches(record('Different Translation', { anilistId: 123 }), ['作品の名前'], { anilistId: 123 });
   rejected(record('Different Translation', { anilistId: 123, malId: 456 }), ['作品の名前'], { anilistId: 123, malId: 789 }, 'mal_id_mismatch');
   rejected(record('Example', { year: 1999 }), ['Example'], { year: 2026 }, 'year_mismatch');
@@ -108,5 +119,15 @@ function rejected(item, titles, options, reason) {
   assert.deepStrictEqual(await world.findSources({ titles: ['Translation One', 'Translation Two'] }), []);
   assert.strictEqual(world.lastDiscovery.status, 'title_rejected');
   assert.ok(world.lastDiscovery.candidates.every(item => item.reasons.includes('ambiguous')));
+  for (const format of ['Movie', 'TV', '']) {
+    const details = new AnimeWorldClient({baseUrl:'https://aw.test',fetchImpl:async()=>({ok:true,headers:{get:()=>null},text:async()=>
+      `<div class="info">Categoria: ${format} Data di Uscita: 30 Maggio 2025 Episodi: 1</div>`})});
+    details.search = async()=>[];
+    details.searchCatalogue = async()=>[record('Example: Arc',{link:'https://aw.test/play/film.1'})];
+    details._episodeSources = async()=>[{number:1,url:'https://media.test/film.mp4',resolutionState:'resolved'}];
+    const sources=await details.findSources({titles:filmTitles,...filmOptions,contentMode:'parts'});
+    assert.strictEqual(sources.length,format==='Movie'?1:0);
+    assert.strictEqual(details.lastDiscovery.status,format==='Movie'?'found':'title_rejected');
+  }
   console.log('Season matching: seven required seasons on both matchers, IDs, structured fallback, variants, parts, arcs, ambiguity, query generation and discovery states passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

@@ -4,6 +4,7 @@ const assert = require('assert');
 const fs = require('fs'); const os = require('os'); const path = require('path');
 const { resolveFranchise, legacyFranchiseRepairs } = require('../src/franchise');
 const { createSeriesAdder } = require('../src/series-addition');
+const Model = require('../src/franchise-model');
 const { Store } = require('../src/store');
 const { mergeLibrarySnapshots, compressLibraryForCloud, expandLibraryFromCloud } = require('../src/cloud');
 const fixture = require('./onepiece-franchise.fixture.json');
@@ -11,7 +12,7 @@ const graph = new Map(fixture.records.map(record => [String(record.anilistId), r
 const rel = (id, format, relation) => ({ id, type: 'ANIME', format, relation });
 const media = (id, format, episodeCount, related = []) => ({ anilistId: id, title: `Series ${id}`, format, episodeCount, related });
 const fetchGraph = async ids => ids.map(id => graph.get(String(id))).filter(Boolean);
-const groupFields = ['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber'];
+const groupFields = ['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber','franchiseMembership'];
 const preserved = records => records.map(record => Object.fromEntries(Object.entries(record)
   .filter(([key]) => ![...groupFields, 'updatedAt'].includes(key))));
 
@@ -57,10 +58,10 @@ const preserved = records => records.map(record => Object.fromEntries(Object.ent
       cover: `https://img.test/${id}.jpg`, personalRating: 9, preset: 'aa-hq',
       cast: [], movieSources: [], sourcePatternLanguage: null,
       videoPreference: {mode: 'it', updatedAt: 123},
-      ...(index === 2 ? {movieSources: [{url: 'https://movie.test/keep.mp4', label: 'saved'}]} : {}) }));
+      ...(index === 2 ? {movieSources: [{url: 'https://movie.test/keep.mp4', label: 'saved',temporary:false,expiresAt:null}]} : {}) }));
     for (const record of records.slice(0, 2)) {
       original.addSources(record.id, [{number: 1, url: `https://manual.test/${record.anilistId}.mp4`}]);
-      const ep = record.episodes[0]; ep.personalRating = 8;
+      const ep = Model.units(record)[0]; ep.personalRating = 8;
       ep.sources[0].referer = 'https://headers.test/'; ep.sources[0].userAgent = 'Custom';
       original.setProgress(record.id, ep.id, {pos: 77, duration: 120, watched: false});
     }
@@ -90,8 +91,9 @@ const preserved = records => records.map(record => Object.fromEntries(Object.ent
     cloud.applyCloudData(merged, new Date().toISOString());
     assert.strictEqual(cloud.getSeries(records[0].id).franchiseId, null, 'older grouping from cloud cannot reattach the one-shot');
     assert.strictEqual(cloud.getSeries(records[1].id).franchiseId, '21');
-    assert.strictEqual(cloud.data.cloudDirty, true, 'corrected grouping is scheduled for subsequent normal sync');
-    assert.ok(cloud.getSeries(records[1].id).updatedAt > remote.series[1].updatedAt, 'repair timestamps remain newer than imported metadata');
+    const legacyCloud=makeStore('legacy-cloud.json');legacyCloud.applyCloudData(remote,new Date().toISOString());
+    assert.strictEqual(legacyCloud.data.cloudDirty, true, 'a legacy correction is scheduled for subsequent normal sync');
+    assert.ok(legacyCloud.getSeries(records[1].id).updatedAt > remote.series[1].updatedAt, 'repair timestamps remain newer than imported metadata');
     assert.strictEqual(cloud.getSeries(records[1].id).episodes[0].progress.pos, 77);
 
     const queued = [];
@@ -102,7 +104,7 @@ const preserved = records => records.map(record => Object.fromEntries(Object.ent
     assert.strictEqual(fresh.getSeries(added.id).anilistId, 21, 'addition returns exactly the selected anime');
     assert.strictEqual(added.franchiseId, '21');
     assert.ok(fresh.data.series.every(s => s.anilistId !== 167404), 'Monsters is not automatically added to One Piece');
-    assert.deepStrictEqual(queued, [added.id], 'only the selected main series needs episode sources');
+    assert.deepStrictEqual(new Set(queued),new Set(fresh.data.series.map(s=>s.id)), 'films and the selected series receive source discovery');
     const repeated = await createSeriesAdder({store: repaired, metadata, sourceQueue: {enqueue: () => {}}})({anilistId: 21});
     assert.strictEqual(repeated.id, records[1].id, 're-add retains saved series identity');
     assert.strictEqual(repaired.getSeries(records[0].id).franchiseId, null);

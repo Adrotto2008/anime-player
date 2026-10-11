@@ -18,6 +18,7 @@ function orderSeasons(mains) {
   const byId = new Map(mains.map((media) => [String(media.anilistId), media]));
   const incoming = new Map(); const outgoing = new Map();
   for (const media of mains) for (const rel of relationNodes(media)) {
+    if(['SPIN_OFF','SUMMARY','ALTERNATIVE','ALTERNATIVE_VERSION'].includes(rel.relation) && byId.has(String(rel.id)))return null;
     if (!['PREQUEL', 'SEQUEL'].includes(rel.relation) || !byId.has(String(rel.id))) continue;
     const from = String(rel.relation === 'PREQUEL' ? rel.id : media.anilistId);
     const to = String(rel.relation === 'PREQUEL' ? media.anilistId : rel.id);
@@ -74,9 +75,12 @@ async function resolveFranchise(seedId, fetchByIds, { maxItems = 24 } = {}) {
   }
 
   const movieIds = new Set();
+  const weakMovies=new Set();
   for (const media of ordered) for (const rel of relationNodes(media)) {
     if (rel.format === 'MOVIE' && MOVIE_RELATIONS.has(rel.relation)) movieIds.add(String(rel.id));
+    if(rel.format === 'MOVIE' && ['SPIN_OFF','ALTERNATIVE','ALTERNATIVE_VERSION','SUMMARY'].includes(rel.relation))weakMovies.add(String(rel.id));
   }
+  for(const id of weakMovies)movieIds.delete(id);
   const unresolvedMovies = [...movieIds].filter((id) => !mediaById.has(id)).slice(0, Math.max(0, maxItems - mediaById.size));
   if (unresolvedMovies.length && requests < maxItems) {
     const movieRecords = await fetchByIds(unresolvedMovies); requests++;
@@ -97,7 +101,7 @@ function applyFranchiseMetadata(records, { franchiseId, franchiseTitle, items })
       ...record,
       franchiseId: String(franchiseId), franchiseTitle,
       franchiseOrder: number || null,
-      franchiseType: record.format === 'MOVIE' ? 'movie' : ['SPECIAL', 'OVA'].includes(record.format) ? 'special' : 'season',
+      franchiseType: record.category || (record.format === 'MOVIE' ? 'movie' : ['SPECIAL', 'OVA'].includes(record.format) ? 'special' : 'season'),
       ...(number ? { franchiseSeasonNumber: chartSeason } : {}),
     };
   });
@@ -120,12 +124,13 @@ function planFranchiseAddition(mediaRecords, libraryRecords) {
 // evidence and an unambiguous remaining season chain. Never delete a record.
 function legacyFranchiseRepairs(records) {
   const groups = new Map(); const repairs = [];
-  for (const record of records || []) if (record.franchiseId) {
+  for (const record of records || []) if (record?.franchiseId) {
     const key = String(record.franchiseId);
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(record);
   }
   for (const [key, members] of groups) {
+    if (members.some(record=>record.franchiseMembership?.manual)) continue;
     const root = members.find((record) => String(record.anilistId) === key);
     if (!root || root.franchiseType !== 'season' || !SEASON_FORMATS.has(root.format) || Number(root.episodeCount) !== 1) continue;
     const ordered = orderSeasons(members.filter(isSeason));

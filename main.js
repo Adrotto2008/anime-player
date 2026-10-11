@@ -165,22 +165,39 @@ function register() {
   const sourceQueue = createSourceDiscoveryQueue({ store, metadata: meta, discover: discoverSeriesSources,
     onComplete: (id, sourceDiscovery) => send('series:sourcesDiscovered', { id, sourceDiscovery, lib: lib() }),
   });
-  h('series:create', createSeriesAdder({ store, metadata: meta, sourceQueue }));
+  const addSeries=createSeriesAdder({store,metadata:meta,sourceQueue});
+  h('series:create',addSeries);
+  const franchiseService=require('./src/franchise-service').createFranchiseService({store,metadata:meta,sourceQueue,player,addSeries});
+  h('franchise:create',(sid)=>{const record=store.getSeries(sid);if(!record)throw new Error('Opera non trovata.');const group=store.ensureFranchise({title:record.title,cover:record.cover,banner:record.banner,rootAniListId:record.anilistId});store.setMembership(sid,{franchiseId:group.id});return{lib:lib(),id:group.id};});
+  h('franchise:update',(id,patch)=>{store.updateFranchise(id,patch);return lib();});
+  h('franchise:member',(sid,patch)=>{store.setMembership(sid,patch);return lib();});
+  h('franchise:reorder',(id,ids)=>{store.reorderFranchise(id,ids);return lib();});
+  h('franchise:mergePreview',(source,target)=>store.previewFranchiseMerge(source,target));
+  h('franchise:merge',(source,target,options)=>{store.mergeFranchises(source,target,options);return lib();});
+  h('franchise:delete',id=>franchiseService.delete(id));
+  h('franchise:discover',id=>franchiseService.scan(id));
+  h('franchise:accept',(id,anilistId,category)=>franchiseService.accept(id,anilistId,category));
+  h('franchise:reject',(id,anilistId)=>franchiseService.reject(id,anilistId));
+  const addContentLink=(id,{url,partNumber=1,mode='unknown',layout='single'}={})=>{
+    const series=store.getSeries(id);if(!series || !require('./src/franchise-model').singleWork(series))throw new Error('Contenuto singolo non trovato.');
+    const value=String(url||'').trim();if(!isValidSource(value))throw new Error('Link non valido.');
+    if(!['unknown','it','ja-sub-it'].includes(mode))throw new Error('Lingua non valida.');
+    if(!['single','multipart'].includes(layout))throw new Error('Struttura dei file non valida.');
+    const number=layout==='single'?1:Number(partNumber);
+    store.addContentSources(id,[{number,url:value,contentPartKey:layout==='single'?'single':`manual:${number}`,contentLayout:layout==='single'?'single':'manual',
+      title:layout==='multipart'?`Part ${number}`:'',language:require('./src/source-language').manualClassification(mode)}]);return lib();
+  };
+  h('content:addLink',addContentLink);
 
   h('movie:addLink', (id, url) => {
-    const series = store.getSeries(id);
-    if (!series || series.format !== 'MOVIE') throw new Error('Film non trovato.');
-    const value = String(url || '').trim();
-    if (!isValidSource(value)) throw new Error('Link film non valido.');
-    const current = series.movieSources || [];
-    if (!current.some((item) => item.url === value)) store.updateSeries(id, { movieSources: [...current, { url: value, label: /^https?:\/\//i.test(value) ? new URL(value).hostname : 'Local file' }] });
-    return lib();
+    return addContentLink(id,{url});
   });
   h('movie:play', async (id, index = 0) => {
     const series = store.getSeries(id); const source = series?.movieSources?.[index];
-    if (!series || !source) throw new Error('Link del film non trovato.');
+    const part=series?.mediaParts?.find(p=>source && p.sources.some(s=>s.url===source.url)) || series?.mediaParts?.[0];
+    if (!series || !part) throw new Error('Link del film non trovato.');
     await ensureMpv();
-    return player.playUrl(source.url, series.preset || store.data.settings.defaultPreset).then(() => lib());
+    return player.play(id,part.id,source ? {sourceIndex:part.sources.findIndex(s=>s.url===source.url)} : {}).then(() => lib());
   });
 
   h('series:discoverSources', async (id) => {
@@ -243,6 +260,7 @@ function register() {
   h('episodes:skipTimes', async (sid, eid) => {
     const s = store.getSeries(sid); const ep = store.getEpisode(sid, eid);
     if (!s || !ep) throw new Error('Episodio non trovato');
+    if (ep.kind === 'part') return {skipTimes:ep.skipTimes || [],lib:lib()};
     if (!s.malId || !s.anilistId) return { skipTimes: ep.skipTimes || [], lib: lib() };
     try {
       const skipTimes = await meta.fetchAniSkipTimes(s.malId, ep.number, ep.duration);
@@ -333,18 +351,20 @@ app.whenReady().then(async () => {
   mpvManager = createMpvManager({ userDataPath, installDirectory: store.data.settings.mpvInstallDirectory || '' });
   player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: userDataPath }, notify: send,
     resolveAutomaticSource: async (source, series, episode) => {
+      const providerNumber=source.providerNumber ?? episode.number;
       // Separate sessions keep refresh diagnostics/cookies independent of background discovery.
       const client = source.provider === 'animeunity' ? new AnimeUnityClient() : new AnimeWorldClient();
       if (source.provider === 'animeunity' && source.providerEpisodeId) {
         client.lastDiscovery = { errors: [] };
-        return client._resolveEpisode({ id: source.providerEpisodeId, number: episode.number }, source.providerTitleUrl || `${client.baseUrl}/`);
+        return client._resolveEpisode({ id: source.providerEpisodeId, number: providerNumber }, source.providerTitleUrl || `${client.baseUrl}/`);
       }
-      if (source.provider === 'animeworld' && source.providerSourceId) return client.renewSource(source,episode.number);
+      if (source.provider === 'animeworld' && source.providerSourceId) return client.renewSource(source,providerNumber);
       const titles = require('./src/source-state').providerTitles(series);
-      const fresh = await client.findSources({ titles, ...require('./src/source-match').matchOptions(series), episodeNumbers:[episode.number] });
+      const fresh = await client.findSources({ titles, ...require('./src/source-match').matchOptions(series),
+        ...(episode.kind === 'part' ? {episodeCount:undefined,contentMode:'parts'} : {}),episodeNumbers:[providerNumber] });
       const Language = require('./src/source-language');
       const modes = Language.modesFor(source);
-      const selected = fresh.find(item => item.number === episode.number && item.resolutionState === 'resolved'
+      const selected = fresh.find(item => item.number === providerNumber && item.resolutionState === 'resolved'
         && (!source.providerTitleUrl || item.providerTitleUrl === source.providerTitleUrl)
         && (!modes.length || modes.some(mode => Language.eligible(item,mode))));
       return selected ? {...selected, provider:source.provider} : null;

@@ -8,6 +8,25 @@ const { PRESETS } = require('./anime4k');
 const { detectSeasonFromTitle } = require('./metadata');
 const { detectEpisodeNumber, expandPattern } = require('./patterns');
 const Language = require('./source-language');
+const Franchise = require('./franchise-model');
+
+function newest(values) {
+  return values.filter(Boolean).sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0) || JSON.stringify(b).localeCompare(JSON.stringify(a)))[0];
+}
+function mergeParts(first=[],second=[]) {
+  const key=p=>p.key || `legacy:${p.number}`;
+  const parts=new Map(first.map(p=>[key(p),{...p,sources:[...(p.sources||[])]}]));
+  for (const part of second) {
+    const old=parts.get(key(part)); if (!old) {parts.set(key(part),{...part});continue;}
+    const winner=newest([old,part]);
+    parts.set(key(part),{...winner,id:old.id,kind:'part',
+      sources:[...new Map([...(old.sources||[]),...(part.sources||[])].map(s=>[s.url,s])).values()],
+      progress:newest([old.progress,part.progress]),updatedAt:Math.max(old.updatedAt||0,part.updatedAt||0)});
+  }
+  const result=[...parts.values()].sort((a,b)=>a.number-b.number),used=new Set();let next=Math.max(0,...result.map(p=>p.number))+1;
+  for(const part of result){if(used.has(part.number))part.number=next++;used.add(part.number);}
+  return result;
+}
 
 const PROJECT_REF = 'gbdcdserzrujiuacefca'; // anime-player; deliberately excludes the old haxball2 project.
 const CLOUD_SETTINGS = ['theme', 'language', 'defaultPreset', 'autoplayNext', 'skipOpening', 'skipEnding', 'alang', 'slang'];
@@ -21,6 +40,22 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
   const remote = remoteInput || EMPTY_LIBRARY();
   const deletedSeries = new Map();
   const deletedEpisodes = new Map();
+  const deletedFranchises = new Map();
+  for (const item of [...(remote.deletedFranchises || []),...(local.deletedFranchises || [])]) deletedFranchises.set(item.id,Math.max(deletedFranchises.get(item.id)||0,item.deletedAt||0));
+  const franchises=new Map();
+  for (const group of [...(remote.franchises || []),...(local.franchises || [])]) {
+    const old=franchises.get(group.id);
+    if (!old) {franchises.set(group.id,{...group});continue;}
+    const custom={};
+    for (const field of ['title','cover','banner']) {const value=newest([old.custom?.[field],group.custom?.[field]]);if(value)custom[field]=value;}
+    const combined={...newest([old,group]),custom,
+      mergedFranchiseMetadata:[...new Map([...(old.mergedFranchiseMetadata||[]),...(group.mergedFranchiseMetadata||[])].map(g=>[g.id,g])).values()],
+      suggestions:[...new Map([...(old.suggestions||[]),...(group.suggestions||[])].map(s=>[String(s.anilistId),s])).values()],
+      excludedAniListIds:[...new Set([...(old.excludedAniListIds||[]),...(group.excludedAniListIds||[])])]};
+    for (const [field,value] of Object.entries(custom)) combined[field]=value.value;
+    combined.suggestions=combined.suggestions.filter(s=>!combined.excludedAniListIds.includes(String(s.anilistId)));
+    franchises.set(group.id,combined);
+  }
   for (const item of [...(remote.deletedSeries || []), ...(local.deletedSeries || [])]) {
     deletedSeries.set(item.id, Math.max(deletedSeries.get(item.id) || 0, Number(item.deletedAt) || 0));
   }
@@ -55,36 +90,55 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
     }
     const sourcePattern = item.sourcePattern || current.sourcePattern;
     const older = winner === item ? current : item;
+    const memberships=[item,current].map(s=>Franchise.membership(s.franchiseMembership)).filter(Boolean);
+    const manual=memberships.filter(m=>m.manual);
+    const member=newest(manual.length?manual:memberships);
     // A newer explicit detach must not resurrect the old group through fallback.
     const franchise = Object.fromEntries(['franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber']
       .map((key) => [key, winner.franchiseId === null ? null : winner[key] != null ? winner[key] : older[key]])
       .filter(([, value]) => winner.franchiseId === null || value != null));
     const movieSources = new Map([...(current.movieSources || []), ...(item.movieSources || [])].filter((source) => source?.url).map((source) => [source.url, source]));
     const patternOwner = item.sourcePattern ? item : current;
-    series.set(item.id, { ...winner, ...franchise, videoPreference:Language.mergePreference(item.videoPreference, current.videoPreference),
+    series.set(item.id, { ...winner, ...franchise, ...(member ? {franchiseMembership:member} : {}),
+      ...(item.mediaParts || current.mediaParts ? {mediaParts:mergeParts(current.mediaParts,item.mediaParts)} : {}),
+      videoPreference:Language.mergePreference(item.videoPreference, current.videoPreference),
       sourcePatternLanguage:Language.classification(patternOwner.sourcePatternLanguage), cover:winner.cover || older.cover || null, banner:winner.banner || older.banner || null,
       titleAliases:[...new Set([...(current.titleAliases||[]),...(item.titleAliases||[])])],
       movieSources: [...movieSources.values()], ...(sourcePattern ? { sourcePattern: { ...sourcePattern } } : {}), episodes: [...episodes.values()] });
   }
   const resultSeries = [];
   for (const item of series.values()) {
-    if ((deletedSeries.get(item.id) || 0) >= (Number(item.updatedAt || item.addedAt) || 0)) continue;
+    if (deletedSeries.has(item.id) && deletedSeries.get(item.id) >= (Number(item.updatedAt || item.addedAt) || 0)) continue;
     item.episodes = (item.episodes || []).filter((episode) => {
       const deletedAt = deletedEpisodes.get(`${item.id}:${episode.id}`) || 0;
       if (deletedAt && deletedAt >= (Number(episode.updatedAt || episode.progress?.updatedAt) || 0)) return false;
       return true;
     });
+    if(item.mediaParts) {
+      item.mediaParts=item.mediaParts.filter(part=>{
+        const deletedAt=deletedEpisodes.get(`${item.id}:${part.id}`);
+        return !deletedAt || deletedAt < (Number(part.updatedAt || part.progress?.updatedAt)||0);
+      });
+      const converted=new Set(item.mediaParts.map(part=>part.id));
+      item.mediaParts=item.mediaParts.map(part=>{
+        const legacy=item.episodes.find(episode=>episode.id===part.id);
+        return legacy ? mergeParts([part],[{...legacy,key:part.key,layout:part.layout,number:part.number,kind:'part'}])[0] : part;
+      });
+      item.episodes=item.episodes.filter(episode=>!converted.has(episode.id));
+    }
     resultSeries.push(item);
   }
   const localSettingsAt = Number(local.settingsUpdatedAt) || 0;
   const remoteSettingsAt = Number(remote.settingsUpdatedAt) || 0;
   const settings = { ...(remote.settings || {}), ...(localSettingsAt > remoteSettingsAt ? local.settings || {} : {}) };
-  return {
+  return Franchise.migrate({
     settings, series: resultSeries,
+    franchises:[...franchises.values()].filter(g=>!deletedFranchises.has(g.id) || deletedFranchises.get(g.id)<(Number(g.updatedAt)||0)),
+    deletedFranchises:[...deletedFranchises].map(([id,deletedAt])=>({id,deletedAt})),
     deletedSeries: [...deletedSeries].map(([id, deletedAt]) => ({ id, deletedAt })),
     deletedEpisodes: [...deletedEpisodes].map(([key, deletedAt]) => { const [seriesId, id] = key.split(':'); return { seriesId, id, deletedAt }; }),
     updatedAt: Math.max(Number(local.updatedAt) || 0, Number(remote.updatedAt) || 0), cloudDirty: true,
-  };
+  });
 }
 function validCloudSetting(key, value) {
   if (key === 'theme') return ['default', 'compact'].includes(value);
@@ -126,6 +180,7 @@ function compressLibraryForCloud(input) {
       if (range.length) sourcePattern = { pattern: best.pattern, from: range[0], to: range[range.length - 1] };
     }
     const cleanSeries = { ...series };
+    if (series.mediaParts) cleanSeries.mediaParts=series.mediaParts.map(part=>({...part,sources:(part.sources||[]).filter(s=>!s.provider)}));
     delete cleanSeries.sourcePattern;
     delete cleanSeries.sourcePatternLanguage;
     if (sourcePattern) {

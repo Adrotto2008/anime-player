@@ -5,6 +5,7 @@ const { MpvSession, pipePath } = require('./mpv');
 const A4K = require('./anime4k');
 const { urlLifetime, redact } = require('./source-state');
 const Language = require('./source-language');
+const Franchise = require('./franchise-model');
 const { randomUUID } = require('crypto');
 
 class PlayerManager {
@@ -37,9 +38,10 @@ class PlayerManager {
     const series = this.store.getSeries(seriesId);
     const ep = this.store.getEpisode(seriesId, episodeId);
     if (!series || !ep) throw new Error('Episodio non trovato');
+    if (this.store._deletingFranchises?.has(series.franchiseId)) throw new Error('Eliminazione del franchise in corso.');
     if (!ep.sources.length) throw new Error('Questo episodio non ha ancora link.');
     this.activeRequest = {seriesId,episodeId,requestId};
-    const title = `${series.title} — Ep. ${ep.number}${ep.title ? ' · ' + ep.title : ''}`;
+    const title = `${series.title}${ep.kind === 'part' ? ep.title ? ' · '+ep.title : '' : ' — Ep. '+ep.number+(ep.title ? ' · '+ep.title : '')}`;
     const resume = !ep.progress.watched && ep.progress.pos > 0 ? Math.max(0, ep.progress.pos) : 0;
     const effectiveMode = opts.effectiveMode || Language.preference(series.videoPreference)?.mode || 'auto';
     const attempted = new Set(opts.attempted || []);
@@ -193,7 +195,7 @@ class PlayerManager {
       return;
     }
     if (!cur.ep) return;
-    const eps = cur.series.episodes;
+    const eps = cur.ep.kind === 'part' ? (cur.series.mediaParts || []).filter(p=>p.layout === cur.ep.layout).sort((a,b)=>Franchise.partOrder(a)-Franchise.partOrder(b)) : cur.series.episodes;
     const i = eps.findIndex((e) => e.id === cur.ep.id);
     let target = null;
     if (cur.nav === 'next' || (eof && this.store.data.settings.autoplayNext)) target = eps.slice(i + 1).find((e) => e.sources.length);

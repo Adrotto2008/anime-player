@@ -137,7 +137,7 @@ class AnimeUnityClient {
     } catch (error) { this.lastDiscovery.errors.push({number,phase:'episode',message:redact(error.message)}); return null; }
   }
 
-  async getEpisodeSources(anime, { episodeNumbers } = {}) {
+  async getEpisodeSources(anime, { episodeNumbers,contentMode } = {}) {
     this.lastDiscovery ||= {errors:[]};
     const animeUrl = validHttpUrl(anime.link || `/anime/${anime.id}-${anime.slug}`, `${this.baseUrl}/`);
     if (!animeUrl || new URL(animeUrl).origin !== new URL(this.baseUrl).origin) throw new Error('Pagina AnimeUnity non valida.');
@@ -152,7 +152,7 @@ class AnimeUnityClient {
       const payload = await page.json();
       const items = Array.isArray(payload) ? payload : payload && (payload.episodes || payload.data);
       if (!Array.isArray(items)) throw new Error('Formato degli episodi AnimeUnity non riconosciuto.');
-      episodes.push(...items);
+      episodes.push(...items.map((item,index)=>contentMode === 'parts' && item.number == null ? {...item,number:start+index+1} : item));
     }
     const unique = [...new Map(episodes.map((ep) => [Number(ep.id), ep]).filter(([id]) => Number.isSafeInteger(id) && id > 0)).values()];
     this.lastDiscovery.episodesFound = unique.length;
@@ -190,10 +190,12 @@ class AnimeUnityClient {
     for (const match of matches) {
       try {
         this.lastDiscovery.requestedEpisodesFound = 0; this.lastDiscovery.episodeNumbers = [];
-        const found = await this.getEpisodeSources(match, { episodeNumbers });
+        const found = await this.getEpisodeSources(match, { episodeNumbers,contentMode:options.contentMode });
         requested += this.lastDiscovery.requestedEpisodesFound || 0;
         (this.lastDiscovery.episodeNumbers || []).forEach(number => numbers.add(number));
-        sources.push(...found.map(source => ({ ...source, providerTitleUrl: match.link, language: classifyProvider(match, source) })));
+        const partNumbers=[...(this.lastDiscovery.episodeNumbers || [])];
+        sources.push(...found.map(source => ({ ...source, providerTitleUrl: match.link, language: classifyProvider(match, source),
+          ...(options.contentMode==='parts'?{providerPartNumbers:partNumbers}:{}) })));
       } catch (error) { this.lastDiscovery.errors.push({phase:'variant',message:redact(error.message)}); }
     }
     this.lastDiscovery.requestedEpisodesFound = requested;
