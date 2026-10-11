@@ -3,6 +3,20 @@
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
 const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'title', player: { playing: false }, stats: null, ratingLoads: {} };
+let library=state.lib,chartIndices=new WeakMap(),chartMappings=new WeakMap();
+Object.defineProperty(state,'lib',{get:()=>library,set:value=>{
+  library=value;chartIndices=new WeakMap();chartMappings=new WeakMap();
+  // Derived ratings are prepared once on snapshot arrival, never on navigation.
+  for(const series of value.series || [])if(series.imdbChart)window.EpisodeRatings.apply(series,series.imdbChart,chartIndex(series.imdbChart));
+  for(const id of Object.keys(state.ratingLoads))if(!value.series?.some(s=>s.id===id))delete state.ratingLoads[id];
+}});
+function chartIndex(chart){if(!chartIndices.has(chart))chartIndices.set(chart,window.EpisodeRatings.index(chart));return chartIndices.get(chart);}
+function chartMapping(siblings,chart){
+  if(!chartMappings.has(chart))chartMappings.set(chart,new Map());
+  const cache=chartMappings.get(chart),key=JSON.stringify(siblings.map(s=>s.id));
+  if(!cache.has(key))cache.set(key,window.EpisodeRatings.prepare(siblings,chart,chartIndex(chart)));
+  return cache.get(key);
+}
 const detectSeasonFromTitle = (title) => {
   const text = String(title || '');
   const match = text.match(/season\s*(\d+)/i) || text.match(/(\d+)(?:st|nd|rd|th)\s*season/i) || text.match(/\bS(\d+)\b/i) || text.match(/\bPart\s*(\d+)\b/i);
@@ -283,11 +297,54 @@ function go(view) {
   }
   if (view.name === 'series' || view.name === 'ratings-chart') loadSeriesRatings(view.id);
 }
-async function loadSeriesRatings(id) {
+const ratingsKey=s=>JSON.stringify([s.imdbId,s.imdbSelection,s.title,s.year,s.format,s.imdbChart?.updatedAt,s.imdbChart?.imdbId,s.imdbChart?.complete]);
+async function loadSeriesRatings(id,force=false,selection=null) {
   const s = getSeries(id);
-  if (!s || state.ratingLoads[id]) return;
-  state.ratingLoads[id] = true;
-  try { state.lib = await call('series:ratings', id); state.stats = null; render(); } catch { /* stored metadata remains visible */ }
+  if(!s)return;
+  const previous=state.ratingLoads[id];
+  if(previous?.pending)return previous.pending;
+  if(!force && previous && previous.key===ratingsKey(s) && previous.status!=='idle')return;
+  const entry={status:'loading',phase:'loading',key:ratingsKey(s),candidates:previous?.candidates || []};state.ratingLoads[id]=entry;
+  updateRatingsStatus(id);
+  let timer;
+  const request=(async()=>{
+    try {
+      const result=await Promise.race([api.invoke(selection?'series:imdbSelect':'series:ratings',id,selection || {refresh:force}),new Promise((_,reject)=>{timer=setTimeout(()=>reject(new Error('IMDb timeout')),135000);})]);
+      if(state.ratingLoads[id]!==entry || !getSeries(id))return;
+      if(result?.series){state.lib=result;entry.status=getSeries(id)?.imdbChart?.seasons?.some(s=>s.episodes?.length)?'ready':'empty';}
+      else Object.assign(entry,result?.cancelled?{status:'idle'}:result);
+      if(entry.status==='loading' || !entry.status)entry.status='error';
+      entry.key=ratingsKey(getSeries(id));state.stats=null;
+    } catch {if(state.ratingLoads[id]===entry)Object.assign(entry,{status:'error',issue:'request'});}
+    finally {
+      clearTimeout(timer);entry.pending=null;
+      if(state.ratingLoads[id]===entry){if(entry.status==='loading')entry.status='error';if(state.view.name==='ratings-chart' && state.view.id===id)render();}
+    }
+  })();entry.pending=request;return request;
+}
+function ratingsStatus(s){const entry=state.ratingLoads[s.id];return entry && (entry.pending || entry.key===ratingsKey(s)) ? entry : {status:s.imdbChart?.seasons?.some(sn=>sn.episodes?.length)?'ready':'idle'};}
+function ratingsStatusView(s){
+  const entry=ratingsStatus(s),chart=s.imdbChart;
+  const label=entry.status==='loading' ? t(entry.phase==='statistics'?'calculateStats':'loadingRatings') : t({idle:'ratingsIdle',ready:entry.complete===false || chart?.complete===false?'ratingsIncomplete':'ratingsReady',empty:'ratingsEmpty',ambiguous:'ratingsAmbiguous',error:'ratingsError'}[entry.status] || 'ratingsError');
+  const progress=entry.status==='loading' && entry.fetched!=null ? t('ratingsProgress',entry.fetched,entry.total) : '';
+  const episodes=chart ? [...chartIndex(chart).coordinates.values()].filter(Boolean).map(item=>item.episode) : [],rated=episodes.filter(e=>e.rating!=null && Number.isFinite(Number(e.rating)));
+  const stats=chart ? t('ratingsCounts',episodes.length,rated.length,chart.totalEpisodes) : '';
+  const choices=entry.status==='ambiguous' ? h('div',{class:'imdb-choices'},h('p',{class:'muted'},t('ratingsChooseHint')),entry.candidates?.map(c=>h('button',{class:'btn imdb-choice',disabled:Boolean(entry.pending),onclick:()=>loadSeriesRatings(s.id,true,c.id)},
+    h('b',null,c.title),h('span',null,[c.year || t('unavailable'),c.type,c.id,c.cast].filter(Boolean).join(' · '))))) : null;
+  return h('div',{class:'ratings-status',role:'status','aria-live':'polite','data-status':entry.status},h('div',{class:'row'},h('b',null,label),h('button',{class:'btn',disabled:entry.status==='loading',onclick:()=>loadSeriesRatings(s.id,true)},t('refresh'))),
+    progress ? h('p',{class:'muted small'},progress) : null,
+    entry.issue && !(entry.chart?.retrievalComplete && entry.issue==='invalid-number') ? h('p',{class:'muted small'},t(entry.issue==='timeout'?'ratingsTimeout':'ratingsFailedHint')) : null,
+    (entry.retained || entry.status==='error') && chart ? h('p',{class:'muted small'},t('ratingsRetained')) : null,
+    entry.retained && entry.chart ? h('p',{class:'muted small'},t('ratingsProgress',entry.chart.fetchedEpisodes,entry.chart.totalEpisodes)) : null,
+    chart?.unplacedEpisodes?.length ? h('p',{class:'muted small'},t('ratingsUnplaced',chart.unplacedEpisodes.length)) : null,
+    chart?.fetchedEpisodes!=null && chart.fetchedEpisodes!==episodes.length ? h('p',{class:'muted small'},t('ratingsProgress',chart.fetchedEpisodes,chart.totalEpisodes)) : null,
+    chart?.imdbId ? h('p',{class:'muted small'},'IMDb: '+chart.imdbId) : null,
+    chart && chart.complete==null ? h('p',{class:'muted small'},t('ratingsLegacy')) : null,
+    stats ? h('p',{class:'muted small'},stats, rated.length ? ' · '+t('ratingsMean',(rated.reduce((sum,e)=>sum+Number(e.rating),0)/rated.length).toFixed(2)) : '') : null,choices);
+}
+function updateRatingsStatus(id){
+  if(state.view.name!=='ratings-chart' || state.view.id!==id)return;
+  const s=getSeries(id),bar=document.querySelector('.ratings-status');if(s && bar)bar.replaceWith(ratingsStatusView(s));
 }
 function render() {
   // Background saves/source discovery must not dismiss a management menu while
@@ -296,7 +353,6 @@ function render() {
   pendingMenuRender=false;
   if (['series', 'ratings-chart'].includes(state.view.name) && !getSeries(state.view.id)
     || state.view.name === 'franchise' && !franchiseGroups().has(String(state.view.id))) state.view = { name: 'home' };
-  for (const series of state.lib.series || []) if (series.imdbChart) window.EpisodeRatings.apply(series,series.imdbChart);
   applyTheme();
   renderRail(); renderPlayer();
   const main = $('#main');
@@ -979,17 +1035,7 @@ function ratingsChartView(s) {
 
   let mainContent;
   if (!chart || !Array.isArray(chart.seasons) || !chart.seasons.length) {
-    mainContent = h('div', { class: 'empty' },
-      h('h2', null, state.ratingLoads[s.id] ? t('loadingRatings') : t('chartUnavailable')),
-      h('p', { class: 'muted' }, state.ratingLoads[s.id] ? t('calculateStats') : ''),
-      h('button', {
-        class: 'btn primary',
-        onclick: async () => {
-          delete state.ratingLoads[s.id];
-          await loadSeriesRatings(s.id);
-        },
-      }, t('refresh')),
-    );
+    mainContent = h('div', { class: 'empty' },h('p',{class:'muted'},t('chartUnavailable')));
   } else {
     // Legend styled after Series Graph tier charts.
     const TIERS = [
@@ -1007,8 +1053,9 @@ function ratingsChartView(s) {
       )),
     );
 
-    const seasons = chart.seasons.filter((sn) => Number.isInteger(sn.season) && sn.season > 0);
-    const maxEps = chart.maxEpisodes || Math.max(...seasons.map((sn) => sn.episodes.length), 0);
+    const seasons = chart.seasons.filter((sn) => Number.isInteger(sn.season) && sn.season >= 0);
+    const mapping=chartMapping(siblings,chart);
+    const rowNumbers=[...new Set(seasons.flatMap(sn=>sn.episodes.map(ep=>ep.number)).filter(n=>Number.isInteger(n) && n>0))].sort((a,b)=>a-b);
 
     const headerRow = h('tr', null,
       h('th', null),
@@ -1016,21 +1063,22 @@ function ratingsChartView(s) {
     );
 
     const bodyRows = [];
-    for (let epNum = 1; epNum <= maxEps; epNum++) {
+    for (const epNum of rowNumbers) {
       const cells = [
         h('td', { class: 'ep-label' }, `E${epNum}`),
       ];
       for (const sn of seasons) {
-        const ep = sn.episodes.find((e) => e.number === epNum);
-        if (ep && ep.rating != null) {
-          const tier = getRatingTier(ep.rating);
-          const target = window.EpisodeRatings.target(siblings,chart,sn.season,ep.number);
+        const ep = mapping.coordinates.get(`${sn.season}:${epNum}`)?.episode;
+        if (ep) {
+          const value=ep.rating!=null && Number.isFinite(Number(ep.rating)) ? Number(ep.rating) : null;
+          const tier = value==null ? null : getRatingTier(value);
+          const target = mapping.target(sn.season,ep.number);
           const mapped = target?.series;
           const libraryEpisode = target?.episode;
           const cell = h('td', null,
             h('div', {
-              class: `ratings-cell rating-tier-${tier}${libraryEpisode ? ' is-in-library' : ''}`,
-              title: `S${sn.season} E${ep.number}: ${ep.title || t('episode', ep.number)} · ${ep.rating.toFixed(1)} ★ (${tier})`,
+              class: `ratings-cell ${tier ? 'rating-tier-'+tier : 'unrated'}${libraryEpisode ? ' is-in-library' : ''}`,
+              title: `S${sn.season} E${ep.number}: ${ep.title || t('episode', ep.number)} · ${value==null ? t('ratingUnavailable') : value.toFixed(1)+' ★ ('+tier+')'}`,
               role: libraryEpisode ? 'button' : null,
               tabindex: libraryEpisode ? '0' : null,
               'aria-label': libraryEpisode ? `${mapped.title} · ${t('episode', libraryEpisode.number)} · ${t('openEpisode')}` : null,
@@ -1038,7 +1086,7 @@ function ratingsChartView(s) {
               onkeydown: libraryEpisode ? (event) => {
                 if (event.key === 'Enter' || event.key === ' ') { event.preventDefault(); go({ name: 'series', id: mapped.id, episodeId: libraryEpisode.id }); }
               } : null,
-            }, ep.rating.toFixed(1)),
+            }, value==null ? '—' : value.toFixed(1)),
           );
           cells.push(cell);
         } else {
@@ -1058,7 +1106,7 @@ function ratingsChartView(s) {
   }
 
   const layout = h('div', { class: 'ratings-chart-layout' }, sidebar, mainContent);
-  return h('div', { class: 'ratings-chart-container' }, back, layout);
+  return h('div', { class: 'ratings-chart-container' }, back, ratingsStatusView(s), layout);
 }
 
 function episodeRow(s, e) {
@@ -1379,6 +1427,11 @@ function openSetup() {
 
 /* ---------- avvio ---------- */
 (async function init() {
+  api.on('series:ratingsProgress',payload=>{
+    if(payload.reset){state.ratingLoads={};return;}
+    const entry=state.ratingLoads[payload.id];if(!entry || entry.requestId && entry.requestId!==payload.requestId)return;
+    Object.assign(entry,payload);updateRatingsStatus(payload.id);
+  });
   api.on('lib:changed', (lib) => { state.lib = lib; state.stats = null; render(); });
   api.on('series:sourcesDiscovered', ({ id, sourceDiscovery, lib }) => {
     state.lib = lib; state.stats = null; render();

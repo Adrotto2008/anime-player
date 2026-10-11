@@ -186,13 +186,7 @@ async function fetchEpisodes({ anilistId, kitsuId, title, streamingEpisodes, epi
   return { kitsuId: kid, episodes: [...out.values()].sort((a, b) => a.number - b.number) };
 }
 
-const cleanTitleForImdb = (title) => {
-  let t = String(title || '').trim();
-  t = t.replace(/[:–-]\s*(season\s*\d+|\d+(?:st|nd|rd|th)\s*season|the\s+final\s+season.*|final\s+season.*|part\s*\d+|cour\s*\d+|entertainment\s+district.*|swordsmith\s+village.*|hashira\s+training.*|mugen\s+train.*|shibuya\s+incident.*|yuukaku-hen.*)/gi, '');
-  t = t.replace(/\s+(season\s*\d+|\d+(?:st|nd|rd|th)\s*season|the\s+final\s+season.*|final\s+season.*|part\s*\d+|cour\s*\d+|s\d+|entertainment\s+district.*|swordsmith\s+village.*|hashira\s+training.*|mugen\s+train.*|shibuya\s+incident.*|yuukaku-hen.*)\b/gi, '');
-  t = t.replace(/\s+(II|III|IV|V|VI)$/i, '');
-  return t.trim();
-};
+const { cleanTitleForImdb } = require('./imdb-client');
 
 const detectSeasonFromTitle = (title) => {
   const t = String(title || '');
@@ -203,163 +197,14 @@ const detectSeasonFromTitle = (title) => {
   return m ? Number(m[1]) : 1;
 };
 
-async function searchImdbId(title, altTitle) {
-  const candidates = [
-    cleanTitleForImdb(title),
-    title,
-    cleanTitleForImdb(altTitle),
-    altTitle,
-  ].filter(Boolean);
-  const seen = new Set();
-  for (const c of candidates) {
-    const key = c.toLowerCase().trim();
-    if (!key || seen.has(key)) continue;
-    seen.add(key);
-    const q = key.replace(/[^a-z0-9]+/g, '_').replace(/^_+|_+$/g, '');
-    if (!q) continue;
-    const first = q[0];
-    try {
-      const res = await fetch(`https://v3.sg.media-imdb.com/suggestion/${first}/${q}.json`, {
-        headers: { 'User-Agent': 'Mozilla/5.0' },
-      });
-      if (!res.ok) continue;
-      const data = await res.json();
-      if (Array.isArray(data.d) && data.d.length > 0) {
-        const {titleKey}=require('./animeworld');
-        const matches=data.d.filter(x=>['tvSeries','tvMiniSeries'].includes(x.qid) || x.q==='TV series')
-          .filter(x=>candidates.some(name=>titleKey(cleanTitleForImdb(name))===titleKey(x.l)));
-        if(matches.length===1)return {id:matches[0].id,title:matches[0].l};
-      }
-    } catch { /* si passa al prossimo candidato */ }
-  }
-  return null;
+const imdbClient = require('./imdb-client').createImdbClient({clean:cleanTitleForImdb});
+async function searchImdbId(title, altTitle, options = {}) {
+  const result=await imdbClient.load({...options,title,altTitle,resolveOnly:true});
+  return result.selection || null;
 }
-
-async function fetchImdbData({ imdbId, title, altTitle }) {
-  let targetId = imdbId;
-  if (!targetId) {
-    const found = await searchImdbId(title, altTitle);
-    if (found) targetId = found.id;
-  }
-  if (!targetId) return null;
-
-  try {
-    let hasNext = true;
-    let cursor = null;
-    const fetchedEdges = [];
-    let titleText = '';
-    let overallRating = null;
-    let voteCount = null;
-    let seasonsList = [];
-
-    while (hasNext && fetchedEdges.length < 1000) {
-      const cursorArg = cursor ? `, after: "${cursor}"` : '';
-      const query = `
-        query {
-          title(id: "${targetId}") {
-            id
-            titleText { text }
-            ratingsSummary { aggregateRating voteCount }
-            episodes {
-              seasons { number }
-              episodes(first: 250${cursorArg}) {
-                total
-                pageInfo { hasNextPage endCursor }
-                edges {
-                  node {
-                    id
-                    titleText { text }
-                    series { episodeNumber { episodeNumber seasonNumber } }
-                    ratingsSummary { aggregateRating voteCount }
-                  }
-                }
-              }
-            }
-          }
-        }
-      `;
-      const res = await fetch('https://caching.graphql.imdb.com', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-          'x-imdb-client-name': 'imdb-web-next-localized',
-        },
-        body: JSON.stringify({ query }),
-      });
-      if (!res.ok) break;
-      const json = await res.json();
-      const t = json.data && json.data.title;
-      if (!t) break;
-      if (!titleText && t.titleText) titleText = t.titleText.text;
-      if (overallRating == null && t.ratingsSummary) overallRating = t.ratingsSummary.aggregateRating;
-      if (voteCount == null && t.ratingsSummary) voteCount = t.ratingsSummary.voteCount;
-      if (!seasonsList.length && t.episodes && t.episodes.seasons) seasonsList = t.episodes.seasons.map((s) => s.number);
-
-      const epData = t.episodes && t.episodes.episodes;
-      if (!epData) break;
-      const edges = epData.edges || [];
-      fetchedEdges.push(...edges);
-
-      const pageInfo = epData.pageInfo;
-      if (pageInfo && pageInfo.hasNextPage && pageInfo.endCursor && edges.length > 0) {
-        cursor = pageInfo.endCursor;
-      } else {
-        hasNext = false;
-      }
-    }
-
-    if (!fetchedEdges.length && overallRating == null) return null;
-
-    const seasonsMap = new Map();
-    for (const sNum of seasonsList.filter((n) => Number.isInteger(n) && n > 0)) {
-      seasonsMap.set(sNum, []);
-    }
-
-    for (const edge of fetchedEdges) {
-      const node = edge.node;
-      if (!node) continue;
-      const epNum = node.series && node.series.episodeNumber;
-      if (!epNum) continue;
-      const s = epNum.seasonNumber;
-      const ep = epNum.episodeNumber;
-      if (!Number.isInteger(s) || s <= 0 || !Number.isInteger(ep) || ep <= 0) continue;
-      if (!seasonsMap.has(s)) seasonsMap.set(s, []);
-      seasonsMap.get(s).push({
-        number: ep,
-        title: (node.titleText && node.titleText.text) || '',
-        rating: node.ratingsSummary ? node.ratingsSummary.aggregateRating : null,
-        id: node.id,
-      });
-    }
-
-    const seasons = [];
-    for (const [season, eps] of seasonsMap.entries()) {
-      eps.sort((a, b) => a.number - b.number);
-      seasons.push({ season, episodes: eps });
-    }
-    seasons.sort((a, b) => a.season - b.season);
-
-    let maxEpisodes = 0;
-    for (const s of seasons) {
-      if (s.episodes.length > maxEpisodes) maxEpisodes = s.episodes.length;
-      for (const ep of s.episodes) {
-        if (ep.number > maxEpisodes) maxEpisodes = ep.number;
-      }
-    }
-
-    return {
-      imdbId: targetId,
-      title: titleText || title || '',
-      overallRating,
-      voteCount,
-      seasons,
-      maxEpisodes,
-    };
-  } catch (err) {
-    console.warn('IMDb fetch error:', err.message);
-    return null;
-  }
+async function fetchImdbData(options) {
+  const result=await imdbClient.load(options);
+  return ['ready','empty'].includes(result.status) ? result.chart || null : null;
 }
 
 function applyImdbRatingsToEpisodes(episodes, imdbChart, title) {

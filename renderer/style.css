@@ -486,3 +486,10 @@ details.adv .two { max-width: 480px; }
 .content-part b { flex:1; }
 .franchise-suggestions .res { gap:12px; }
 .merge-preview { overflow-wrap:anywhere; }
+/* IMDb request state remains visible above both saved and partial charts. */
+.ratings-status { margin: 12px 0 20px; padding: 14px; border: 1px solid var(--line); border-radius: 12px; }
+.ratings-status .row { justify-content: space-between; }
+.ratings-status p { margin: 8px 0 0; }
+.imdb-choices { display: flex; flex-direction: column; gap: 10px; margin-top: 12px; }
+.imdb-choice { display: flex; flex-direction: column; align-items: flex-start; white-space: normal; text-align: left; }
+.ratings-cell.unrated { color: var(--muted); background: var(--panel); }

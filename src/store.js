@@ -375,7 +375,7 @@ class Store extends EventEmitter {
   updateSeries(id, patch) {
     const s = this.getSeries(id);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources'];
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'sourceDiscovery', 'preset', 'referer', 'cover', 'banner', 'description', 'genres', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating', 'franchiseId', 'franchiseTitle', 'franchiseOrder', 'franchiseType', 'franchiseSeasonNumber', 'movieSources'];
     for (const k of allowed) if (k in patch) s[k] = patch[k];
     if(Object.hasOwn(patch,'personalRating'))s.personalRatingUpdatedAt=Math.max(Date.now(),(s.personalRatingUpdatedAt || 0)+1);
     if (Object.hasOwn(patch,'movieSources')) {delete s.movieSourcesMigrated;this.migrateParts(s);}
@@ -720,7 +720,7 @@ class Store extends EventEmitter {
   refreshSeriesMetadata(sid, fields, list = []) {
     const s = this.getSeries(sid);
     if (!s) throw new Error('Serie non trovata');
-    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'introDuration', 'outroDuration', 'personalRating'];
+    const allowed = ['title', 'altTitle', 'titleAliases', 'averageDuration', 'cover', 'banner', 'description', 'genres', 'cast', 'related', 'score', 'scoreSource', 'year', 'format', 'episodeCount', 'status', 'nextAiringAt', 'nextEpisode', 'malId', 'kitsuId', 'anilistId', 'imdbId', 'imdbChart', 'imdbSelection', 'introDuration', 'outroDuration', 'personalRating'];
     for (const key of allowed) if (key in fields && fields[key] !== undefined) {
       if (['cover','banner'].includes(key) && !fields[key]) continue;
       if (key==='titleAliases') s[key]=[...new Set([...(s[key]||[]),...(fields[key]||[])])];

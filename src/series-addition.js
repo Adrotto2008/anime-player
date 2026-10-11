@@ -4,10 +4,13 @@ const { resolveFranchise, applyFranchiseMetadata, planFranchiseAddition } = requ
 const {discoverRelatedWorks} = require('./franchise-discovery');
 const Model = require('./franchise-model');
 
-function createSeriesAdder({ store, metadata, sourceQueue }) {
+function createSeriesAdder({ store, metadata, sourceQueue, loadRatings }) {
   const addRatings = async (series, media) => {
     try {
-      const imdb = await metadata.fetchImdbData({ title: series.title, altTitle: media?.altTitle });
+      if(loadRatings)return await loadRatings(series.id);
+      const scope=store.scope,imdbId=series.imdbId;
+      const imdb = await metadata.fetchImdbData({ imdbId,imdbSelection:series.imdbSelection,title:series.title,altTitle:media?.altTitle || series.altTitle,year:series.year,format:series.format });
+      if(store.scope!==scope || store.getSeries(series.id)?.imdbId!==imdbId)return;
       if (!imdb || !store.getSeries(series.id)) return;
       store.refreshSeriesMetadata(series.id, { imdbId: imdb.imdbId, imdbChart: imdb,
         ...(imdb.overallRating != null ? { score: imdb.overallRating, scoreSource: 'IMDb' } : {}) });

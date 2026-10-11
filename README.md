@@ -1,9 +1,17 @@
 # Anime Player
 
-Anime Player **v0.5.36** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.37** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## IMDb chart reliability and performance — 0.5.37
+
+- IMDb requests have explicit loading, ready, empty, ambiguous and error states with bounded timeouts and page progress. A failed or partial refresh keeps the last available chart; Refresh works without concurrent duplicate requests. Chart requests no longer wait for AniList/Kitsu.
+- Saved IMDb IDs are respected. Exact title, work type and the original work's release year distinguish titles such as One Piece (1999/2023). Insufficient evidence shows candidates with ID, year, type and cast for a saved explicit choice.
+- Chart and local-unit indexes replace nested per-cell searches. Snapshot updates prepare derived ratings once; navigation reuses mappings. Confirmed mappings, cour safeguards and the Black Clover crosswalk remain intact. Partial pages cannot prove new title uniqueness or a complete season range.
+- Cursor pagination supports more than 1,000 episodes and checks totals, empty/missing pages, duplicate cursors and finite limits. Season 0 and unrated episodes remain visible. Records without usable IMDb numbering are retained separately and reported; no numbers or votes are invented.
+- Synthetic Electron benchmarks cover 150, 400 and 1,200 episodes. Regression tests retain the Phase 2A/2B suites and cover errors, ambiguity, pagination, object replacement, navigation, cache reuse and account changes. See [Phase 2C notes](docs/imdb-ratings-2c.md) for limits and rollback.
 
 ## mpv playback reliability — 0.5.36
 

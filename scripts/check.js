@@ -1,4 +1,6 @@
 const { execFileSync, execSync } = require('child_process');
+for(const file of ['src/imdb-client.js','src/ratings-service.js','test/imdb-ratings.js','test/ratings-benchmark.js','test/ratings-renderer.js','test/ratings-renderer-electron.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
+execFileSync(process.execPath,['--test','test/imdb-ratings.js','test/ratings-legacy-regressions.js'],{stdio:'inherit'});
 for(const file of ['src/mpv.js','src/playback-diagnostics.js','src/shutdown.js','test/playback-reliability.js','test/playback-real.js','test/electron-playback-shutdown.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/playback-reliability.js','test/playback-real.js'],{stdio:'inherit'});
 execFileSync(process.execPath, ['--check', 'src/content-identity.js'], {stdio:'inherit'});
@@ -22,7 +24,10 @@ execFileSync(process.execPath, ['test/source-lifecycle.js'], { stdio: 'inherit' 
 execFileSync(process.execPath, ['test/mpv-manager.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/run.js'], { stdio: 'inherit' });
 for(const file of ['src/episode-ratings.js','test/audit-regressions.js','test/renderer-electron.js','test/renderer-runner.js']) execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
-if(process.platform !== 'linux' || process.env.DISPLAY) execFileSync(process.execPath, ['test/renderer-runner.js'], { stdio: 'inherit' });
+if(process.platform !== 'linux' || process.env.DISPLAY) {
+  execFileSync(process.execPath, ['test/renderer-runner.js'], { stdio: 'inherit' });
+  execFileSync(process.execPath, ['test/ratings-renderer.js'], { stdio: 'inherit' });
+}
 else console.log('Electron DOM/input tests skipped: no Linux display is available. Run with xvfb or a desktop session.');
 execSync('git diff --check', { stdio: 'inherit' });
 console.log('All checks passed.');

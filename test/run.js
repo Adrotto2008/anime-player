@@ -246,7 +246,8 @@ ok('resume: posizione breve salvata all’uscita senza arrotondamento a zero');
 // --- IMDb: normalizzazione titolo, riconoscimento stagione e rating chart
 const { cleanTitleForImdb, detectSeasonFromTitle, applyImdbRatingsToEpisodes } = require('../src/metadata');
 const rendererSource = fs.readFileSync(path.join(__dirname, '..', 'renderer', 'app.js'), 'utf8');
-assert.ok(rendererSource.includes('window.EpisodeRatings.target(siblings,chart,sn.season,ep.number)'));
+// Global/sequel cell navigation and ambiguous targets are exercised in Electron
+// and test/imdb-ratings.js. The chart now uses one prepared mapping per snapshot.
 assert.ok(rendererSource.includes('go({ name: \'series\', id: mapped.id, episodeId: libraryEpisode.id })'));
 assert.ok(rendererSource.includes("'data-episode-id': e.id"));
 const originalRenderer = execFileSync('git', ['show', 'HEAD:renderer/app.js'], { encoding: 'utf8' });

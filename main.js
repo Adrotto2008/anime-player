@@ -12,6 +12,7 @@ const { AnimeUnityClient } = require('./src/animeunity');
 const { checkSources } = require('./src/source-check');
 const { createMpvManager } = require('./src/mpv-manager');
 const { createSeriesAdder } = require('./src/series-addition');
+const { createRatingsService } = require('./src/ratings-service');
 const { discoverSeriesSources: discoverSources, createSourceDiscoveryQueue } = require('./src/source-discovery');
 
 if (!app.requestSingleInstanceLock()) { app.quit(); }
@@ -19,10 +20,13 @@ if (!app.requestSingleInstanceLock()) { app.quit(); }
 let win; let store; let player; let cloud; let roomSubscription;
 const animeWorld = new AnimeWorldClient();
 const animeUnity = new AnimeUnityClient();
-let mpvManager;
+let mpvManager; let ratings;
 
 const shaderDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'shaders') : path.join(__dirname, 'shaders'));
-const send = (ch, payload) => { if (win && !win.isDestroyed()) win.webContents.send(ch, payload); };
+const send = (ch, payload) => {
+  if(ch==='lib:changed' && ratings?.syncScope())payload=store.snapshot();
+  if (win && !win.isDestroyed()) win.webContents.send(ch, payload);
+};
 
 function createWindow() {
   win = new BrowserWindow({
@@ -165,7 +169,7 @@ function register() {
   const sourceQueue = createSourceDiscoveryQueue({ store, metadata: meta, discover: discoverSeriesSources,
     onComplete: (id, sourceDiscovery) => send('series:sourcesDiscovered', { id, sourceDiscovery, lib: lib() }),
   });
-  const addSeries=createSeriesAdder({store,metadata:meta,sourceQueue});
+  const addSeries=createSeriesAdder({store,metadata:meta,sourceQueue,loadRatings:id=>ratings.load(id)});
   h('series:create',addSeries);
   const franchiseService=require('./src/franchise-service').createFranchiseService({store,metadata:meta,sourceQueue,player,addSeries});
   h('franchise:create',(sid)=>{const record=store.getSeries(sid);if(!record)throw new Error('Opera non trovata.');const group=store.ensureFranchise({title:record.title,cover:record.cover,banner:record.banner,rootAniListId:record.anilistId});store.setMembership(sid,{franchiseId:group.id});return{lib:lib(),id:group.id};});
@@ -217,6 +221,7 @@ function register() {
   const syncSeriesRatings = async (id) => {
     const s = store.getSeries(id);
     if (!s) return lib();
+    const scope=store.scope;
     let fields = {};
     let kitsuEpisodes = [];
     let kitsuId = s.kitsuId;
@@ -236,28 +241,15 @@ function register() {
     }
     fields.kitsuId = kitsuId;
 
-    try {
-      const searchTitle = (fields.title || s.title);
-      const searchAlt = (fields.altTitle || s.altTitle);
-      const imdb = await meta.fetchImdbData({ imdbId: s.imdbId, title: searchTitle, altTitle: searchAlt });
-      if (imdb) {
-        fields.imdbId = imdb.imdbId;
-        fields.imdbChart = imdb;
-        if (imdb.overallRating != null) {
-          fields.score = imdb.overallRating;
-          fields.scoreSource = 'IMDb';
-        }
-      }
-    } catch (err) {
-      console.warn('IMDb error:', err.message);
-    }
-
-    if (store.getSeries(id)) store.refreshSeriesMetadata(id, fields, kitsuEpisodes);
+    if(scope!==store.scope || !store.getSeries(id))return lib();
+    store.refreshSeriesMetadata(id, fields, kitsuEpisodes);
+    await ratings.load(id,{refresh:true});
     return lib();
   };
 
   h('series:refresh', (id) => syncSeriesRatings(id));
-  h('series:ratings', (id) => syncSeriesRatings(id));
+  h('series:ratings', (id,options) => ratings.load(id,{refresh:options?.refresh===true}));
+  h('series:imdbSelect', (id,imdbId) => ratings.select(id,imdbId));
   h('episodes:rate', (sid, eid, rating) => { store.rateEpisode(sid, eid, rating); return lib(); });
   h('episodes:skipTimes', async (sid, eid) => {
     const scope=store.scope;
@@ -367,6 +359,10 @@ async function refreshAiringStatuses() {
 app.whenReady().then(async () => {
   const userDataPath = app.getPath('userData');
   store = new Store(path.join(userDataPath, 'library.json'));
+  ratings = createRatingsService({store,notify:payload=>{
+    if(!payload.reset && payload.status!=='loading')send('lib:changed',store.snapshot());
+    send('series:ratingsProgress',payload);
+  }});
   mpvManager = createMpvManager({ userDataPath, installDirectory: store.data.settings.mpvInstallDirectory || '' });
   player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: userDataPath }, notify: send,
     resolveAutomaticSource: async (source, series, episode) => {

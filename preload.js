@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const INVOKE = new Set([
-  'series:videoPreference', 'episodes:sourceLanguage', 'player:languageFallback',
+  'series:videoPreference', 'series:imdbSelect', 'episodes:sourceLanguage', 'player:languageFallback',
   'lib:get', 'library:export', 'library:import', 'series:search', 'series:create', 'series:update', 'series:delete', 'series:refresh', 'series:ratings', 'series:discoverSources', 'movie:addLink', 'movie:play','content:addLink',
   'franchise:create','franchise:update','franchise:member','franchise:reorder','franchise:mergePreview','franchise:merge','franchise:delete','franchise:discover','franchise:accept','franchise:reject',
   'patterns:detect', 'episodes:addPattern', 'episodes:addList', 'episodes:addM3U', 'episodes:setSources', 'episodes:checkSources', 'episodes:delete', 'episodes:mark', 'episodes:rate',
@@ -11,7 +11,7 @@ const INVOKE = new Set([
   'favorites:list', 'favorites:set', 'friends:search', 'friends:requests', 'friends:request', 'friends:respond', 'friends:list', 'friends:remove',
   'watchRooms:create', 'watchRooms:join', 'watchRooms:subscribe', 'watchRooms:broadcast', 'watchRooms:unsubscribe', 'sync:run',
 ]);
-const ON = new Set(['lib:changed', 'series:sourcesDiscovered', 'player:state', 'player:error', 'player:skip-offer', 'player:language-fallback', 'player:language-warning', 'sync:state', 'watchRoom:playback', 'watchRoom:presence']);
+const ON = new Set(['lib:changed', 'series:ratingsProgress', 'series:sourcesDiscovered', 'player:state', 'player:error', 'player:skip-offer', 'player:language-fallback', 'player:language-warning', 'sync:state', 'watchRoom:playback', 'watchRoom:presence']);
 
 contextBridge.exposeInMainWorld('animeApi', {
   invoke: (ch, ...args) => (INVOKE.has(ch) ? ipcRenderer.invoke(ch, ...args) : Promise.reject(new Error('canale non consentito: ' + ch))),
