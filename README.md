@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.43** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.44** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## mpv shortcuts and manual skips — 0.5.44 (Phase 6)
+
+- Settings → Playback → Shortcuts captures combinations directly, validates conflicts and supports disabling or restoring each action. Default skips are Ctrl + Shift + o / e; Page Down / Up change episodes. Existing saved custom or empty values are retained.
+- Native weak mpv Lua bindings work in fullscreen and update during playback. The application no longer overrides or writes input.conf; personal strong bindings are protected by live conflict detection. ASCII case preserves mpv Shift semantics.
+- Manual skips use the current episode's known opening/ending intervals and actual mpv time/duration, with exact seek, bounded OSD and guards against repetition, old episodes and late replies. Missing data never produces a guessed seek.
+- Isolated Windows tests cover real mpv, Electron capture, live preferences, private snapshot roundtrips and prior playback/card regressions. Packaging remains Windows x64 portable/NSIS, offline, in dist-phase5b. See [architecture, rules and verification limits](docs/mpv-shortcuts-6.md).
 
 ## Physical cards — 0.5.43 (Phase 5B)
 

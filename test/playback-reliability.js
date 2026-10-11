@@ -73,9 +73,15 @@ class FakeSession extends EventEmitter {
   start(){} send(){} seekAbsolute(){} seekRelative(){}
   quit(reason){this.emit('exit',{code:0,eof:false,reason,requestedReason:reason});}
 }
+for(const channel of ['settings:shortcuts','settings:set'])test('late shortcut save cannot write another account through '+channel,async t=>{
+  const f=fixture(t),gate=deferred(),entered=deferred(),player={applyShortcuts:async()=>{entered.resolve();await gate.promise;return {applied:true};}};
+  const {handlers}=mainFixture(f.store,player),keys=require('../src/playback-shortcuts').DEFAULTS;
+  const saving=handlers[channel](channel==='settings:set'?{shortcuts:keys}:keys),rejected=assert.rejects(saving,/Account cambiato/);await entered.promise;
+  f.store.switchFile(path.join(f.dir,'another-account.json'));const before=JSON.stringify(f.store.data);gate.resolve();await rejected;assert.equal(JSON.stringify(f.store.data),before);
+});
 function fakePlayback(t,f,{manualIntervals=false}={}) {
   const intervals=new Set();
-  const req=require('module').createRequire(path.join(repo,'src/player.js')),context={require:n=>n==='./mpv'?{MpvSession:FakeSession,pipePath:()=> 'fixture'}:req(n),module:{exports:{}},console,setTimeout,clearTimeout,
+  const req=require('module').createRequire(path.join(repo,'src/player.js')),context={__dirname:path.join(repo,'src'),require:n=>n==='./mpv'?{MpvSession:FakeSession,pipePath:()=> 'fixture'}:req(n),module:{exports:{}},console,setTimeout,clearTimeout,
     setInterval:manualIntervals?fn=>{const timer={fn};intervals.add(timer);return timer;}:setInterval,
     clearInterval:manualIntervals?timer=>intervals.delete(timer):clearInterval};
   vm.runInNewContext(fs.readFileSync(path.join(repo,'src/player.js'),'utf8'),context);
@@ -182,7 +188,7 @@ test('AP-14 bounded diagnostic history excludes source URL, cookie and arguments
   assert.equal(diagnostics.read().length,50);const raw=fs.readFileSync(diagnostics.file,'utf8');for(const value of ['SECRET','COOKIE','CREDENTIAL','referer','args'])assert.ok(!raw.includes(value));
 });
 test('AP-07 Stop while replacing an existing mpv session prevents the prepared launch',async t=>{
-  const f=fixture(t),{player}=fakePlayback(t,f);let launches=0;const write=player._writeInputConf.bind(player);player._writeInputConf=()=>{launches++;write();};
+  const f=fixture(t),{player}=fakePlayback(t,f);let launches=0;const write=player._writeShortcutScript.bind(player);player._writeShortcutScript=()=>{launches++;return write();};
   await player.play(f.series.id,f.ep.id);const session=player.cur.session,gate=deferred();session.quit=()=>gate.promise.then(()=>session.emit('exit',{code:0,reason:'replaced'}));
   const replacement=player.play(f.series.id,f.series.episodes[1].id);await delay(0);
   const stopped=player.stop();gate.resolve();await Promise.all([replacement,stopped]);assert.equal(launches,1);assert.equal(player.cur,null);
@@ -209,6 +215,6 @@ test('AP-14 diagnostics collect output drained after the process exit event',asy
 });
 test('AP-07 late skip events from a replaced session cannot control the current player',async t=>{
   const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const old=player.cur.session;
-  await player.play(f.series.id,f.series.episodes[1].id);let skips=0;player.skipCurrentSegment=()=>skips++;
+  await player.play(f.series.id,f.series.episodes[1].id);let skips=0;player.skipCurrentSegment=async()=>skips++;
   old.emit('skip','intro');assert.equal(skips,0);player.cur.session.emit('skip','intro');assert.equal(skips,1);
 });

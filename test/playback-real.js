@@ -33,7 +33,9 @@ test('real mpv: default periodic checkpoint, pause, seek, cloud object replaceme
   let saved=JSON.parse(fs.readFileSync(f.store.file,'utf8'));assert.ok(saved.series[0].episodes[0].progress.pos>4,'default 5-second checkpoint must reach disk during continuous playback');
   p.cur.session.send(['set_property','pause',true]);await waitFor(()=>f.store.getEpisode(s.id,ep.id).progress.pos>6);
   const priorPosition=p.cur.pos;
-  f.store.applyCloudData(f.store.snapshot(),new Date().toISOString());assert.notEqual(p.cur.ep,f.store.getEpisode(s.id,ep.id));
+  const beforeCloud=p.cur.ep;
+  f.store.applyCloudData(f.store.snapshot(),new Date().toISOString());assert.notEqual(beforeCloud,f.store.getEpisode(s.id,ep.id));
+  assert.equal(p.cur.ep,f.store.getEpisode(s.id,ep.id),'settings sync refreshes the active episode immediately');
   p.seekAbsolute(10);await waitFor(()=>p.cur?.pos>=9);await waitFor(()=>f.store.getEpisode(s.id,ep.id).progress.pos>=9);
   assert.ok(Math.abs(f.store.getEpisode(s.id,ep.id).progress.pos-p.cur.pos)<0.1,'save the observed seek position, including mpv preroll');
   assert.ok(f.store.revision>0 && f.store.data.cloudDirty,'checkpoint remains a pending local cloud revision');

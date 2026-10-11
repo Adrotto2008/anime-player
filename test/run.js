@@ -57,7 +57,7 @@ assert.deepStrictEqual(A.splitArgs('--volume=70 "--title=a b"'), ['--volume=70',
 const conf = A.buildInputConf(shaderDir);
 assert.ok(conf.includes('CTRL+1 ') && conf.includes('ALT+6 ') && conf.includes('CTRL+0') && conf.includes('ap-next'));
 const customConf = A.buildInputConf(shaderDir, { next: 'CTRL+N', previous: 'CTRL+P', skipIntro: 'CTRL+I', skipEnding: 'CTRL+E' });
-assert.ok(customConf.includes('CTRL+N script-message ap-next') && customConf.includes('CTRL+I script-message ap-skip-intro'));
+assert.ok(customConf.includes('Ctrl+N script-message ap-next') && customConf.includes('Ctrl+I script-message ap-skip-intro'));
 ok('preset Anime4K, catene, input.conf');
 
 const skipUrl = new URL(aniSkipUrl(31240, 1, 1515));

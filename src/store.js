@@ -29,7 +29,7 @@ const DEFAULT_SETTINGS = {
   extraArgs: '',
   skipOpening: false,
   skipEnding: false,
-  shortcuts: { next: 'PGDWN', previous: 'PGUP', skipIntro: '', skipEnding: '' },
+  shortcuts: { ...require('./playback-shortcuts').DEFAULTS },
 };
 
 const nonNegativeSeconds = (value) => {
@@ -330,6 +330,7 @@ class Store extends EventEmitter {
     this.repairFranchiseGroups();
     this.migrateFranchises();
     try { this.save(true, true); } catch (e) { this.data = previous; throw e; }
+    this.emit('settings:applied');
     return this.snapshot();
   }
 
@@ -351,6 +352,7 @@ class Store extends EventEmitter {
     const repaired = this.repairFranchiseGroups();
     this.migrateFranchises();
     try { this.save(true, true, { cloud: !repaired, emit: false });this.revision++; } catch (error) { this.data = previous; throw error; }
+    this.emit('settings:applied');
     return this.snapshot();
   }
 

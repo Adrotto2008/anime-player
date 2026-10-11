@@ -367,10 +367,10 @@ function renderPlayer() {
   const ep = s && FranchiseModel.units(s).find((item) => item.id === p.episodeId);
   const hasIntro = ep && Array.isArray(ep.skipTimes) && ep.skipTimes.some((x) => ['op', 'mixed-op'].includes(x.skipType));
   const hasEnding = ep && Array.isArray(ep.skipTimes) && ep.skipTimes.some((x) => ['ed', 'mixed-ed', 'mixed-ending'].includes(x.skipType));
-  const skipIntro = s && (hasIntro || Number(s.introDuration) > 0)
+  const skipIntro = s && hasIntro
     ? h('button', { class: 'btn sm', onclick: () => call('player:skipIntro') }, t('skipIntro'))
     : null;
-  const skipEnding = s && (hasEnding || Number(s.outroDuration) > 0)
+  const skipEnding = s && hasEnding
     ? h('button', { class: 'btn sm', onclick: () => call('player:skipEnding') }, t('skipEnding'))
     : null;
   el.replaceChildren(...[h('span', { class: 'live-dot', 'aria-hidden': 'true' }),
@@ -1539,6 +1539,7 @@ function openSettings() {
         }},t('playerDiagnostics')),
         field(t('defaultAnime4K'), preset)),
       sec(t('secPlayback'),
+        h('button',{class:'btn',onclick:()=>{close();go({name:'shortcuts'});}},t('playbackShortcuts')),
         toggle(auto, t('autoplay')), toggle(skipOpening, t('autoSkipOpening')), toggle(skipEnding, t('autoSkipEnding')),
         h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang))),
       sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language))),
@@ -1549,17 +1550,30 @@ function openSettings() {
 }
 
 function shortcutsView() {
-  const shortcuts = { next: 'PGDWN', previous: 'PGUP', skipIntro: '', skipEnding: '', ...(state.lib.settings.shortcuts || {}) };
-  const inputs = Object.fromEntries(Object.entries(shortcuts).map(([key, value]) => [key, h('input', { class: 'input', value: value || '', placeholder: t('shortcutUnset') })]));
-  return h('div', { class: 'page' },
-    h('div', { class: 'head' }, h('div', null, h('span', { class: 'eyebrow' }, 'ANIME PLAYER'), h('h1', null, t('shortcuts')))),
-    h('section', { class: 'panel shortcuts-page' },
-      h('p', { class: 'muted' }, t('shortcutsHint')),
-      field(t('shortcutNext'), inputs.next),
-      field(t('shortcutPrevious'), inputs.previous),
-      field(t('shortcutIntro'), inputs.skipIntro),
-      field(t('shortcutEnding'), inputs.skipEnding),
-      h('div', { class: 'foot' }, h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { shortcuts: Object.fromEntries(Object.entries(inputs).map(([key, el]) => [key, el.value.trim().toUpperCase()])) }); toast(t('saved')); } }, t('save')))));
+  const S=window.PlaybackShortcuts,draft={...S.effective(state.lib.settings.shortcuts)},status=h('p',{class:'muted small',role:'status'});
+  const labels={next:'shortcutNext',previous:'shortcutPrevious',skipIntro:'shortcutIntro',skipEnding:'shortcutEnding'};
+  const rows=Object.keys(S.DEFAULTS).map(action=>{
+    const input=h('input',{class:'input',readonly:true,value:S.display(draft[action])||t('shortcutDisabled'),'aria-label':t(labels[action]),'data-shortcut':action});
+    let listening=false;
+    const stopCapture=()=>{if(listening)call('settings:shortcutCapture',false).catch(()=>{});listening=false;};
+    const capture=h('button',{class:'btn',onclick:async()=>{try{input.focus();await call('settings:shortcutCapture',true);if(document.activeElement!==input){await call('settings:shortcutCapture',false);return;}listening=true;input.value=t('shortcutCapture');}catch(error){status.textContent=error.message;}}},t('shortcutChange'));
+    input.addEventListener('keydown',event=>{
+      if(!listening)return;
+      event.preventDefault();event.stopPropagation();
+      if(event.key==='Escape'){stopCapture();input.value=S.display(draft[action])||t('shortcutDisabled');return;}
+      try{const key=S.capture(event);if(key===null)return;S.validate({...draft,[action]:key});draft[action]=key;input.value=S.display(key);stopCapture();status.textContent='';}
+      catch(error){status.textContent=error.message;}
+    });
+    input.addEventListener('blur',()=>{stopCapture();input.value=S.display(draft[action])||t('shortcutDisabled');});
+    const assign=value=>{try{S.validate({...draft,[action]:value});draft[action]=value;input.value=S.display(value)||t('shortcutDisabled');status.textContent='';}catch(error){status.textContent=error.message;}};
+    return field(t(labels[action]),h('div',{class:'shortcut-controls'},input,capture,h('button',{class:'btn',onclick:()=>assign('')},t('shortcutDisable')),h('button',{class:'btn',onclick:()=>assign(S.DEFAULTS[action])},t('shortcutReset'))));
+  });
+  const save=h('button',{class:'btn primary',onclick:async()=>{
+    save.disabled=true;
+    try{const reply=await call('settings:shortcuts',S.validate(draft));state.lib=reply.lib;status.textContent=t(reply.applied?'shortcutsApplied':'shortcutsNextLaunch');}
+    catch(error){status.textContent=error.message;}finally{save.disabled=false;}
+  }},t('save'));
+  return h('div',{class:'page'},h('div',{class:'head'},h('h1',null,t('playbackShortcuts'))),h('section',{class:'panel shortcuts-page'},h('p',{class:'muted'},t('shortcutsHint')),rows,status,h('div',{class:'foot'},save)));
 }
 
 function openSetup() {
@@ -1624,7 +1638,7 @@ function openSetup() {
   api.on('player:state', (p) => { state.player = p; renderPlayer(); });
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
-  api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call('player:skipSegment', offer.end)));
+  api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call(offer.kind==='intro'?'player:skipIntro':'player:skipEnding',offer)));
   api.on('player:language-fallback', showLanguageFallback);
   api.on('player:language-warning', message => toast(message));
   state.lib = await api.invoke('lib:get');

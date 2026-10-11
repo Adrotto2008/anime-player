@@ -55,7 +55,7 @@ function shaderList(presetId, shaderDir) {
 
 // input.conf: CTRL+1..6 = preset Fast, ALT+1..6 = preset HQ, CTRL+0 = spento.
 // PGDOWN/PGUP o > < = episodio successivo/precedente (gestito dall'app).
-function buildInputConf(shaderDir, shortcuts = {}) {
+function buildInputConf(shaderDir, shortcuts = {}, playback = true) {
   const lines = [];
   MODES.forEach((mode, i) => {
     for (const [key, tierId] of [['CTRL', 'fast'], ['ALT', 'hq']]) {
@@ -65,9 +65,7 @@ function buildInputConf(shaderDir, shortcuts = {}) {
     }
   });
   lines.push('CTRL+0 no-osd change-list glsl-shaders clr ""; show-text "Anime4K spento" 2000');
-  lines.push(`${shortcuts.next || 'PGDWN'} script-message ap-next`, `${shortcuts.previous || 'PGUP'} script-message ap-prev`);
-  if (shortcuts.skipIntro) lines.push(`${shortcuts.skipIntro} script-message ap-skip-intro`);
-  if (shortcuts.skipEnding) lines.push(`${shortcuts.skipEnding} script-message ap-skip-ending`);
+  if(playback)for(const [action,key] of Object.entries(require('./playback-shortcuts').bindings(shortcuts)))if(key)lines.push(`${key} script-message ${require('./playback-shortcuts').ACTIONS[action]}`);
   return lines.join('\n') + '\n';
 }
 
@@ -83,7 +81,7 @@ function splitArgs(str) {
 function buildArgs({ settings, presetId, startPos, title, referer, url, inputConf, pipe, shaderDir }) {
   const args = [
     `--input-ipc-server=${pipe}`,
-    `--input-conf=${toPosix(inputConf)}`,
+    ...(inputConf ? [`--input-conf=${toPosix(inputConf)}`] : []),
     `--force-media-title=${title}`,
     '--keep-open=no',
     '--save-position-on-quit=no',

@@ -75,7 +75,10 @@ async function fetchAniSkipTimes(malId, episodeNumber, episodeLength) {
   if (!r.ok) throw new Error(`AniSkip ha risposto ${r.status}`);
   const data = await r.json();
   return (data.found && Array.isArray(data.results) ? data.results : [])
-    .filter((x) => x && Number.isFinite(Number(x.interval?.startTime)) && Number.isFinite(Number(x.interval?.endTime)))
+    .filter((x) => x && ['op','ed','mixed-op','mixed-ed','recap'].includes(x.skipType)
+      && typeof x.interval?.startTime==='number' && typeof x.interval?.endTime==='number'
+      && Number.isFinite(x.interval.startTime) && Number.isFinite(x.interval.endTime)
+      && x.interval.startTime>=0 && x.interval.endTime>x.interval.startTime)
     .map((x) => ({ skipType: x.skipType || 'unknown', start: Number(x.interval.startTime), end: Number(x.interval.endTime) }));
 }
 

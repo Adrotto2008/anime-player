@@ -546,3 +546,5 @@ details.adv .two { max-width: 480px; }
 .linked-franchises .section-head { justify-content: space-between; gap: 12px; }
 .linked-franchises .res { flex-wrap: wrap; }
 .linked-preview-cover { width: 75px; height: 108px; background-size: cover; background-position: center; border-radius: 7px; flex-shrink: 0; }
+
+.shortcut-controls{display:flex;flex-wrap:wrap;gap:8px}.shortcut-controls .input{flex:1;min-width:160px}.shortcuts-page [role="status"]{min-height:1.5em;overflow-wrap:anywhere}

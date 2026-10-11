@@ -19,7 +19,7 @@ class MpvSession extends EventEmitter {
     this.closed = false; this.eof = false; this.error = null; this.sock = null; this.buf = '';
     this.ipcTimeoutMs=ipcTimeoutMs;this.loadTimeoutMs=loadTimeoutMs;this.quitTimeoutMs=quitTimeoutMs;
     this.connected=false;this.loaded=false;this.endReason=null;this.requestedReason=null;this.forced=false;
-    this.heartbeatMs=heartbeatMs;this.responseTimeoutMs=responseTimeoutMs;this.nextCommandId=100;
+    this.heartbeatMs=heartbeatMs;this.responseTimeoutMs=responseTimeoutMs;this.nextCommandId=100;this.requests=new Map();this.bindingRequests=new Map();
   }
 
   start() {
@@ -99,12 +99,14 @@ class MpvSession extends EventEmitter {
   }
 
   _onMessage(m) {
+    const pending=this.requests.get(m.request_id);
+    if(pending){clearTimeout(pending.timer);this.requests.delete(m.request_id);m.error==='success'?pending.resolve(m.data):pending.reject(new Error(m.error||'mpv command failed'));}
     if(m.request_id===this.pendingCommandId) {clearTimeout(this.responseTimer);this.pendingCommandId=null;}
-    if (m.event === 'file-loaded') { this.loaded=true;clearTimeout(this.startupTimer); this.emit('loaded'); }
+    if (m.event === 'file-loaded') this._markLoaded();
     if(m.event==='seek')this.emit('seek');
     if(m.event==='playback-restart')this.emit('seeked');
     if (m.event === 'property-change') {
-      if (m.name === 'time-pos' && typeof m.data === 'number') { this.loaded=true;clearTimeout(this.startupTimer); this.emit('time', m.data); }
+      if (m.name === 'time-pos' && typeof m.data === 'number') { this._markLoaded(); this.emit('time', m.data); }
       else if (m.name === 'duration' && typeof m.data === 'number') this.emit('duration', m.data);
       else if (m.name === 'pause') this.emit('pause', !!m.data);
       else if (m.name === 'track-list' && Array.isArray(m.data)) this.emit('tracks', m.data);
@@ -113,7 +115,8 @@ class MpvSession extends EventEmitter {
       if (m.reason === 'eof') this.eof = true;
       else if (m.reason === 'error') { this.error = redact(m.file_error || 'errore di riproduzione'); this.quit('source-error'); }
     } else if (m.event === 'client-message' && Array.isArray(m.args)) {
-      if (m.args[0] === 'ap-next') this.emit('nav', 'next');
+      if(m.args[0]==='ap-bindings-result'){const pending=this.bindingRequests.get(Number(m.args[1]));if(pending){clearTimeout(pending.timer);this.bindingRequests.delete(Number(m.args[1]));try{pending.resolve(JSON.parse(m.args[2]));}catch(error){pending.reject(error);}}}
+      else if (m.args[0] === 'ap-next') this.emit('nav', 'next');
       else if (m.args[0] === 'ap-prev') this.emit('nav', 'prev');
       else if (m.args[0] === 'ap-skip-intro') this.emit('skip', 'intro');
       else if (m.args[0] === 'ap-skip-ending') this.emit('skip', 'ending');
@@ -121,9 +124,25 @@ class MpvSession extends EventEmitter {
   }
 
   send(command,requestId) {
-    if (this.sock && !this.sock.destroyed) this.sock.write(JSON.stringify({ command,...(requestId ? {request_id:requestId} : {}) }) + '\n');
+    if (this.sock && !this.sock.destroyed && !this.processExited) {
+      try {this.sock.write(JSON.stringify({command,...(requestId ? {request_id:requestId} : {})})+'\n',()=>{});return true;}catch{return false;}
+    }
+    return false;
   }
 
+  _markLoaded() {if(!this.loaded){this.loaded=true;clearTimeout(this.startupTimer);this.emit('loaded');}}
+
+  request(command) {return this._pending(this.requests,id=>this.send(command,id));}
+  configureShortcuts(keys,presets=[]) {return this._pending(this.bindingRequests,id=>this.send(['script-message-to','ap_shortcuts','configure',String(id),JSON.stringify({keys,presets})]));}
+  _pending(map,send) {
+    if(this.closed || this.requestedReason || !this.sock || this.sock.destroyed)return Promise.reject(new Error('mpv non connesso'));
+    return new Promise((resolve,reject)=>{
+      const id=++this.nextCommandId;
+      const timer=setTimeout(()=>{map.delete(id);reject(new Error('Timeout risposta mpv'));},3000);
+      map.set(id,{resolve,reject,timer});
+      if(!send(id)){clearTimeout(timer);map.delete(id);reject(new Error('mpv non connesso'));}
+    });
+  }
   setShaders(chainString, label) {
     if (chainString) this.send(['change-list', 'glsl-shaders', 'set', chainString]);
     else this.send(['change-list', 'glsl-shaders', 'clr', '']);
@@ -144,6 +163,7 @@ class MpvSession extends EventEmitter {
     clearTimeout(this.startupTimer);
     clearTimeout(this.ipcTimer);clearTimeout(this.connectTimer);clearTimeout(this.killTimer);
     clearInterval(this.heartbeatTimer);clearTimeout(this.responseTimer);clearTimeout(this.disconnectTimer);
+    for(const map of [this.requests,this.bindingRequests]){for(const pending of map.values()){clearTimeout(pending.timer);pending.reject(new Error('Sessione mpv terminata'));}map.clear();}
     this.connectingSocket?.destroy();
     this.sock?.destroy();
   }

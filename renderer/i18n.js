@@ -182,7 +182,7 @@ const DICT = {
     primaryLanguage: 'Language', appVersion: 'App version', personalRating: 'Your rating', episodeAverage: 'Episode average',
     finished: 'Finished', airing: 'Airing', upcoming: 'Upcoming', weeklySchedule: 'Weekly schedule',
     day0: 'Sunday', day1: 'Monday', day2: 'Tuesday', day3: 'Wednesday', day4: 'Thursday', day5: 'Friday', day6: 'Saturday',
-    shortcuts: 'Shortcuts', shortcutsHint: 'Customize the keys used by mpv. Leave a skip key empty to disable it.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
+    playbackShortcuts:'Playback shortcuts',shortcutChange:'Change',shortcutDisable:'Disable',shortcutDisabled:'Disabled',shortcutReset:'Reset default',shortcutCapture:'Press your keys…',shortcutsApplied:'Saved and applied in the current mpv session.',shortcutsNextLaunch:'Saved. Applied at the next mpv launch.',shortcuts: 'Shortcuts', shortcutsHint: 'Press Change, then your keys (Escape cancels). Works in mpv, including fullscreen. Manual skips use known intervals or at most 2 seconds before them.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
     sortManual:'Il mio ordine',homeSections:'Sezioni della Home',organizationSaved:'Disposizione salvata.',
@@ -365,7 +365,7 @@ const DICT = {
     primaryLanguage: 'Lingua', appVersion: 'Versione app', personalRating: 'Il tuo voto', episodeAverage: 'Media degli episodi',
     finished: 'Concluso', airing: 'In corso', upcoming: 'In arrivo', weeklySchedule: 'Programmazione settimanale',
     day0: 'Domenica', day1: 'Lunedì', day2: 'Martedì', day3: 'Mercoledì', day4: 'Giovedì', day5: 'Venerdì', day6: 'Sabato',
-    shortcuts: 'Scorciatoie', shortcutsHint: 'Personalizza i tasti usati da mpv. Lascia vuoto un tasto di salto per disattivarlo.', shortcutNext: 'Episodio successivo', shortcutPrevious: 'Episodio precedente', shortcutIntro: 'Salta apertura', shortcutEnding: 'Salta finale', shortcutUnset: 'es. CTRL+SHIFT+O', autoSkipOpening: 'Salta automaticamente l’apertura quando AniSkip la trova', autoSkipEnding: 'Salta automaticamente il finale quando AniSkip lo trova',
+    playbackShortcuts:'Scorciatoie di riproduzione',shortcutChange:'Modifica',shortcutDisable:'Disabilita',shortcutDisabled:'Disabilitata',shortcutReset:'Ripristina predefinito',shortcutCapture:'Premi i tasti…',shortcutsApplied:'Salvate e applicate alla sessione mpv corrente.',shortcutsNextLaunch:'Salvate. Applicate al prossimo avvio di mpv.',shortcuts: 'Scorciatoie', shortcutsHint: 'Premi Modifica, poi i tasti (Esc annulla). Funziona in mpv, anche fullscreen. Salto manuale negli intervalli conosciuti o al massimo 2 secondi prima.', shortcutNext: 'Episodio successivo', shortcutPrevious: 'Episodio precedente', shortcutIntro: 'Salta apertura', shortcutEnding: 'Salta finale', shortcutUnset: 'es. CTRL+SHIFT+O', autoSkipOpening: 'Salta automaticamente l’apertura quando AniSkip la trova', autoSkipEnding: 'Salta automaticamente il finale quando AniSkip lo trova',
   },
 };
 

@@ -52,6 +52,7 @@ function createWindow() {
     if ((level !== undefined ? level : e.level) >= 2 || e.level === 'error' || e.level === 'warning') console.error('[pagina]', msg, '—', (source || e.sourceId || '') + ':' + (line || e.lineNumber || ''));
   });
   win.webContents.on('before-input-event', (ev, input) => {
+    if(win.shortcutCaptureActive)return;
     if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) { win.webContents.toggleDevTools(); ev.preventDefault(); }
   });
   win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
@@ -68,6 +69,7 @@ function register() {
   h('organization:move',command=>organization.move(command));
   h('organization:section',command=>organization.section(command));
   h('app:version', () => app.getVersion());
+  h('settings:shortcutCapture',active=>{if(win)win.shortcutCaptureActive=active===true;});
   h('auth:state', () => cloud.getSession());
   h('auth:signUp', (email, password) => cloud.signUp(email, password));
   h('auth:signIn', (email, password) => cloud.signIn(email, password));
@@ -137,6 +139,7 @@ function register() {
   h('presets:list', () => A4K.listPresets());
   h('player:state', () => player.state());
   h('settings:set', async (patch) => {
+    const scope=store.scope;
     const next = { ...store.data.settings, ...(patch || {}) };
     if (!A4K.PRESETS[next.defaultPreset]) throw new Error('Preset Anime4K non valido.');
     if (!['default', 'compact'].includes(next.theme)) throw new Error('Tema non valido.');
@@ -146,8 +149,20 @@ function register() {
       const result = await mpvManager.validate(next.mpvPath);
       if (!result.ok) throw new Error(result.error || 'Il file selezionato non è un eseguibile mpv compatibile.');
     }
+    if(patch && Object.hasOwn(patch,'shortcuts')){
+      const shortcuts=require('./src/playback-shortcuts').validate(patch.shortcuts);
+      await player.applyShortcuts(shortcuts);patch={...patch,shortcuts};
+    }
+    if(scope!==store.scope)throw Error('Account cambiato: riprova / Account changed: retry');
     store.setSettings(patch || {});
     return lib();
+  });
+  h('settings:shortcuts',async raw=>{
+    const scope=store.scope;
+    const shortcuts=require('./src/playback-shortcuts').validate(raw);
+    const status=await player.applyShortcuts(shortcuts);
+    if(scope!==store.scope)throw Error('Account cambiato: riprova / Account changed: retry');
+    store.setSettings({shortcuts});return {lib:lib(),...status};
   });
   h('mpv:detect', async () => {
     const result = await mpvManager.find(store.data.settings.mpvPath);
@@ -358,8 +373,8 @@ function register() {
   h('player:preset', (id) => player.setPreset(id));
   h('player:seekRelative', (seconds) => player.seekRelative(seconds));
   h('player:seekAbsolute', (seconds) => player.seekAbsolute(seconds));
-  h('player:skipIntro', () => player.skipCurrentSegment('intro'));
-  h('player:skipEnding', () => player.skipCurrentSegment('ending'));
+  h('player:skipIntro', (expected) => player.skipCurrentSegment('intro',expected));
+  h('player:skipEnding', (expected) => player.skipCurrentSegment('ending',expected));
   h('player:skipSegment', (end) => player.skipSegment(end));
   h('stats:get', () => store.statistics());
 }

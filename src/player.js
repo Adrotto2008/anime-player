@@ -8,6 +8,8 @@ const Language = require('./source-language');
 const Franchise = require('./franchise-model');
 const { randomUUID } = require('crypto');
 const Identity = require('./content-identity');
+const Shortcuts=require('./playback-shortcuts');
+const {decideSkip,NEAR_SECONDS}=require('./skip-decision');
 const {PlaybackDiagnostics,exitMessage}=require('./playback-diagnostics');
 
 class PlayerManager {
@@ -18,14 +20,18 @@ class PlayerManager {
     this.playRequestId = 0;
     this.progressIntervalMs = progressIntervalMs;
     this.diagnostics = new PlaybackDiagnostics(paths.userData);
-    this.inputConf = path.join(paths.userData, 'input.conf');
+    const sync=()=>this._syncShortcuts();
+    store.on('settings',sync);
+    store.on('settings:applied',sync);
   }
 
   presetFor(series) { return (series && series.preset) || this.store.data.settings.defaultPreset || A4K.DEFAULT_PRESET; }
 
-  _writeInputConf() {
-    fs.mkdirSync(this.paths.userData, { recursive: true });
-    fs.writeFileSync(this.inputConf, A4K.buildInputConf(this.paths.shaderDir, this.store.data.settings.shortcuts));
+  _writeShortcutScript() {
+    fs.mkdirSync(this.paths.userData,{recursive:true});
+    const script=path.join(this.paths.userData,'ap_shortcuts.lua');
+    fs.writeFileSync(script,fs.readFileSync(path.join(__dirname,'ap-shortcuts.lua')));
+    return script;
   }
 
   state() {
@@ -127,14 +133,16 @@ class PlayerManager {
     if (c.requestId != null && c.requestId !== this.playRequestId) return;
     if(!this._live(c)) {this.activeRequest=null;return;}
     if(c.ep && !this.store.getSource(c.series.id,c.ep.id,c.source)) {this.activeRequest=null;return;}
-    this._writeInputConf();
+    const script=this._writeShortcutScript();
     const pipe = pipePath();
-    const args = A4K.buildArgs({ settings: { ...settings, userAgent: c.userAgent || settings.userAgent }, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, inputConf: this.inputConf, pipe, shaderDir: this.paths.shaderDir });
+    const args = A4K.buildArgs({ settings: { ...settings, userAgent: c.userAgent || settings.userAgent }, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, pipe, shaderDir: this.paths.shaderDir });
+    args.splice(args.length-2,0,`--script=${script.replace(/\\/g,'/')}`);
     const strictLanguage = ['it', 'ja-sub-it'].includes(c.effectiveMode);
     if (strictLanguage) args.splice(args.length - 2, 0, '--pause=yes', `--alang=${c.effectiveMode === 'it' ? 'it,ita' : 'ja,jpn'}`, '--slang=it,ita');
     const session = new MpvSession({ mpvPath: settings.mpvPath, args, pipe });
     this.cur = { ...c, session, pos: c.start || 0, dur: 0, playedSeconds: 0, lastReportedPos: c.start || 0, lastSave: 0, saveTimer: null, nav: null, stopping: false, startedAt: Date.now() };
     const cur = this.cur;
+    session.once('loaded',()=>{if(this._current(cur))this._syncShortcuts();});
     if (strictLanguage) cur.languageTimer = setTimeout(() => {
       session.error = 'Impossibile rilevare le tracce del file'; session.quit('track-timeout');
     }, 15000);
@@ -179,19 +187,19 @@ class PlayerManager {
         if (segment) { cur.skippedIntro = true; session.seekAbsolute(segment.end); }
       } else if (!cur.offeredIntro) {
         const segment = skips.find((x) => (x.skipType === 'op' || x.skipType === 'mixed-op') && t >= x.start && t < x.end);
-        if (segment) { cur.offeredIntro = true; this.notify('player:skip-offer', { kind: 'intro', end: segment.end }); }
+        if (segment) { cur.offeredIntro = true; this.notify('player:skip-offer', { kind: 'intro', end: segment.end,requestId:cur.requestId,seriesId:cur.series.id,episodeId:cur.ep.id }); }
       }
       if (this.store.data.settings.skipEnding && !cur.skippedEnding) {
         const segment = skips.find((x) => (x.skipType === 'ed' || x.skipType === 'mixed-ed' || x.skipType === 'mixed-ending') && t >= x.start && t < x.end);
         if (segment) { cur.skippedEnding = true; session.seekAbsolute(segment.end); }
       } else if (!cur.offeredEnding) {
         const segment = skips.find((x) => (x.skipType === 'ed' || x.skipType === 'mixed-ed' || x.skipType === 'mixed-ending') && t >= x.start && t < x.end);
-        if (segment) { cur.offeredEnding = true; this.notify('player:skip-offer', { kind: 'ending', end: segment.end }); }
+        if (segment) { cur.offeredEnding = true; this.notify('player:skip-offer', { kind: 'ending', end: segment.end,requestId:cur.requestId,seriesId:cur.series.id,episodeId:cur.ep.id }); }
       }
     });
     session.on('duration', (d) => { if(this.cur===cur && Number.isFinite(d))cur.dur = d; });
     session.on('nav', (dir) => { if(cur.requestId!==this.playRequestId)return;cur.nav = dir; session.quit('navigation'); });
-    session.on('skip', (kind) => {if(this.cur===cur && cur.requestId===this.playRequestId)this.skipCurrentSegment(kind);});
+    session.on('skip', (kind) => {if(this.cur===cur && cur.requestId===this.playRequestId)this.skipCurrentSegment(kind).catch(()=>{});});
     session.on('spawn-error', (e) => {
       clearTimeout(cur.languageTimer);
       clearInterval(cur.saveInterval);clearTimeout(cur.saveTimer);
@@ -346,51 +354,63 @@ class PlayerManager {
     this._emitState();
   }
 
-  skipIntro() {
-    if (!this.cur) return false;
-    const skips = Array.isArray(this.cur.ep && this.cur.ep.skipTimes) ? this.cur.ep.skipTimes : [];
-    const segment = skips.find((x) => ['op', 'mixed-op'].includes(x.skipType) && this.cur.pos >= x.start && this.cur.pos < x.end);
-    if (segment) return this.skipSegment(segment.end);
-    if (!this.cur.series || !this.cur.series.introDuration) return false;
-    this.cur.session.seekAbsolute(this.cur.series.introDuration);
-    return true;
+  _current(cur) {return this.cur===cur && !cur.stopping && cur.requestId===this.playRequestId && this._live(cur);}
+  _syncShortcuts() {
+    const cur=this.cur;
+    if(!cur || !cur.session.loaded || !this._current(cur))return;
+    const raw=this.store.data.settings.shortcuts,signature=JSON.stringify(raw);
+    if(cur.shortcutSignature===signature)return;
+    cur.shortcutSignature=signature;
+    this.applyShortcuts(raw).catch(error=>{if(this._current(cur))this.notify('player:error',error.message);});
   }
-
-  seekRelative(seconds) {
-    if (!this.cur) return false;
-    this.cur.session.seekRelative(seconds);
-    return true;
+  async applyShortcuts(raw) {
+    const target=this.cur,keys=Shortcuts.parse(raw);
+    const apply=async()=>{
+      const cur=target;
+      if(!cur)return {applied:false,nextLaunch:true};
+      if(!this._current(cur))throw Error('Sessione cambiata: riprova / Session changed: retry');
+      if(!cur.session.loaded)return {applied:false,nextLaunch:true};
+      const presets=A4K.buildInputConf(this.paths.shaderDir,{},false).trim().split('\n').map(line=>{const i=line.indexOf(' ');return {key:Shortcuts.normalize(line.slice(0,i)),command:line.slice(i+1)};});
+      const result=await cur.session.configureShortcuts(keys,presets);
+      if(!this._current(cur))throw Error('Sessione cambiata: riprova / Session changed: retry');
+      if(!result.ok)throw Error('Conflitto mpv: '+result.conflicts.join('; '));
+      cur.shortcutKeys=keys;return {applied:true,nextLaunch:false};
+    };
+    const pending=(this.shortcutQueue||Promise.resolve()).catch(()=>{}).then(apply);
+    this.shortcutQueue=pending;return pending;
   }
-
-  seekAbsolute(seconds) {
-    if (!this.cur) return false;
-    this.cur.session.seekAbsolute(seconds);
-    return true;
-  }
-
-  skipEnding() {
-    if (!this.cur) return false;
-    const skips = Array.isArray(this.cur.ep && this.cur.ep.skipTimes) ? this.cur.ep.skipTimes : [];
-    const segment = skips.find((x) => ['ed', 'mixed-ed', 'mixed-ending'].includes(x.skipType) && this.cur.pos >= x.start && this.cur.pos < x.end);
-    if (segment) return this.skipSegment(segment.end);
-    if (!this.cur.series || !this.cur.series.outroDuration || !this.cur.dur) return false;
-    this.cur.session.seekAbsolute(Math.max(0, this.cur.dur - this.cur.series.outroDuration));
-    return true;
-  }
-
+  skipIntro() {return this.skipCurrentSegment('intro');}
+  skipEnding() {return this.skipCurrentSegment('ending');}
+  seekRelative(seconds) {if(!this.cur)return false;this.cur.session.seekRelative(seconds);return true;}
+  seekAbsolute(seconds) {if(!this.cur)return false;this.cur.session.seekAbsolute(seconds);return true;}
   skipSegment(end) {
-    if (!this.cur || !Number.isFinite(Number(end))) return false;
-    this.cur.session.seekAbsolute(Number(end));
-    return true;
+    // A stale UI offer must never seek to a timestamp belonging to an earlier episode.
+    const cur=this.cur,segment=cur?.ep?.skipTimes?.find(x=>x.end===end);
+    if(!segment)return Promise.resolve(false);
+    return this.skipCurrentSegment(segment && ['op','mixed-op'].includes(segment.skipType)?'intro':'ending');
   }
-
-  skipCurrentSegment(kind) {
-    if (!this.cur) return false;
-    const skips = Array.isArray(this.cur.ep && this.cur.ep.skipTimes) ? this.cur.ep.skipTimes : [];
-    const types = kind === 'intro' ? ['op', 'mixed-op'] : ['ed', 'mixed-ed', 'mixed-ending'];
-    const segment = skips.find((x) => types.includes(x.skipType) && this.cur.pos >= x.start && this.cur.pos < x.end);
-    if (segment) return this.skipSegment(segment.end);
-    return kind === 'intro' ? this.skipIntro() : this.skipEnding();
+  async skipCurrentSegment(kind,expected) {
+    const cur=this.cur;
+    if(!cur || !this._current(cur) || cur.skipBusy || Date.now()<(cur.skipCooldown||0))return false;
+    if(expected && (expected.requestId!==cur.requestId || expected.seriesId!==cur.series?.id || expected.episodeId!==cur.ep?.id))return false;
+    cur.skipBusy=true;
+    try {
+      const time=await cur.session.request(['get_property','time-pos']);
+      const duration=await cur.session.request(['get_property','duration']);
+      if(!this._current(cur))return false;
+      const previous=cur.lastManualSkip;
+      const decision=previous?.kind===kind && time>=previous.target && time<=previous.target+NEAR_SECONDS
+        ? {ok:false,reason:'repeat-destination'} : decideSkip({episode:cur.ep,time,duration,kind});
+      if(decision.ok){
+        await cur.session.request(['seek',decision.target,'absolute+exact']);
+        if(!this._current(cur))return false;
+        cur.skipCooldown=Date.now()+1200;
+        cur.lastManualSkip={kind,target:decision.target};
+      }
+      const now=Date.now(),label=kind==='intro'?'Opening':'Ending',it=this.store.data.settings.language==='it';
+      if(now-(cur.lastSkipOsd||0)>1500){cur.session.send(['show-text',`${label} ${it?(decision.ok?'saltata':'non disponibile'):(decision.ok?'skipped':'unavailable')}`,1200]);cur.lastSkipOsd=now;}
+      return decision.ok;
+    }catch{return false;}finally{cur.skipBusy=false;}
   }
 
   async stop({invalidate = true,reason = 'app-stop'} = {}) {
