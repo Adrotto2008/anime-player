@@ -44,7 +44,7 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings,workQueue
       if (target) store.setMembership(series.id,{franchiseId,category:category || 'other'});
       operation?.setSeries(series.id);report({phase:'identification',status:'completed',done:1,total:1});
       report({phase:'library',status:'completed',done:1,total:1});
-      const source=sourceQueue.enqueue(series.id,[series.title],{priority:'background',isCurrent:valid});sourceJobs++;
+      const source=sourceQueue.enqueue(series.id,[series.title],{priority:'background',isCurrent:valid,onProgress:progress=>report({phase:'sources',itemId:series.id,detail:`${progress.provider}: ${progress.episodesFound||0} found, ${progress.episodesAdded||0} added`})});sourceJobs++;
       track('sources',series.id,source);
       const rating=work(`imdb:${series.id}`,context=>addRatings(series,null,context));additionalJobs++;
       track('additionalMetadata',series.id,rating);
@@ -156,7 +156,7 @@ function createSeriesAdder({ store, metadata, sourceQueue, loadRatings,workQueue
       const units=Model.units(series);
       if (!existing || !units.length || units.some((episode) => !episode.sources.length)) {
         const sourcePromise=sourceQueue.enqueue(series.id,[media.title,media.altTitle,...(media.titleAliases||[])].filter(Boolean),{
-          priority:'background',isCurrent:valid});
+          priority:'background',isCurrent:valid,onProgress:progress=>report({phase:'sources',itemId:series.id,detail:`${progress.provider}: ${progress.episodesFound||0} found, ${progress.episodesAdded||0} added`})});
         sourceJobs++;
         track('sources',series.id,sourcePromise);
         sourceIds.push(series.id);

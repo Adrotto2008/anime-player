@@ -2,7 +2,7 @@ const { contextBridge, ipcRenderer } = require('electron');
 
 const INVOKE = new Set([
   'series:videoPreference', 'series:imdbSelect', 'episodes:sourceLanguage', 'player:languageFallback',
-  'lib:get', 'library:export', 'library:import', 'series:search', 'series:create', 'series:addStart', 'series:addTasks', 'series:addCancel', 'series:addRetry', 'series:translateDescription', 'series:update', 'series:delete', 'series:refresh', 'series:ratings', 'series:discoverSources', 'movie:addLink', 'movie:play','content:addLink',
+  'lib:get', 'library:export', 'library:import', 'series:search', 'series:create', 'series:addStart', 'series:addTasks', 'series:addCancel', 'series:addRetry', 'series:update', 'series:delete', 'series:refresh', 'series:ratings', 'series:discoverSources', 'movie:addLink', 'movie:play','content:addLink',
   'franchise:create','franchise:update','franchise:member','franchise:reorder','franchise:mergePreview','franchise:merge','franchise:delete','franchise:discover','franchise:accept','franchise:reject',
   'franchise:linkPreview','franchise:linkCreate','franchise:linkDecide','franchise:linkManual',
   'patterns:detect', 'episodes:addPattern', 'episodes:addList', 'episodes:addM3U', 'episodes:setSources', 'episodes:checkSources', 'episodes:delete', 'episodes:mark', 'episodes:rate',

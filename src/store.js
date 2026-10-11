@@ -19,7 +19,7 @@ const DEFAULT_SETTINGS = {
   defaultPreset: 'aa-hq',
   theme: 'default',
   language: 'en',
-  descriptionMode:'translated',
+  descriptionMode:'original',
   onboardingComplete: false,
   autoplayNext: true,
   alang: 'jpn,ja,eng,en',

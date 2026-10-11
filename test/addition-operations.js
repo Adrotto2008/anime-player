@@ -67,3 +67,14 @@ test('account switch invalidates a running task before late writes are reported'
   const result=await service.wait(taskId);
   assert.equal(result.status,'cancelled');
 });
+
+test('partial provider state survives a later successful job and remains retryable',async()=>{
+ const {service}=harness(async(_payload,{operation:op})=>{
+  op.track('sources','failed',Promise.resolve({status:'partial'}));
+  op.track('sources','ok',new Promise(resolve=>setImmediate(()=>resolve({episodesFound:1}))));
+  return{id:'saved'};
+ });
+ const {taskId}=service.start({title:'Partial'});assert.equal((await service.wait(taskId)).status,'partial');
+ assert.equal(service.list()[0].stages.sources.status,'partial');assert.equal(service.retry(taskId),true);
+ await service.wait(taskId);service.dispose();
+});

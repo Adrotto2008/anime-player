@@ -3,7 +3,8 @@ const path = require('node:path');
 const { execFileSync } = require('node:child_process');
 
 const electronInstaller = require.resolve('electron/install.js');
-execFileSync(process.execPath, [electronInstaller], { stdio: 'inherit' });
+let existing;try{existing=require('electron');}catch{}
+if(!existing || !fs.existsSync(existing))execFileSync(process.execPath, [electronInstaller], { stdio: 'inherit' });
 
 const electronBinary = require('electron');
 if (typeof electronBinary !== 'string' || !fs.existsSync(electronBinary)) {

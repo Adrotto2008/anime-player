@@ -17,6 +17,14 @@ const { createAdditionOperationService } = require('./src/addition-operations');
 const { createWorkQueue } = require('./src/work-queue');
 const { discoverSeriesSources: discoverSources, createSourceDiscoveryQueue } = require('./src/source-discovery');
 
+// Source checkouts use a disposable local profile, never the installed app's profile.
+if(!app.isPackaged){
+  const profile=path.resolve(__dirname,'.isolated-user-data');
+  fs.mkdirSync(profile,{recursive:true});
+  app.setPath('userData',profile);
+  fs.mkdirSync(path.join(profile,'session'),{recursive:true});
+  app.setPath('sessionData',path.join(profile,'session'));
+}
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 let win; let store; let player; let cloud; let roomSubscription;
@@ -181,13 +189,6 @@ function register() {
   h('series:addTasks',()=>additions.list());
   h('series:addCancel',id=>additions.cancel(id));
   h('series:addRetry',id=>{if(!additions.retry(id))throw new Error('Operazione non ripetibile.');return additions.list();});
-  h('series:translateDescription',async(id,language)=>{
-    const scope=store.scope,record=store.getSeries(id);if(!record)throw new Error('Opera non trovata.');
-    const result=await meta.resolveDescription(record,language);
-    if(scope!==store.scope||!store.getSeries(id))return{cancelled:true};
-    if(result.status==='translated'){store.setDescriptionTranslation(id,language,result.translations[language]);return{...result,lib:lib()};}
-    return{...result,lib:lib()};
-  });
   const franchiseService=require('./src/franchise-service').createFranchiseService({store,metadata:meta,sourceQueue,player,addSeries,loadRatings:id=>ratings.load(id),cancelAddition:id=>additions.cancelForSeries(id)});
   h('franchise:create',(sid)=>{const record=store.getSeries(sid);if(!record)throw new Error('Opera non trovata.');const group=store.ensureFranchise({title:record.title,cover:record.cover,banner:record.banner,rootAniListId:record.anilistId});store.setMembership(sid,{franchiseId:group.id});return{lib:lib(),id:group.id};});
   h('franchise:update',(id,patch)=>{store.updateFranchise(id,patch);return lib();});
@@ -407,7 +408,7 @@ app.whenReady().then(async () => {
     },
   });
   cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send,
-    beforeLibrarySwitch: () => player.stop({reason:'account-change'}), isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+    beforeLibrarySwitch: () => player.stop({reason:'account-change'}), env: app.isPackaged ? process.env : {}, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
   register();
   const detected = await mpvManager.find(store.data.settings.mpvPath);

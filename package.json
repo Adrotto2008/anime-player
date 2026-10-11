@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.40",
+  "version": "0.5.41",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -70,6 +70,9 @@
       "createStartMenuShortcut": true,
       "shortcutName": "Anime Player",
       "deleteAppDataOnUninstall": false
+    },
+    "directories": {
+      "output": "dist-phase4-complete"
     }
   },
   "dependencies": {

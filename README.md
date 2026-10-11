@@ -1,9 +1,17 @@
 # Anime Player
 
-Anime Player **v0.5.39** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.41** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Phase 4 completion — 0.5.41
+
+- Descriptions always show the saved original (or legacy description). Automatic translation is a retired product feature. No translation IPC/request or language selector remains; existing translation caches and preferences are retained as archival data through refresh and import/export/cloud.
+- Source runs use the checkout-local, ignored .isolated-user-data profile. They never open the installed personal app profile or inherit Supabase keys. Packaged app profiles retain their normal behavior.
+- npm run dist builds Windows x64 portable and NSIS into dist-phase4-complete. Builds default to offline with an empty bundled Supabase config, replace stale checkout build resources without reading them, and never consult AppData. No previous packages are deleted.
+- To opt into public client configuration, explicitly set SUPABASE_CONFIG_FILE to a JSON file containing only url and publishableKey. Private/secret/service_role keys, credentials, session fields and credential-bearing URLs are rejected. Neither implicit SUPABASE_URL nor key environment variables are packaging inputs. The build does not log keys or contact Supabase. This completion was built offline.
+- See [Phase 4 report and isolated manual plan](docs/async-loading-descriptions-4.md).
 
 ## Independent linked franchises — 0.5.39
 
@@ -225,9 +233,7 @@ The build targets the operating system where the command runs:
 - macOS: DMG and ZIP application packages.
 - Linux: AppImage and DEB packages.
 
-Each build removes older `AnimePlayer-Setup-*.exe` installers first, so `dist`
-contains only the installer for the current version. Run `npm run check` for
-tests, syntax checks, and whitespace validation without building. Run
+Builds preserve previous packages and write Phase 4 outputs into dist-phase4-complete. npm run check runs tests, syntax checks, and whitespace validation without building. Run
 `npm run dist` to perform those checks and build packages for the current OS.
 Build each platform on that platform; macOS signing/notarization needs an Apple
 developer identity, and Windows/Linux cross-builds may need additional tools.
@@ -275,12 +281,11 @@ Anime Player does not download video files.
 
 The Supabase client runs in Electron's main process, using the `ws` transport
 because the app's Electron/Node 20 runtime does not provide a native WebSocket.
-Release builds include the project's public client configuration automatically,
-so users do not need to create configuration files. The build reads it from the
-developer's local app-data config or `SUPABASE_URL` and
-`SUPABASE_PUBLISHABLE_KEY` environment variables. The app rejects any URL other
-than the `anime-player` project. Never use a secret or `service_role` key. Do
-not commit local config or `.env` files.
+Builds are offline by default. Public client configuration is included only when
+SUPABASE_CONFIG_FILE is explicitly provided, with exactly url and publishableKey.
+No AppData config or implicit environment keys are read by the build. The app
+rejects URLs outside the anime-player project; secret and service_role keys are
+forbidden. Do not commit local config or .env files.
 
 The app asks whether to sign in or create an account at startup, and the Account
 item remains available in the navigation. Auth sessions are encrypted with

@@ -58,6 +58,9 @@ app.whenReady().then(async () => {
   handle('series:create',createResult);
   handle('series:addStart',payload=>({...createResult(payload),taskId:'fixture-addition'}));
   handle('series:addTasks',()=>[]);
+  const additionClicks=[];
+  handle('series:addCancel',id=>{additionClicks.push(['cancel',id]);return true;});
+  handle('series:addRetry',id=>{additionClicks.push(['retry',id]);return [];});
   win = new BrowserWindow({show:false,webPreferences:{preload:path.join(__dirname,'../preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!screenshotDir}});
   win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message)});
   store.on('changed',()=>win.webContents.send('lib:changed',store.snapshot()));
@@ -221,6 +224,28 @@ app.whenReady().then(async () => {
   await js(`(document.querySelector('.library-search input') || document.querySelector('input[placeholder="'+window.i18n.t('filterLibrary')+'"]').focus())`);
   win.webContents.sendInputEvent({type:'char',keyCode:'m'});await tick();
   assert.ok((await js(`document.querySelector('input[placeholder="'+window.i18n.t('filterLibrary')+'"]').value`)).includes('m'));
+  if(!baselineRenderer){
+    const task={id:'phase4',title:'Background work',status:'running',phase:'metadata',updatedAt:1,stages:{metadata:{done:0,total:null,status:'running',items:[]}}};
+    win.webContents.send('addition:progress',{task});await tick();
+    assert.equal(await js("document.querySelector('.addition-card progress').hasAttribute('value')"),false);
+    // Navigation and library rerenders cannot lose an in-flight operation.
+    await js("Array.from(document.querySelectorAll('#rail .nav')).find(x=>x.textContent===window.i18n.t('library')).click()");await tick();
+    assert.ok(await js("document.querySelector('.addition-card').textContent.includes('Background work')"));
+    task.phase='sources';task.stages.sources={done:2,total:3,status:'running',items:[{id:'unit',detail:'animeworld: 2 found, 2 added'}]};
+    win.webContents.send('addition:progress',{task});await tick();
+    assert.equal(await js("document.querySelector('.addition-card progress').value"),2);
+    assert.equal(await js("document.querySelector('.addition-card progress').max"),3);
+    await js("document.querySelector('.addition-card button:last-child').click()");await tick();
+    assert.deepEqual(additionClicks[0],['cancel','phase4']);
+    task.status='partial';task.phase='partial';win.webContents.send('addition:progress',{task});await tick();
+    assert.ok(await js("document.querySelector('.addition-card').textContent.includes(window.i18n.t('retry'))"));
+    await js("document.querySelector('.addition-card button:last-child').click()");await tick();
+    assert.deepEqual(additionClicks[1],['retry','phase4']);
+
+    await js("Array.from(document.querySelectorAll('#rail .nav')).find(x=>x.textContent===window.i18n.t('settings')).click()");await tick();
+    assert.equal(await js("document.querySelector('#dialog-root').textContent.includes(window.i18n.t('descriptionMode'))"),false);
+    await js("document.querySelector('#dialog-root .icon-btn').click()");await tick();
+  }
   assert.deepStrictEqual(errors,[]);
   if(!baselineRenderer) {
     win.webContents.send('player:error','mpv non risponde alla connessione di controllo.');await tick();
@@ -229,7 +254,7 @@ app.whenReady().then(async () => {
     await js(`Array.from(document.querySelectorAll('#dialog-root button')).find(x=>x.textContent===window.i18n.t('playerDiagnostics')).click()`);await tick();
     assert.ok((await js(`document.querySelector('#dialog-root pre').textContent`)).includes('ipc-timeout'));
   }
-  report({ok:true,cases:['season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation','repaired One Piece group title and seasons','saved Monsters standalone navigation','empty categories hidden','manual franchise title','franchise deletion warning and Escape cancellation','management menu survives background saves','manual season attachment and reclassification','manual film attachment and links','film sources and video preference without synthetic episodes','franchise merge preview with explicit duplicate preservation','complete group deletion and immediate keyboard search','player error notification and diagnostics dialog'],errors});
+  report({ok:true,cases:['phase4 indeterminate and counted progress','phase4 navigation during background work','phase4 cancel and reachable retry','original-only description and hidden retired setting','season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation','repaired One Piece group title and seasons','saved Monsters standalone navigation','empty categories hidden','manual franchise title','franchise deletion warning and Escape cancellation','management menu survives background saves','manual season attachment and reclassification','manual film attachment and links','film sources and video preference without synthetic episodes','franchise merge preview with explicit duplicate preservation','complete group deletion and immediate keyboard search','player error notification and diagnostics dialog'],errors});
   console.log('Electron Windows: deletion/input/search/navigation/thumbnails; keyboard version selector, availability, explicit fallback approval and Escape cancellation verified.');
   clearTimeout(store._timer); clearTimeout(timeout); win.destroy(); app.exit(0);
 }).catch(error=>{report({ok:false,error:error.stack});console.error(error);clearTimeout(timeout);if(win)win.destroy();app.exit(1);});

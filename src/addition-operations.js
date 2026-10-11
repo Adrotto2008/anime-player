@@ -34,9 +34,9 @@ function createAdditionOperationService({store,addSeries,notify=()=>{},schedule=
       const raw=typeof promise==='function'?Promise.resolve().then(()=>current()?promise({signal:controller.signal,isCurrent:current}):{cancelled:true}):Promise.resolve(promise);
       const wrapped=raw.then(result=>{
         if(!current())return{cancelled:true};
-        stage.done++;const item=stage.items.find(entry=>entry.id===String(itemId));if(item)item.status=result?.cancelled?'cancelled':result?.unavailable||result?.status==='error'?'partial':'completed';
-        if(result?.unavailable||result?.status==='error'){stage.status='partial';task.message='partial';}
-        else if(stage.done===stage.total)stage.status='completed';
+        stage.done++;const item=stage.items.find(entry=>entry.id===String(itemId));if(item)item.status=result?.cancelled?'cancelled':result?.unavailable||['error','partial'].includes(result?.status)?'partial':'completed';
+        if(result?.unavailable||['error','partial'].includes(result?.status)){stage.status='partial';task.message='partial';}
+        else if(stage.done===stage.total && stage.status!=='partial')stage.status='completed';
         if(result?.episodesFound!=null){task.summary.episodesFound=(task.summary.episodesFound||0)+Number(result.episodesFound||0);task.summary.episodesAdded=(task.summary.episodesAdded||0)+Number(result.episodesAdded||0);}
         send(task);return result;
       }).catch(error=>{

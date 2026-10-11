@@ -24,7 +24,7 @@ function film(store,format='MOVIE') {
 function ipc(store,player) {
   if(!player.beginRequest)player=Object.assign(new PlayerManager({store,paths:{userData:path.dirname(store.file),shaderDir:''},notify:()=>{}}),player);
   const handlers={},repo=path.join(__dirname,'..'),req=require('module').createRequire(path.join(repo,'main.js'));
-  const electron={app:{requestSingleInstanceLock:()=>true,whenReady:()=>({then:()=>{}}),on:()=>{},quit:()=>{}},
+  const electron={app:{isPackaged:true,requestSingleInstanceLock:()=>true,whenReady:()=>({then:()=>{}}),on:()=>{},quit:()=>{}},
     ipcMain:{handle:(ch,fn)=>handlers[ch]=(...args)=>fn(null,...args)}};
   const context={require:name=>name==='electron'?electron:req(name),__dirname:repo,module:{exports:{}},process,console,setTimeout,clearTimeout};
   vm.runInNewContext(fs.readFileSync(path.join(repo,'main.js'),'utf8')+'\nmodule.exports.fixture=(s,p,m)=>{store=s;player=p;mpvManager=m;register();};',context,{filename:'main.js'});

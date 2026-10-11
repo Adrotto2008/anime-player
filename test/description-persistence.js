@@ -18,9 +18,16 @@ test('original and exact-revision translations survive save, reopen, export/impo
   const merged=mergeLibrarySnapshots(imported.snapshot(),remote);
   assert.equal(merged.series[0].descriptionOriginal,'Original synopsis');assert.equal(merged.series[0].descriptionTranslations.it.text,entry.text);assert.equal(merged.settings.descriptionMode,'original');
 });
-test('refresh invalidates only translations whose original synopsis changed',t=>{
+test('refresh preserves archived translations even when the original synopsis changes',t=>{
   const {store}=fixture(t),series=store.addSeries({title:'Synopsis fixture',description:'First',descriptionLanguage:'en',descriptionSource:'AniList'});
   store.setDescriptionTranslation(series.id,'it',{text:'Uno',provider:'fixture',originalHash:require('../src/descriptions').hashDescription('First'),updatedAt:1});
+  store.setSettings({descriptionMode:'translated'});
+  series.descriptionTranslations.fr={text:'Archive FR',originalHash:'older',provider:'historical',custom:'retained'};
   store.refreshSeriesMetadata(series.id,{description:'Second',descriptionLanguage:'en',descriptionSource:'AniList'});
-  assert.equal(series.descriptionOriginal,'Second');assert.deepEqual(series.descriptionTranslations,{});
+  assert.equal(series.descriptionOriginal,'Second');assert.equal(series.descriptionTranslations.it.text,'Uno');
+  const remote=expandLibraryFromCloud(compressLibraryForCloud(store.snapshot()));
+  const merged=mergeLibrarySnapshots(store.snapshot(),remote);
+  assert.equal(merged.series[0].descriptionTranslations.it.text,'Uno');
+  assert.deepEqual(merged.series[0].descriptionTranslations.fr,series.descriptionTranslations.fr);
+  assert.equal(merged.settings.descriptionMode,'translated');
 });

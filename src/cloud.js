@@ -162,7 +162,7 @@ function mergeDescriptions(winner,older,...records){
   const original=String(winner.descriptionOriginal ?? winner.description ?? older.descriptionOriginal ?? older.description ?? '');
   const translations={};
   for(const record of records)for(const [language,entry] of Object.entries(Descriptions.descriptionFields(record).descriptionTranslations)){
-    if(entry.originalHash!==Descriptions.hashDescription(original))continue;
+    if(!entry || typeof entry!=='object')continue;
     const previous=translations[language];if(!previous||entry.updatedAt>previous.updatedAt)translations[language]=entry;
   }
   const source=winner.descriptionOriginal!=null||winner.description!=null?winner:older;

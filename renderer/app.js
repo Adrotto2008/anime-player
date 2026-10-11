@@ -160,28 +160,9 @@ async function mutate(ch, ...args) { const lib = await call(ch, ...args); if (li
 
 const getSeries = (id) => state.lib.series.find((s) => s.id === id);
 function displayedDescription(record){
-  if(!record)return'';
-  if(state.lib.settings.descriptionMode==='original')return record.descriptionOriginal??record.description??'';
-  const language=state.lib.settings.language||'en',entry=record.descriptionTranslations?.[language];
-  const source=record.descriptionOriginal??record.description??'';
-  if(entry?.text&&entry.originalHash&&entry.text.trim())return entry.text;
-  const requestKey=`${record.id}:${language}:${source}`;
-  if(source&&!state.descriptionRequests.has(requestKey)){
-    const key=requestKey;state.descriptionRequests.add(key);
-    api.invoke('series:translateDescription',record.id,language).then(result=>{
-      if(result?.lib)state.lib=result.lib;
-      if(result?.status==='unavailable')state.descriptionRequests.add(key);
-      render();
-    }).catch(()=>{});
-  }
-  return source;
+  return record?.descriptionOriginal ?? record?.description ?? '';
 }
-function descriptionNotice(record){
-  if(!record)return null;
-  if(state.lib.settings.descriptionMode==='original')return t('descriptionOriginalShown');
-  const language=state.lib.settings.language||'en';
-  return record.descriptionTranslations?.[language]?.text?t('descriptionAutoTranslated'):t('descriptionFallback');
-}
+function descriptionNotice(record){return record ? t('descriptionOriginalShown') : null;}
 const presetLabel = (id) => (state.presets.find((p) => p.id === id) || {}).label || id;
 const defaultPreset = () => state.lib.settings.defaultPreset || 'aa-hq';
 
@@ -222,12 +203,12 @@ const field = (label, input) => h('label', { class: 'field' }, h('span', null, l
 function renderRail() {
   const v = state.view.name; const hasMpv = !!state.lib.settings.mpvPath;
   const navBtn = (label, ico, onclick, current) => h('button', { class: 'nav', 'aria-current': current ? 'page' : null, onclick }, ico ? icon(ico, 19) : null, h('span', null, label));
-  const activeAdds=state.additions.filter(task=>['pending','running'].includes(task.status));
+  const activeAdds=[...state.additions].sort((a,b)=>Number(['pending','running'].includes(b.status))-Number(['pending','running'].includes(a.status)) || b.updatedAt-a.updatedAt);
   const addPanel=activeAdds.length?h('div',{class:'addition-panel'},h('div',{class:'nav-label'},t('additionActivity')),...activeAdds.slice(0,3).map(task=>h('div',{class:'addition-card'},
     h('button',{class:'link addition-title',onclick:()=>openAdditionDetails(task.id)},task.title||t('addSeries')),
-    h('small',{class:'muted'},t('additionPhase_'+task.phase)),
-    task.stages?.[task.phase]?.total!=null?h('progress',{max:Math.max(1,task.stages[task.phase].total),value:task.stages[task.phase].done}):h('progress'),
-    h('button',{class:'link',onclick:()=>call('series:addCancel',task.id)},t('cancel'))))):null;
+    h('small',{class:'muted'},['pending','running'].includes(task.status)?t('additionPhase_'+task.phase):t('additionStatus_'+task.status)),
+    ['pending','running'].includes(task.status)?(task.stages?.[task.phase]?.total!=null?h('progress',{max:Math.max(1,task.stages[task.phase].total),value:task.stages[task.phase].done}):h('progress')):null,
+    ['pending','running'].includes(task.status)?h('button',{class:'link',onclick:()=>call('series:addCancel',task.id)},t('cancel')):['partial','failed'].includes(task.status)?h('button',{class:'link',onclick:async()=>{state.additions=await call('series:addRetry',task.id);renderRail();}},t('retry')):null))):null;
   $('#rail').replaceChildren(
     h('div', { class: 'brand' }, h('span', { class: 'brand-mark' }, icon('play', 17)), h('span', { class: 'brand-copy' }, h('b', null, 'Anime Player'), h('small', null, 'mpv + Anime4K'))),
     h('div', { class: 'nav-label' }, t('navBrowse')),
@@ -251,7 +232,7 @@ function renderRail() {
 function openAdditionDetails(id){
   const task=state.additions.find(item=>item.id===id);if(!task)return;
   openDialog(task.title||t('addSeries'),close=>[
-    ...Object.entries(task.stages||{}).map(([phase,stage])=>h('div',{class:'addition-stage'},h('b',null,t('additionPhase_'+phase)),h('span',{class:'muted'},`${stage.done}/${stage.total??'…'} · ${t('additionStatus_'+stage.status)}`))),
+    ...Object.entries(task.stages||{}).map(([phase,stage])=>h('div',{class:'addition-stage'},h('b',null,t('additionPhase_'+phase)),h('span',{class:'muted'},`${stage.done}/${stage.total??'…'} · ${t('additionStatus_'+stage.status)}`),...(stage.items||[]).filter(item=>item.detail).map(item=>h('small',{class:'muted'},item.detail)))),
     task.message?h('p',{class:'muted'},t('additionMessage_'+task.message)):null,
     h('div',{class:'foot'},task.status==='partial'||task.status==='failed'?h('button',{class:'btn primary',onclick:async()=>{state.additions=await call('series:addRetry',id);renderRail();close();}},t('retry')):null,
       ['pending','running'].includes(task.status)?h('button',{class:'btn danger',onclick:async()=>{await call('series:addCancel',id);close();}},t('cancelOperation')):null,
@@ -1445,9 +1426,6 @@ function openSettings() {
     const theme = h('select', { class: 'input select', value: st.theme || 'default' },
       h('option', { value: 'default' }, t('default')),
       h('option', { value: 'compact' }, t('compact')));
-    const descriptionMode=h('select',{class:'input select',value:st.descriptionMode||'translated'},
-      h('option',{value:'translated'},t('descriptionTranslated')),
-      h('option',{value:'original'},t('descriptionOriginal')));
     const language = h('select', { class: 'input select', value: st.language || 'en' },
       h('option', { value: 'en' }, 'English'),
       h('option', { value: 'it' }, 'Italiano'));
@@ -1476,10 +1454,10 @@ function openSettings() {
       sec(t('secPlayback'),
         toggle(auto, t('autoplay')), toggle(skipOpening, t('autoSkipOpening')), toggle(skipEnding, t('autoSkipEnding')),
         h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang))),
-      sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language),field(t('descriptionMode'),descriptionMode))),
+      sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language))),
       sec(t('secAdvanced'), field(t('userAgent'), ua), field(t('extraArgs'), extra)),
       h('div', { class: 'foot' }, h('span', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`), h('button', { class: 'btn', onclick: close }, t('cancel')),
-        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value,descriptionMode:descriptionMode.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
+        h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
   });
 }
 

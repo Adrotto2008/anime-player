@@ -6,12 +6,9 @@ const textValue=value=>typeof value==='string'?value:'';
 function hash(text){return crypto.createHash('sha256').update(textValue(text),'utf8').digest('hex');}
 function descriptionFields(record={}){
   const original=textValue(record.descriptionOriginal ?? record.description);
-  const translations={};
-  for(const language of LANGUAGES){
-    const entry=record.descriptionTranslations?.[language];
-    if(entry && typeof entry.text==='string' && entry.originalHash===hash(original) && typeof entry.provider==='string')
-      translations[language]={text:entry.text,originalHash:entry.originalHash,provider:entry.provider,updatedAt:Math.max(0,Number(entry.updatedAt)||0)};
-  }
+  // Legacy caches are archival data. Preserve them even after source refresh.
+  const translations=record.descriptionTranslations && typeof record.descriptionTranslations==='object' && !Array.isArray(record.descriptionTranslations)
+    ? structuredClone(record.descriptionTranslations) : {};
   return {description:original,descriptionOriginal:original,
     descriptionLanguage:typeof record.descriptionLanguage==='string'?record.descriptionLanguage:'unknown',
     descriptionSource:typeof record.descriptionSource==='string'?record.descriptionSource:(record.description?'legacy':'unknown'),
@@ -25,7 +22,7 @@ function createDescriptionService({provider=null,now=Date.now,timeoutMs=15000}={
     if(!original)return{text:'',status:'empty',language:target,translations:fields.descriptionTranslations};
     if(!LANGUAGES.has(target))return{text:original,status:'original',language:fields.descriptionLanguage,translations:fields.descriptionTranslations};
     const cached=fields.descriptionTranslations[target];
-    if(cached)return{text:cached.text,status:'translated',language:target,provider:cached.provider,translations:fields.descriptionTranslations};
+    if(cached?.text && cached.originalHash===hash(original))return{text:cached.text,status:'translated',language:target,provider:cached.provider,translations:fields.descriptionTranslations};
     const key=`${target}:${hash(original)}`;
     if(!provider)return{text:original,status:'unavailable',language:fields.descriptionLanguage,translations:fields.descriptionTranslations};
     if(failures.get(key)>now())return{text:original,status:'unavailable',language:fields.descriptionLanguage,translations:fields.descriptionTranslations};
