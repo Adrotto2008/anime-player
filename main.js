@@ -15,6 +15,7 @@ const { createSeriesAdder } = require('./src/series-addition');
 const { createRatingsService } = require('./src/ratings-service');
 const { createAdditionOperationService } = require('./src/addition-operations');
 const { createWorkQueue } = require('./src/work-queue');
+const { createOrganizationService } = require('./src/organization-service');
 const { discoverSeriesSources: discoverSources, createSourceDiscoveryQueue } = require('./src/source-discovery');
 
 // Source checkouts use a disposable local profile, never the installed app's profile.
@@ -62,6 +63,10 @@ function register() {
   const h = (ch, fn) => ipcMain.handle(ch, async (_e, ...a) => fn(...a));
 
   h('lib:get', () => lib());
+  const organization=createOrganizationService({store});
+  h('organization:context',()=>organization.context());
+  h('organization:move',command=>organization.move(command));
+  h('organization:section',command=>organization.section(command));
   h('app:version', () => app.getVersion());
   h('auth:state', () => cloud.getSession());
   h('auth:signUp', (email, password) => cloud.signUp(email, password));

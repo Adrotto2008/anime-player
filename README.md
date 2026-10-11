@@ -1,9 +1,17 @@
 # Anime Player
 
-Anime Player **v0.5.41** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.42** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Home and library organization — 0.5.42
+
+- Organize mode provides separate pointer/touch handles, a moving preview, animated neighboring cards, clear drop targets, edge scrolling and Escape cancellation. Keyboard: Space/Enter picks up, arrows move, Ctrl + arrows switch compatible sections, Enter saves. Reduced motion skips reorder animation; normal card navigation and management menus remain available.
+- Home sections, library franchises/standalone works, continue/recent cards and works within franchise categories retain manual ordering. Explicit visual collections organize library cards without changing AniList metadata, franchise membership or linked franchises. Empty categories/collections become drop targets in Organize mode. Category changes and detachment show a confirmation and use existing membership validation.
+- Additive organization preferences have their own per-list, per-placement and per-collection timestamps. Relative drop commands operate on current IDs, retain unseen/concurrently added works and reject stale membership, anchors or account scopes. Background saves defer DOM replacement during drag. Import/export, reopen and private snapshot sync retain the layout; late acknowledgements rebase entire preferences and membership decisions and keep unsent edits pending.
+- Real visible Windows Electron tests cover mouse/keyboard, emulated touch, animation, cancellation, background updates, responsive windows and reduced motion, with synthetic 100/400/1000-work benchmarks. Node tests exercise rollback and held CloudService requests. No new dependency, schema migration, personal data or live account is used. See [Phase 5 design, conflict rules and safe manual checks](docs/home-organization-5.md).
+- Windows portable and NSIS outputs for this phase use `dist-phase5`; earlier packages are preserved. Builds remain offline by default.
 
 ## Phase 4 completion — 0.5.41
 
@@ -233,7 +241,7 @@ The build targets the operating system where the command runs:
 - macOS: DMG and ZIP application packages.
 - Linux: AppImage and DEB packages.
 
-Builds preserve previous packages and write Phase 4 outputs into dist-phase4-complete. npm run check runs tests, syntax checks, and whitespace validation without building. Run
+Builds preserve previous packages and write Phase 5 outputs into dist-phase5. npm run check runs tests, syntax checks, and whitespace validation without building. Run
 `npm run dist` to perform those checks and build packages for the current OS.
 Build each platform on that platform; macOS signing/notarization needs an Apple
 developer identity, and Windows/Linux cross-builds may need additional tools.

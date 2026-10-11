@@ -11,6 +11,7 @@ const Franchise = require('./franchise-model');
 const Parts = require('./content-parts');
 const Identity = require('./content-identity');
 const Links = require('./franchise-links');
+const Organization = require('./organization');
 const Descriptions=require('./descriptions');
 
 const DEFAULT_SETTINGS = {
@@ -148,7 +149,7 @@ function validateLibraryData(input) {
   if (new Set(franchises.map(g=>g.id)).size !== franchises.length) throw new Error('Franchise duplicato.');
   const deletedFranchises = (Array.isArray(input.deletedFranchises)?input.deletedFranchises:[]).filter(g=>typeof g?.id === 'string' && Number(g.deletedAt)>0);
   for (const record of series) if (record.franchiseMembership && !Franchise.membership(record.franchiseMembership)) throw new Error('Appartenenza al franchise non valida.');
-  return { settings, settingsUpdatedAt:Math.max(0,Number(input.settingsUpdatedAt)||0), series, franchises, franchiseLinks:Links.validateLinks(input.franchiseLinks), deletedFranchises, deletedSeries, deletedEpisodes, updatedAt: Math.max(0, Number(input.updatedAt) || 0), cloudDirty: Boolean(input.cloudDirty) };
+  return { settings, settingsUpdatedAt:Math.max(0,Number(input.settingsUpdatedAt)||0), organization:Organization.validate(input.organization), series, franchises, franchiseLinks:Links.validateLinks(input.franchiseLinks), deletedFranchises, deletedSeries, deletedEpisodes, updatedAt: Math.max(0, Number(input.updatedAt) || 0), cloudDirty: Boolean(input.cloudDirty) };
 }
 
 class Store extends EventEmitter {
@@ -164,9 +165,11 @@ class Store extends EventEmitter {
   }
 
   load() {
-    let linkError;
+    let linkError,organizationError;
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      try{this.data.organization=Organization.validate(raw.organization);}catch(error){organizationError=error;throw error;}
+      if(!Object.hasOwn(raw,'organization'))this._pendingMigrationBackup=true;
       if(!Object.hasOwn(raw,'settingsUpdatedAt'))this._pendingMigrationBackup=true;
       if(!Object.hasOwn(raw.settings||{},'descriptionMode'))this._pendingMigrationBackup=true;
       this.data.series = Array.isArray(raw.series) ? raw.series : [];
@@ -203,6 +206,8 @@ class Store extends EventEmitter {
       }
     } catch { /* primo avvio o file rovinato: si parte da zero */ }
     if(linkError)throw new Error(`Collegamenti franchise non validi; libreria non modificata: ${linkError.message}`);
+    if(organizationError)throw new Error(`Organizzazione non valida; libreria non modificata: ${organizationError.message}`);
+    this.data.organization ||= Organization.empty();
     const repaired = this.repairFranchiseGroups();
     this.migrateFranchises();
     if (repaired) this.save();
@@ -249,9 +254,11 @@ class Store extends EventEmitter {
   save(now = false, throwOnError = false, { cloud = false, emit = true } = {}) {
     if(this._transactionDepth)return true;
     clearTimeout(this._timer);
+    this._timer=null;
     this.data.updatedAt = cloud ? Math.max(this.data.updatedAt || 0, Date.now()) : Date.now();
     if (!cloud) {this.data.cloudDirty = true;this.revision++;}
     const write = () => {
+      this._timer=null;
       try {
         if(this._pendingMigrationBackup && !this._migrationBackups.has(path.resolve(this.file))) {
           if(this.backup())this._migrationBackups.add(path.resolve(this.file));
@@ -279,7 +286,7 @@ class Store extends EventEmitter {
   // is prepared first; failed backup/write restores both data and revision.
   transaction(fn) {
     if(this._transactionDepth)throw new Error('Transazione già in corso.');
-    const previous=this.snapshot(),revision=this.revision,backupPending=this._pendingMigrationBackup;
+    const previous=this.snapshot(),revision=this.revision,backupPending=this._pendingMigrationBackup,hadPending=this._timer!=null;
     clearTimeout(this._timer);this._transactionDepth=1;
     try {const result=fn();if(result?.then)throw new Error('Transazione asincrona non consentita.');
       this._transactionDepth=0;this.save(true,true,{emit:false});
@@ -287,7 +294,8 @@ class Store extends EventEmitter {
       return result;
     } catch(error){this._transactionDepth=0;this.data=previous;this.revision=revision;this._pendingMigrationBackup=backupPending;
       // Preserve any earlier debounced edits after a failed transaction.
-      this.save(false,false,{cloud:true,emit:false});throw error;}
+      if(hadPending){const originalTime=previous.updatedAt;this.save(false,false,{cloud:true,emit:false});this.data.updatedAt=originalTime;}
+      throw error;}
   }
   recordFranchiseLink(link) {
     const checked=Links.validateLinks([link])[0];

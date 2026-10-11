@@ -1,4 +1,6 @@
 const { execFileSync, execSync } = require('child_process');
+for(const file of ['src/organization.js','src/organization-service.js','renderer/sortable.js','test/organization.js','test/organization-electron.js','test/organization-renderer.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
+execFileSync(process.execPath,['--test','test/organization.js'],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/build-isolation.js'],{stdio:'inherit'});
 for(const file of ['src/descriptions.js','src/addition-operations.js','src/work-queue.js','test/descriptions.js','test/addition-operations.js','test/work-queue.js','test/series-addition-async.js','test/description-persistence.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/descriptions.js','test/addition-operations.js','test/work-queue.js','test/series-addition-async.js','test/description-persistence.js'],{stdio:'inherit'});
@@ -32,6 +34,7 @@ execFileSync(process.execPath, ['test/mpv-manager.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/run.js'], { stdio: 'inherit' });
 for(const file of ['src/episode-ratings.js','test/audit-regressions.js','test/renderer-electron.js','test/renderer-runner.js']) execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 if(process.platform !== 'linux' || process.env.DISPLAY) {
+  execFileSync(process.execPath,['test/organization-renderer.js'],{stdio:'inherit'});
   execFileSync(process.execPath,['test/franchise-links-renderer.js'],{stdio:'inherit'});
   execFileSync(process.execPath, ['test/renderer-runner.js'], { stdio: 'inherit' });
   execFileSync(process.execPath, ['test/ratings-renderer.js'], { stdio: 'inherit' });

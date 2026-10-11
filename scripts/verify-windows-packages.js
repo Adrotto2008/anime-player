@@ -3,7 +3,7 @@
 const fs=require('fs'),path=require('path'),crypto=require('crypto'),assert=require('assert');
 const {execFileSync}=require('child_process'),asar=require('@electron/asar');
 const zip=require('7zip-bin').path7za,root=path.resolve(__dirname,'..');
-const version=require('../package.json').version,output=path.join(root,'dist-phase4-complete');
+const manifest=require('../package.json'),version=manifest.version,output=path.join(root,manifest.build.directories.output);
 const scratch=path.join(root,'.build-resources','verification-'+Date.now());fs.mkdirSync(scratch,{recursive:true});
 const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const extract=(file,dir)=>{fs.mkdirSync(dir,{recursive:true});execFileSync(zip,['x','-y',file,'-o'+dir],{stdio:'pipe',windowsHide:true});};
@@ -33,5 +33,5 @@ for(const [kind,file] of Object.entries(files)){
  report.packages[kind]={file,bytes:fs.statSync(file).size,sha256:hash(fs.readFileSync(file)),...inspect(payload)};
 }
 assert.equal(report.packages.portable.asarHash,report.packages.nsis.asarHash,'package payloads differ');
-const destination=path.resolve(process.argv[2]||path.join(root,'../../outputs/phase4-package-verification.json'));
+const destination=path.resolve(process.argv[2]||path.join(scratch,'package-verification.json'));
 fs.writeFileSync(destination,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));

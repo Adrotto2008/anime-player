@@ -11,6 +11,7 @@ const Language = require('./source-language');
 const Franchise = require('./franchise-model');
 const Identity = require('./content-identity');
 const Links = require('./franchise-links');
+const Organization = require('./organization');
 const Descriptions=require('./descriptions');
 
 function newest(values) {
@@ -140,6 +141,7 @@ function mergeLibrarySnapshots(localInput, remoteInput) {
   return Franchise.migrate({
     settings, series: resultSeries,
     franchiseLinks:Links.mergeLinks(local.franchiseLinks,remote.franchiseLinks),
+    organization:Organization.merge(local.organization,remote.organization),
     settingsUpdatedAt:Math.max(localSettingsAt,remoteSettingsAt),
     franchises:[...franchises.values()].filter(g=>!deletedFranchises.has(g.id) || deletedFranchises.get(g.id)<(Number(g.updatedAt)||0)),
     deletedFranchises:[...deletedFranchises].map(([id,deletedAt])=>({id,deletedAt})),
@@ -704,7 +706,7 @@ class CloudService {
     this.state.libraryRevision = Number(data.revision);
     const pending=!this.store.matchesToken(token) || stateRevision!==this._stateRevision;
     if (library !== base) {
-      if(pending){const current=this.store.snapshot();library=Links.rebaseDecisions(base,current,Identity.rebase(base,current,library));}
+      if(pending){const current=this.store.snapshot();library=Organization.rebase(base,current,Links.rebaseDecisions(base,current,Identity.rebase(base,current,library)),library);}
       const deviceSettings = Object.fromEntries(DEVICE_SETTINGS.map((key) => [key, this.store.data.settings[key]]));
       this.suppressLibrarySync = true;
       try { this.store.applyCloudData({ ...library, settings: { ...library.settings, ...deviceSettings } }, data.updated_at,{pending}); } finally { this.suppressLibrarySync = false; }

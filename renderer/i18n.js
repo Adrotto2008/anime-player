@@ -2,6 +2,16 @@
 
 const DICT = {
   en: {
+    organize:'Organize',organizationDone:'Done',sortManual:'My order',homeSections:'Home sections',organizationSaved:'Layout saved.',
+    organizationHelp:'Drag the handles to organize. Keyboard: Space or Enter to pick up, arrows to move, Ctrl + arrows to change section, Enter to save, Esc to cancel. Collections only change the layout.',
+    dragLabel:title=>`Move ${title}`,dragPicked:title=>`${title} picked up. Use arrows to move or Esc to cancel.`,
+    dragPosition:(title,section,index,total)=>`${title}: ${section}, position ${index} of ${total}.`,dragCancelled:'Move cancelled.',dragFailed:'Move failed. The current library is shown.',
+    newVisualSection:'New collection',editVisualSection:'Rename collection',removeVisualSection:'Remove collection',sectionTitle:'Collection name',emptySection:'This section currently has no content.',
+    visualSectionHint:'A collection organizes the Home visually. Works keep their franchise, identity and metadata.',dropVisualContent:'Drag library cards here in Organize mode.',
+    removeVisualSectionHint:title=>`Remove “${title}”? Its cards return to the Library.`,
+    confirmMembershipMove:'Confirm membership change',confirmMove:'Confirm move',independentWorks:'Independent works',
+    membershipMoveHint:(title,target)=>`Move “${title}” to ${target}? This changes its saved category or franchise membership. Your manual choice takes precedence over future metadata updates.`,
+    independentDropHint:'Drop a work here to explicitly detach it from this franchise. Confirmation is required.',
     additionActivity:'Background additions',additionBackgroundStarted:'The work was saved. Metadata and source discovery continue in the background.',
     additionPhase_identification:'Identifying the work',additionPhase_metadata:'Fetching main metadata',additionPhase_franchise:'Finding related works',additionPhase_library:'Saving to library',additionPhase_additionalMetadata:'Fetching episode metadata and ratings',additionPhase_sources:'Finding streaming sources',
     additionStatus_pending:'Waiting',additionStatus_running:'In progress',additionStatus_completed:'Complete',additionStatus_partial:'Partial',additionStatus_failed:'Failed',additionStatus_cancelled:'Cancelled',
@@ -175,6 +185,16 @@ const DICT = {
     shortcuts: 'Shortcuts', shortcutsHint: 'Customize the keys used by mpv. Leave a skip key empty to disable it.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
+    organize:'Organizza',organizationDone:'Fine',sortManual:'Il mio ordine',homeSections:'Sezioni della Home',organizationSaved:'Disposizione salvata.',
+    organizationHelp:'Trascina le maniglie per organizzare. Tastiera: Spazio o Invio per selezionare, frecce per spostare, Ctrl + frecce per cambiare sezione, Invio per salvare, Esc per annullare. Le raccolte cambiano solo la disposizione.',
+    dragLabel:title=>`Sposta ${title}`,dragPicked:title=>`${title} selezionato. Usa le frecce per spostarlo o Esc per annullare.`,
+    dragPosition:(title,section,index,total)=>`${title}: ${section}, posizione ${index} di ${total}.`,dragCancelled:'Spostamento annullato.',dragFailed:'Spostamento fallito. È mostrata la libreria attuale.',
+    newVisualSection:'Nuova raccolta',editVisualSection:'Rinomina raccolta',removeVisualSection:'Rimuovi raccolta',sectionTitle:'Nome della raccolta',emptySection:'Questa sezione al momento non ha contenuti.',
+    visualSectionHint:'Una raccolta organizza visivamente la Home. Le opere conservano franchise, identità e metadati.',dropVisualContent:'Trascina qui le schede della libreria in modalità Organizza.',
+    removeVisualSectionHint:title=>`Rimuovere “${title}”? Le sue schede tornano nella Libreria.`,
+    confirmMembershipMove:'Conferma cambio di appartenenza',confirmMove:'Conferma spostamento',independentWorks:'Opere indipendenti',
+    membershipMoveHint:(title,target)=>`Spostare “${title}” in ${target}? Cambia la categoria o l’appartenenza al franchise salvata. La tua scelta manuale avrà precedenza sui prossimi aggiornamenti dei metadati.`,
+    independentDropHint:'Trascina qui un’opera per staccarla esplicitamente dal franchise. È richiesta una conferma.',
     additionActivity:'Aggiunte in background',additionBackgroundStarted:'L’opera è stata salvata. Metadati e ricerca dei link continuano in background.',
     additionPhase_identification:'Identificazione dell’opera',additionPhase_metadata:'Recupero metadati principali',additionPhase_franchise:'Ricerca opere correlate',additionPhase_library:'Salvataggio nella libreria',additionPhase_additionalMetadata:'Recupero episodi e voti',additionPhase_sources:'Ricerca sorgenti video',
     additionStatus_pending:'In attesa',additionStatus_running:'In corso',additionStatus_completed:'Completata',additionStatus_partial:'Parziale',additionStatus_failed:'Non riuscita',additionStatus_cancelled:'Annullata',
