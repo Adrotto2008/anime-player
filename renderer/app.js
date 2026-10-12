@@ -3,6 +3,7 @@
 const api = window.animeApi; // il ponte si chiama animeApi: un `const api` accanto a `window.api` darebbe errore di ridichiarazione
 const { setLanguage, t } = window.i18n;
 const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'manual', organizationContext:null, player: { playing: false }, stats: null, ratingLoads: {}, additions: [], descriptionRequests: new Set() };
+let accountDialogClose=null,lastRecoveryNoticeId=null;
 let library=state.lib,chartIndices=new WeakMap(),chartMappings=new WeakMap();
 let updateView,updatePrompt;let startupUpdateShown=false,updatesReady=false;const updateNotifications=new Set();
 function receiveUpdate(payload){
@@ -332,7 +333,7 @@ function openAccountDialog() {
 }
 function openAccountDialogForMode(mode) {
   const status = state.sync;
-  openDialog(t('account'), (close) => {
+  accountDialogClose=openDialog(t('account'), (close) => {
     const info = h('div', { class: 'muted small setup-note' }, status.connected
       ? `${t('accountSignedIn')} ${status.user && status.user.email || ''}.`
       : t('accountIntro'));
@@ -377,12 +378,46 @@ function openAccountDialogForMode(mode) {
     if (!status.configured) {
       items.push(h('p', { class: 'muted small' }, t('accountConfigMissing')), h('p', { class: 'muted small' }, t('accountConfigHelp')));
     } else {
-      items.push(field(t('email'), email), field(t('password'), password), message,
+      items.push(field(t('email'), email), field(t('password'), password), message);
+      if(mode==='signIn')items.push(h('button',{class:'btn ghost',onclick:async()=>{
+        if(!email.value.trim()){email.focus();message.textContent=t('recoveryEnterEmail');return;}
+        message.textContent='';const button=items.find(item=>item?.dataset?.recoveryButton==='true');if(button)button.disabled=true;
+        try{await api.invoke('auth:sendPasswordRecovery',email.value.trim());message.textContent=t('recoverySent');}
+        catch(error){message.textContent=cleanErr(error);}
+        finally{if(button)button.disabled=false;}
+      },'data-recovery-button':'true'},t('forgotPassword')));
+      items.push(
         h('button', { class: 'btn', onclick: switchMode }, t(mode === 'signIn' ? 'switchToSignUp' : 'switchToSignIn')));
     }
     items.push(h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('continueOffline')), status.configured ? submit : null));
     return items;
   });
+}
+function openPasswordResetDialog() {
+  const nextPassword=h('input',{class:'input',type:'password',autocomplete:'new-password',required:true,minlength:'6'});
+  const confirmPassword=h('input',{class:'input',type:'password',autocomplete:'new-password',required:true,minlength:'6'});
+  const message=h('div',{class:'muted small setup-note',role:'status','aria-live':'polite'});
+  openDialog(t('resetPasswordTitle'),close=>[
+    h('p',{class:'muted small'},t('resetPasswordHint')),
+    field(t('newPassword'),nextPassword),field(t('confirmPassword'),confirmPassword),message,
+    h('div',{class:'foot'},h('button',{class:'btn primary',onclick:async event=>{
+      const button=event.currentTarget;button.disabled=true;message.textContent='';
+      try{
+        if(nextPassword.value.length<6)throw Error(t('passwordTooShort'));
+        if(nextPassword.value!==confirmPassword.value)throw Error(t('passwordMismatch'));
+        await api.invoke('auth:updatePassword',nextPassword.value);
+        state.sync=await api.invoke('auth:state');state.profile=await api.invoke('profile:mine').catch(()=>null);
+        renderRail();close();toast(t('passwordUpdated'));
+      }catch(error){message.textContent=cleanErr(error);button.disabled=false;}
+    }},t('savePassword')))
+  ],{locked:true,blockBackground:true});
+}
+function receivePasswordRecovery(notice) {
+  if(!notice)return;
+  if(notice.id!=null && notice.id===lastRecoveryNoticeId)return;
+  lastRecoveryNoticeId=notice.id ?? lastRecoveryNoticeId;
+  if(notice.ok){accountDialogClose?.();accountDialogClose=null;openPasswordResetDialog();}
+  else toast(notice.message||t('recoveryLinkInvalid'),'error');
 }
 function renderPlayer() {
   const p = state.player; const el = $('#nowplaying');
@@ -1669,6 +1704,7 @@ function openSetup(repair=false) {
   api.on('player:state', (p) => { state.player = p; renderPlayer(); if(state.updates){state.updates.playing=p.playing;updateView?.update(state.updates);updatePrompt?.update(state.updates);receiveUpdate(state.updates);} });
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
+  api.on('auth:recovery',receivePasswordRecovery);
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call(offer.kind==='intro'?'player:skipIntro':'player:skipEnding',offer)));
   api.on('player:language-fallback', showLanguageFallback);
   api.on('player:language-warning', message => toast(message));
@@ -1682,7 +1718,9 @@ function openSetup(repair=false) {
   if (state.sync.connected) state.profile = await api.invoke('profile:mine').catch(() => null);
   const mpvStatus=await api.invoke('mpv:startup').catch(()=>null);
   render();
-  if(mpvStatus?!mpvStatus.ok:!state.lib.settings.onboardingComplete)openSetup(mpvStatus?.repair);
+  const recovery=await api.invoke('auth:takeRecoveryNotice').catch(()=>null);
+  if(recovery)receivePasswordRecovery(recovery);
+  else if(mpvStatus?!mpvStatus.ok:!state.lib.settings.onboardingComplete)openSetup(mpvStatus?.repair);
   else if (!state.sync.connected) openAccountDialog();
   updatesReady=true;
   receiveUpdate(await api.invoke('updates:ready').catch(()=>api.invoke('updates:state').catch(()=>null)));

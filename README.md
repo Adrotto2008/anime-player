@@ -1,9 +1,15 @@
 # Anime Player
 
-Anime Player **v0.5.50** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.51** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Account password recovery — 0.5.51
+
+- The sign-in dialog includes “Forgot password?”. Anime Player sends Supabase Auth's recovery email without revealing whether the address belongs to an account.
+- The email link opens Anime Player through the `animeplayer://auth/reset-password` protocol. The app verifies the Supabase session, prompts for a new password, and updates it through Auth.
+- Add `animeplayer://auth/reset-password` to the Supabase project's Authentication → URL Configuration → Redirect URLs before enabling this build. Recovery email delivery also depends on the project's email provider and recovery template.
 
 ## Versions and persistent mpv setup — 0.5.50
 

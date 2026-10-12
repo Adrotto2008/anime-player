@@ -500,6 +500,59 @@ class CloudService {
     return data.user;
   }
 
+  async sendPasswordRecovery(email) {
+    this._requireClient();
+    const address=String(email || '').trim();
+    if(!address)throw Error('Inserisci l’indirizzo email.');
+    const {error}=await this.client.auth.resetPasswordForEmail(address,{redirectTo:'animeplayer://auth/reset-password'});
+    if(error)throw error;
+    // Auth intentionally gives the same result for existing and unknown emails.
+    return true;
+  }
+
+  async completePasswordRecoveryLink(rawUrl) {
+    this._requireClient();
+    let url;try{url=new URL(String(rawUrl));}catch{throw Error('Link di recupero non valido.');}
+    if(url.protocol!=='animeplayer:' || url.hostname!=='auth' || url.pathname!=='/reset-password' || url.username || url.password)
+      throw Error('Link di recupero non valido.');
+    const params=new URLSearchParams(url.search.slice(1));
+    for(const [key,value] of new URLSearchParams(url.hash.slice(1)))params.set(key,value);
+    const type=params.get('type');
+    if(type && type!=='recovery')throw Error('Questo link non serve a reimpostare la password.');
+    if(params.get('error_description'))throw Error(params.get('error_description'));
+    if(type!=='recovery'&&!params.get('code'))throw Error('Questo link non serve a reimpostare la password.');
+    const request=++this._authRequestId;this._authChanging=true;this._accountEpoch++;this._cancelRequests();this._rotateAuthClient();
+    let result;
+    try{
+      const code=params.get('code');
+      if(code)result=await this.client.auth.exchangeCodeForSession(code);
+      else {
+        const access_token=params.get('access_token'),refresh_token=params.get('refresh_token');
+        if(!access_token || !refresh_token)throw Error('Il link è incompleto o scaduto. Richiedi un’altra email.');
+        result=await this.client.auth.setSession({access_token,refresh_token});
+      }
+    }finally{if(request===this._authRequestId)this._authChanging=false;}
+    if(request!==this._authRequestId)throw Error('Recupero password superato da un cambio account.');
+    if(result.error)throw result.error;
+    if(!result.data?.session || !result.data?.user)throw Error('Il link non ha creato una sessione di recupero valida.');
+    this._session=result.data.session;this.user=result.data.user;
+    await this._activateLibrary(result.data.user.id);
+    const context=this._context(result.data.user.id);await this.ensureProfile(result.data.user.id,{},context);
+    if(!this._current(context))throw Error('Contesto account scaduto.');
+    this._publish();
+    return true;
+  }
+
+  async updatePassword(password) {
+    this._requireClient();
+    if(!this.user)throw Error('Il link di recupero è scaduto. Richiedi un’altra email.');
+    const value=String(password || '');
+    if(value.length<6)throw Error('La password deve contenere almeno 6 caratteri.');
+    const {error}=await this.client.auth.updateUser({password:value});
+    if(error)throw error;
+    return true;
+  }
+
   signOut() {
     if(this._logoutPromise && this._logoutRequest===this._authRequestId)return this._logoutPromise;
     this._requireClient();

@@ -31,6 +31,31 @@ if(!app.isPackaged){
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
 let win; let store; let player; let cloud; let roomSubscription; let updates;
+const PASSWORD_RESET_SCHEME='animeplayer';
+let queuedRecoveryLinks=[];
+let recoveryNotice=null;
+let recoveryNoticeSequence=0;
+let recoveryInFlight=false;
+function isPasswordRecoveryUrl(value){
+  try{const url=new URL(String(value));return url.protocol===`${PASSWORD_RESET_SCHEME}:`&&url.hostname==='auth'&&url.pathname==='/reset-password'&&!url.username&&!url.password;}
+  catch{return false;}
+}
+function queuePasswordRecoveryUrl(value){
+  if(!isPasswordRecoveryUrl(value))return;
+  queuedRecoveryLinks.push(String(value));
+  processPasswordRecoveryLinks();
+}
+async function processPasswordRecoveryLinks(){
+  if(!cloud?._started||recoveryInFlight||!queuedRecoveryLinks.length)return;
+  recoveryInFlight=true;
+  const url=queuedRecoveryLinks.shift();
+  try{await cloud.completePasswordRecoveryLink(url);recoveryNotice={id:++recoveryNoticeSequence,ok:true};}
+  catch(error){recoveryNotice={id:++recoveryNoticeSequence,ok:false,message:error.message||'Link di recupero non valido.'};}
+  finally{recoveryInFlight=false;if(win&&!win.isDestroyed())win.webContents.send('auth:recovery',recoveryNotice);if(queuedRecoveryLinks.length)processPasswordRecoveryLinks();}
+}
+app.on('open-url',(event,url)=>{event.preventDefault();queuePasswordRecoveryUrl(url);});
+const startupRecoveryUrl=process.argv.find(isPasswordRecoveryUrl);
+if(startupRecoveryUrl)queuePasswordRecoveryUrl(startupRecoveryUrl);
 const animeWorld = new AnimeWorldClient();
 const animeUnity = new AnimeUnityClient();
 let mpvManager; let ratings; let mpvDevice; let mpvStartup;
@@ -99,6 +124,9 @@ function register() {
   h('auth:state', () => cloud.getSession());
   h('auth:signUp', (email, password) => cloud.signUp(email, password));
   h('auth:signIn', (email, password) => cloud.signIn(email, password));
+  h('auth:sendPasswordRecovery', email => cloud.sendPasswordRecovery(email));
+  h('auth:updatePassword', password => cloud.updatePassword(password));
+  h('auth:takeRecoveryNotice', () => {const notice=recoveryNotice;recoveryNotice=null;return notice;});
   h('auth:signOut', () => cloud.signOut());
   h('profile:get', (userId) => cloud.getProfile(userId));
   h('profile:mine', () => cloud.getMyProfile());
@@ -468,10 +496,14 @@ app.whenReady().then(async () => {
   mpvStartup=await mpvDevice.inspect(mpvManager,store.data.settings);
   if(mpvStartup.ok)completeMpv(mpvStartup,mpvDevice.data.installDirectory);
   createWindow();
-  cloud.start().catch((err) => console.warn('Avvio Supabase fallito:', err.message));
+  app.setAsDefaultProtocolClient(PASSWORD_RESET_SCHEME);
+  cloud.start().then(()=>processPasswordRecoveryLinks()).catch((err) => console.warn('Avvio Supabase fallito:', err.message));
   setTimeout(() => refreshAiringStatuses().catch((err) => console.warn('Aggiornamento programmazione fallito:', err.message)), 1200);
 });
 
-app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
+app.on('second-instance', (_event, commandLine) => {
+  const url=commandLine.find(isPasswordRecoveryUrl);if(url)queuePasswordRecoveryUrl(url);
+  if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
+});
 require('./src/shutdown').installShutdown(app,()=>({cloud,store,player,updates}));
 app.on('window-all-closed', () => app.quit());
