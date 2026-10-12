@@ -74,7 +74,7 @@
       "deleteAppDataOnUninstall": false
     },
     "directories": {
-      "output": "dist-phase5b"
+      "output": "dist"
     },
     "publish": [
       {

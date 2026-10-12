@@ -87,22 +87,22 @@ jobs:
         run: |
           test -n "$CSC_LINK" && test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID"
           npm run dist
-          codesign --verify --deep --strict 'dist-phase5b/mac/Anime Player.app'
-          xcrun stapler validate 'dist-phase5b/mac/Anime Player.app'
+          codesign --verify --deep --strict 'dist/mac/Anime Player.app'
+          xcrun stapler validate 'dist/mac/Anime Player.app'
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.platform }}
           if-no-files-found: error
           path: |
-            dist-phase5b/*.exe
-            dist-phase5b/*.blockmap
-            dist-phase5b/latest.yml
-            dist-phase5b/latest-linux.yml
-            dist-phase5b/latest-mac.yml
-            dist-phase5b/*.AppImage
-            dist-phase5b/*.deb
-            dist-phase5b/*.dmg
-            dist-phase5b/*.zip
+            dist/*.exe
+            dist/*.blockmap
+            dist/latest.yml
+            dist/latest-linux.yml
+            dist/latest-mac.yml
+            dist/*.AppImage
+            dist/*.deb
+            dist/*.dmg
+            dist/*.zip
   publish:
     needs: [plan, build]
     runs-on: ubuntu-latest

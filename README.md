@@ -48,14 +48,14 @@ For a cloud-enabled Windows package, build with an explicitly supplied public co
 - Settings → Playback → Shortcuts captures combinations directly, validates conflicts and supports disabling or restoring each action. Default skips are Ctrl + Shift + o / e; Page Down / Up change episodes. Existing saved custom or empty values are retained.
 - Native weak mpv Lua bindings work in fullscreen and update during playback. The application no longer overrides or writes input.conf; personal strong bindings are protected by live conflict detection. ASCII case preserves mpv Shift semantics.
 - Manual skips use the current episode's known opening/ending intervals and actual mpv time/duration, with exact seek, bounded OSD and guards against repetition, old episodes and late replies. Missing data never produces a guessed seek.
-- Isolated Windows tests cover real mpv, Electron capture, live preferences, private snapshot roundtrips and prior playback/card regressions. Packaging remains Windows x64 portable/NSIS, offline, in dist-phase5b. See [architecture, rules and verification limits](docs/mpv-shortcuts-6.md).
+- Isolated Windows tests cover real mpv, Electron capture, live preferences, private snapshot roundtrips and prior playback/card regressions. Packaging remains Windows x64 portable/NSIS, offline, in `dist`. See [architecture, rules and verification limits](docs/mpv-shortcuts-6.md).
 
 ## Physical cards — 0.5.43 (Phase 5B)
 
 - Cards can be dragged directly during ordinary navigation, with an 8 px mouse threshold and a 380 ms touch hold. Brief clicks open content; internal buttons, search, menus and collection management remain available. Home section headings also support direct dragging. No Organize mode or visible corner handles remain; cards keep the default system cursor.
 - Pointer position drives restrained 3D hover with damped springs. Dragged cards follow the pointer directly and tilt with velocity; neighboring cards spring into the preview position, including direction changes. Release lands the lifted card before refreshing the view; Escape and invalid destinations animate back without saving.
 - Keyboard reorder controls appear on focus: Space/Enter picks up, arrows move, Ctrl + arrows changes compatible sections, Enter commits and Escape cancels. Reduced motion removes tilt, lift and animated movement. Existing organization transactions and explicit membership confirmation remain in use without a data schema change.
-- Visible Windows Electron tests include temporal frame sequences and synthetic 100/400/1000 card benchmarks. Packaging is offline into `dist-phase5b`. See [Phase 5B architecture and manual verification](docs/physical-cards-5b.md) for scope and remaining limits.
+- Visible Windows Electron tests include temporal frame sequences and synthetic 100/400/1000 card benchmarks. Packaging is offline into `dist`. See [Phase 5B architecture and manual verification](docs/physical-cards-5b.md) for scope and remaining limits.
 
 ## Home and library organization — 0.5.42 (historical Phase 5)
 
