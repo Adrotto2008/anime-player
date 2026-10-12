@@ -4,6 +4,17 @@ const api = window.animeApi; // il ponte si chiama animeApi: un `const api` acca
 const { setLanguage, t } = window.i18n;
 const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'manual', organizationContext:null, player: { playing: false }, stats: null, ratingLoads: {}, additions: [], descriptionRequests: new Set() };
 let library=state.lib,chartIndices=new WeakMap(),chartMappings=new WeakMap();
+let updateView;const updateNotifications=new Set();
+function receiveUpdate(payload){
+  if(!payload)return;
+  state.updates=payload;
+  if(updateView?.root.isConnected)updateView.update(payload);
+  const key=payload.status+':'+payload.release?.version;
+  if(['available','downloaded'].includes(payload.status)&&!updateNotifications.has(key)){
+    updateNotifications.add(key);
+    toastAction(state.lib.settings.language==='it'?'Aggiornamento '+payload.release.version:'Update '+payload.release.version,t('settingsTitle'),openSettings);
+  }
+}
 Object.defineProperty(state,'lib',{get:()=>library,set:value=>{
   library=value;chartIndices=new WeakMap();chartMappings=new WeakMap();
   // Derived ratings are prepared once on snapshot arrival, never on navigation.
@@ -1524,6 +1535,9 @@ function openSettings() {
     const skipOpening = h('input', { type: 'checkbox' }); skipOpening.checked = !!st.skipOpening;
     const skipEnding = h('input', { type: 'checkbox' }); skipEnding.checked = !!st.skipEnding;
     const sec = (title, ...kids) => h('section', { class: 'form-section' }, h('h3', null, title), kids);
+    updateView=window.UpdateView({h,api,language:st.language,onState:payload=>{state.updates=payload;}});
+    if(state.updates)updateView.update(state.updates);
+    updateView.load();
     return [
       sec(t('secPlayer'),
         field(t('mpvPath'), h('div', { class: 'row' }, mpv,
@@ -1534,7 +1548,7 @@ function openSettings() {
           const records=await call('player:diagnostics');
           openDialog(t('playerDiagnostics'),closeDiagnostics=>[
             h('p',{class:'muted small'},t('playerDiagnosticsHint')),
-            h('pre',{style:'white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto;user-select:text'},records.length?JSON.stringify(records,null,2):t('playerDiagnosticsEmpty')),
+            h('pre',{'data-player-diagnostics':'true',style:'white-space:pre-wrap;overflow-wrap:anywhere;max-height:55vh;overflow:auto;user-select:text'},records.length?JSON.stringify(records,null,2):t('playerDiagnosticsEmpty')),
             h('div',{class:'foot'},h('button',{class:'btn',onclick:closeDiagnostics},t('close')))]);
         }},t('playerDiagnostics')),
         field(t('defaultAnime4K'), preset)),
@@ -1544,6 +1558,7 @@ function openSettings() {
         h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang))),
       sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language))),
       sec(t('secAdvanced'), field(t('userAgent'), ua), field(t('extraArgs'), extra)),
+      updateView.root,
       h('div', { class: 'foot' }, h('span', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`), h('button', { class: 'btn', onclick: close }, t('cancel')),
         h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
   });
@@ -1635,7 +1650,8 @@ function openSetup() {
     state.lib = lib; state.stats = null; render();
     notifySourceDiscovery(sourceDiscovery, getSeries(id)?.title);
   });
-  api.on('player:state', (p) => { state.player = p; renderPlayer(); });
+  api.on('updates:state',receiveUpdate);
+  api.on('player:state', (p) => { state.player = p; renderPlayer(); if(state.updates){state.updates.playing=p.playing;updateView?.update(state.updates);} });
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call(offer.kind==='intro'?'player:skipIntro':'player:skipEnding',offer)));

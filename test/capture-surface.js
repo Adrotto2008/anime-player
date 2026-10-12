@@ -7,7 +7,10 @@ async function captureSurface(win){
   for(let attempt=0;attempt<3;attempt++){
     if(win.isDestroyed())throw Error('Evidence window was destroyed.');
     if(!win.isVisible() || attempt)win.show();
-    win.focus();win.webContents.focus();
+    // Refocusing an already focused window resets native pointer hit testing
+    // on Windows, which can cancel an injected hover/drag between captures.
+    if(!win.isFocused())win.focus();
+    if(!win.webContents.isFocused())win.webContents.focus();
     try{
       let timer;
       try{await Promise.race([win.webContents.executeJavaScript('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))'),new Promise((_resolve,reject)=>{timer=setTimeout(()=>reject(Error('Evidence frames did not become ready.')),1000);})]);}finally{clearTimeout(timer);}

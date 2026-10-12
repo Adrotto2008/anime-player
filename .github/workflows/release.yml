@@ -1,0 +1,138 @@
+name: Verified release
+on:
+  push:
+    tags: ['v*']
+permissions:
+  contents: read
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+jobs:
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      matrix: ${{ steps.matrix.outputs.value }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Validate stable tag and platforms
+        id: matrix
+        env:
+          MAC_ENABLED: ${{ vars.ENABLE_MAC_RELEASE }}
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'),v=require('./package.json').version;
+          if(process.env.GITHUB_REF_NAME!=='v'+v || v.includes('-'))throw Error('Tag must equal stable package version');
+          const include=[{os:'windows-latest',platform:'win32'},{os:'ubuntu-latest',platform:'linux'}];
+          if(process.env.MAC_ENABLED==='true')include.push({os:'macos-15-intel',platform:'darwin'});
+          fs.appendFileSync(process.env.GITHUB_OUTPUT,'value='+JSON.stringify({include})+'\n');
+          NODE
+  build:
+    needs: plan
+    strategy:
+      fail-fast: false
+      matrix: ${{ fromJSON(needs.plan.outputs.matrix) }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: npm
+      - name: Linux runtime dependencies
+        if: runner.os == 'Linux'
+        run: sudo apt-get update && sudo apt-get install -y xvfb libfuse2t64 libgtk-3-0t64 libnss3 libasound2t64
+      - run: npm ci
+      - name: Prepare explicit public configuration
+        env:
+          PUBLIC_CONFIG: ${{ vars.SUPABASE_PUBLIC_CONFIG }}
+          OFFLINE_RELEASE: ${{ vars.OFFLINE_RELEASE }}
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs=require('fs'),path=require('path');
+          if(process.env.PUBLIC_CONFIG){
+            const file=path.resolve('.build-resources/inputs/supabase-public.json');
+            fs.mkdirSync(path.dirname(file),{recursive:true});fs.writeFileSync(file,process.env.PUBLIC_CONFIG);
+            fs.appendFileSync(process.env.GITHUB_ENV,'SUPABASE_CONFIG_FILE='+file+'\n');
+          }else if(process.env.OFFLINE_RELEASE!=='true')throw Error('Set SUPABASE_PUBLIC_CONFIG or explicitly opt into OFFLINE_RELEASE=true');
+          NODE
+      - name: Test, build and verify (Linux)
+        if: runner.os == 'Linux'
+        run: xvfb-run -a npm run dist
+      - name: Test, build and verify (Windows)
+        if: runner.os == 'Windows'
+        env:
+          CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
+        run: npm run dist
+      - name: Signed and notarized macOS build
+        if: runner.os == 'macOS'
+        env:
+          CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
+          CSC_KEY_PASSWORD: ${{ secrets.MAC_CSC_KEY_PASSWORD }}
+          APPLE_ID: ${{ secrets.APPLE_ID }}
+          APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
+          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
+          CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+        shell: bash
+        run: |
+          test -n "$CSC_LINK" && test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID"
+          npm run dist
+          codesign --verify --deep --strict 'dist-phase5b/mac/Anime Player.app'
+          xcrun stapler validate 'dist-phase5b/mac/Anime Player.app'
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-${{ matrix.platform }}
+          if-no-files-found: error
+          path: |
+            dist-phase5b/*.exe
+            dist-phase5b/*.blockmap
+            dist-phase5b/latest.yml
+            dist-phase5b/latest-linux.yml
+            dist-phase5b/latest-mac.yml
+            dist-phase5b/*.AppImage
+            dist-phase5b/*.deb
+            dist-phase5b/*.dmg
+            dist-phase5b/*.zip
+  publish:
+    needs: [plan, build]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: release-*
+          path: release-assets
+          merge-multiple: true
+      - name: Verify complete aggregate and publish draft only after upload
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RELEASE_MATRIX: ${{ needs.plan.outputs.matrix }}
+        run: |
+          node - <<'NODE'
+          const {verify}=require('./scripts/release-verify');
+          for(const entry of JSON.parse(process.env.RELEASE_MATRIX).include)verify('release-assets',entry.platform,require('./package.json').version);
+          NODE
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Anime Player $GITHUB_REF_NAME" --generate-notes
+          gh release upload "$GITHUB_REF_NAME" release-assets/*
+          node - <<'NODE'
+          const fs=require('fs'),{execFileSync}=require('child_process'),crypto=require('crypto');
+          const data=JSON.parse(execFileSync('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${process.env.GITHUB_REF_NAME}`],{encoding:'utf8'}));
+          if(!data.draft)throw Error('Expected draft release');
+          for(const name of fs.readdirSync('release-assets')){
+            const bytes=fs.readFileSync('release-assets/'+name),asset=data.assets.find(a=>a.name===name);
+            if(!asset||asset.size!==bytes.length||asset.state!=='uploaded')throw Error('Incomplete upload: '+name);
+            const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex');
+            if(asset.digest && asset.digest!==digest)throw Error('Upload digest mismatch: '+name);
+          }
+          NODE
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

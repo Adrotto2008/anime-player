@@ -548,3 +548,6 @@ details.adv .two { max-width: 480px; }
 .linked-preview-cover { width: 75px; height: 108px; background-size: cover; background-position: center; border-radius: 7px; flex-shrink: 0; }
 
 .shortcut-controls{display:flex;flex-wrap:wrap;gap:8px}.shortcut-controls .input{flex:1;min-width:160px}.shortcuts-page [role="status"]{min-height:1.5em;overflow-wrap:anywhere}
+.update-notes{white-space:pre-wrap;overflow-wrap:anywhere;max-height:180px;overflow:auto;font:inherit;font-size:13px;user-select:text;background:var(--panel);padding:12px;border-radius:8px}
+.update-actions{flex-wrap:wrap;gap:8px;margin-top:12px}[data-updates] progress{width:100%;accent-color:var(--accent)}[data-updates] [hidden]{display:none!important}
+.update-toggle{display:flex;align-items:center;gap:8px;margin:8px 0}.update-toggle input{flex:none}

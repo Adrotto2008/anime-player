@@ -30,7 +30,7 @@ if(!app.isPackaged){
 }
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win; let store; let player; let cloud; let roomSubscription;
+let win; let store; let player; let cloud; let roomSubscription; let updates;
 const animeWorld = new AnimeWorldClient();
 const animeUnity = new AnimeUnityClient();
 let mpvManager; let ratings;
@@ -47,6 +47,10 @@ function createWindow() {
     webPreferences: { preload: path.join(__dirname, 'preload.js'), contextIsolation: true, nodeIntegration: false, sandbox: true },
   });
   Menu.setApplicationMenu(null);
+  // Windows session end can kill a detached NSIS installer midway through an
+  // upgrade. Only ordinary user exits may arm installation on quit.
+  win.on('query-session-end',()=>updates?.deferSystemExit());
+  win.on('session-end',()=>updates?.deferSystemExit());
   // Diagnosi: errori della pagina e del preload nel terminale; F12 o Ctrl+Maiusc+I aprono la console
   win.webContents.on('preload-error', (_e, file, err) => console.error('[preload-error]', file, err && err.message));
   win.webContents.on('console-message', (e, level, message, line, source) => {
@@ -75,6 +79,13 @@ function register() {
   h('organization:move',command=>organization.move(command));
   h('organization:section',command=>organization.section(command));
   h('app:version', () => app.getVersion());
+  h('updates:state',()=>updates?.snapshot() || null);
+  h('updates:check',()=>updates.check());
+  h('updates:download',()=>updates.download());
+  h('updates:later',installOnQuit=>updates.later(installOnQuit));
+  h('updates:install',()=>updates.install());
+  h('updates:configure',patch=>updates.configure(patch));
+  h('updates:releases',()=>shell.openExternal(require('./src/updates').RELEASES));
   h('settings:shortcutCapture',active=>{if(win)win.shortcutCaptureActive=active===true;});
   h('auth:state', () => cloud.getSession());
   h('auth:signUp', (email, password) => cloud.signUp(email, password));
@@ -437,14 +448,17 @@ app.whenReady().then(async () => {
   cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send,
     beforeLibrarySwitch: () => player.stop({reason:'account-change'}), env: app.isPackaged ? process.env : {}, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
+  updates=require('./src/updates').createUpdateService({app,profile:userDataPath,notify:state=>send('updates:state',state),
+    isPlaying:()=>!!(player.cur || player.activeRequest || player.pendingLanguageFallback),save:()=>store.save(true,true,{cloud:true})});
   register();
   const detected = await mpvManager.find(store.data.settings.mpvPath);
   if (detected.ok && detected.path !== store.data.settings.mpvPath) store.setSettings({ mpvPath: detected.path });
   createWindow();
+  updates.start();
   cloud.start().catch((err) => console.warn('Avvio Supabase fallito:', err.message));
   setTimeout(() => refreshAiringStatuses().catch((err) => console.warn('Aggiornamento programmazione fallito:', err.message)), 1200);
 });
 
 app.on('second-instance', () => { if (win) { if (win.isMinimized()) win.restore(); win.focus(); } });
-require('./src/shutdown').installShutdown(app,()=>({cloud,store,player}));
+require('./src/shutdown').installShutdown(app,()=>({cloud,store,player,updates}));
 app.on('window-all-closed', () => app.quit());

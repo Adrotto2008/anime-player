@@ -12,3 +12,4 @@ const args=[require.resolve('electron-builder/cli.js'),target];
 if(process.platform==='win32')args.push('portable','nsis','--x64');
 args.push('--publish','never');
 execFileSync(process.execPath,args,{cwd:root,stdio:'inherit',windowsHide:true});
+execFileSync(process.execPath,[path.join(__dirname,'release-verify.js')],{cwd:root,stdio:'inherit',windowsHide:true});

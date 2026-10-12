@@ -1,6 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const INVOKE = new Set([
+  'updates:state','updates:check','updates:download','updates:later','updates:install','updates:configure','updates:releases',
   'organization:context','organization:move','organization:section',
   'series:videoPreference', 'series:imdbSelect', 'episodes:sourceLanguage', 'player:languageFallback',
   'lib:get', 'library:export', 'library:import', 'series:search', 'series:create', 'series:addStart', 'series:addTasks', 'series:addCancel', 'series:addRetry', 'series:update', 'series:delete', 'series:refresh', 'series:ratings', 'series:discoverSources', 'movie:addLink', 'movie:play','content:addLink',
@@ -13,7 +14,7 @@ const INVOKE = new Set([
   'favorites:list', 'favorites:set', 'friends:search', 'friends:requests', 'friends:request', 'friends:respond', 'friends:list', 'friends:remove',
   'watchRooms:create', 'watchRooms:join', 'watchRooms:subscribe', 'watchRooms:broadcast', 'watchRooms:unsubscribe', 'sync:run',
 ]);
-const ON = new Set(['lib:changed', 'series:ratingsProgress', 'series:sourcesDiscovered', 'addition:progress', 'player:state', 'player:error', 'player:skip-offer', 'player:language-fallback', 'player:language-warning', 'sync:state', 'watchRoom:playback', 'watchRoom:presence']);
+const ON = new Set(['updates:state','lib:changed', 'series:ratingsProgress', 'series:sourcesDiscovered', 'addition:progress', 'player:state', 'player:error', 'player:skip-offer', 'player:language-fallback', 'player:language-warning', 'sync:state', 'watchRoom:playback', 'watchRoom:presence']);
 
 contextBridge.exposeInMainWorld('animeApi', {
   invoke: (ch, ...args) => (INVOKE.has(ch) ? ipcRenderer.invoke(ch, ...args) : Promise.reject(new Error('canale non consentito: ' + ch))),

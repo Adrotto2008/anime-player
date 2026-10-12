@@ -36,7 +36,9 @@ app.whenReady().then(async()=>{
   const key=(code,modifiers=[])=>{win.webContents.sendInputEvent({type:'keyDown',keyCode:code,modifiers});win.webContents.sendInputEvent({type:'keyUp',keyCode:code,modifiers});};
   async function start(selector){const r=await rect(selector+' .poster, '+selector+' .resume',true);mouse('mouseMove',r.x,r.y);mouse('mouseDown',r.x,r.y);mouse('mouseMove',r.x+10,r.y+1);await until(`document.querySelector('.sort-ghost')`);return r;}
   async function end(point){mouse('mouseUp',point.x,point.y);await until(`!document.querySelector('.sort-ghost') && !document.querySelector('.sort-saving')`);await tick(130);}
-  async function capture(name){if(!evidence)return;fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,name+'.png'),(await require('./capture-surface').captureSurface(win)).toPNG());}
+  // Temporal input tests synchronize with the real compositor even when PNG
+  // export is disabled; optional evidence must not change input timing.
+  async function capture(name){const surface=await require('./capture-surface').captureSurface(win);if(!evidence)return;fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,name+'.png'),surface.toPNG());}
   async function enable(){await until(`document.querySelector('[data-sort-handle]')`);assert.equal(await js(`document.querySelector('[data-organize-toggle]')`),null);}
   await win.loadFile(path.join(__dirname,'../renderer/index.html'));await until(`document.querySelector('.poster')`);await clickText('Continua offline');await until(`!document.querySelector('#dialog-root .scrim')`);await enable();
   win.focus();win.webContents.focus();await tick(120);

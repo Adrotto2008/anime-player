@@ -21,6 +21,7 @@ app.whenReady().then(async () => {
     store.addSeries({ title:'Standalone' }), store.addSeries({ title:'Survivor' })];
   const handle=(ch,fn)=>ipcMain.handle(ch,(_e,...args)=>fn(...args));
   handle('lib:get',()=>store.snapshot()); handle('presets:list',()=>[]); handle('app:version',()=>app.getVersion());
+  handle('updates:state',()=>null);
   let authFixture={connected:false,configured:false},logoutFixture='timeout';
   handle('player:state',()=>({playing:false})); handle('auth:state',()=>authFixture);
   handle('auth:signOut',()=>{authFixture={connected:false,configured:true};return {local:true,remote:logoutFixture};});
@@ -255,7 +256,7 @@ app.whenReady().then(async () => {
     assert.ok((await js('document.body.textContent')).includes('mpv non risponde alla connessione di controllo.'));
     await js(`Array.from(document.querySelectorAll('#rail .nav')).find(x=>x.textContent===window.i18n.t('settings')).click()`);await tick();
     await js(`Array.from(document.querySelectorAll('#dialog-root button')).find(x=>x.textContent===window.i18n.t('playerDiagnostics')).click()`);await tick();
-    assert.ok((await js(`document.querySelector('#dialog-root pre').textContent`)).includes('ipc-timeout'));
+    assert.ok((await js(`document.querySelector('#dialog-root [data-player-diagnostics]').textContent`)).includes('ipc-timeout'));
   }
 
   for(const outcome of ['timeout','error','confirmed']){

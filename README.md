@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.46** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.47** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## In-app updates — 0.5.47
+
+- Settings → Updates checks the fixed official GitHub repository, shows release notes, downloads with progress, and offers restart or installation on the next voluntary exit. Startup checks are delayed and optional; playback blocks restart. Portable and DEB display explicit alternative paths.
+- electron-updater verifies downloads; the app rechecks the cached SHA-512 before installation. Shutdown awaits playback progress/save and creates verified backups of durable profile files. Library schemas, identities, account files and encrypted sessions retain their existing paths.
+- Tag-triggered GitHub Actions builds Windows/Linux and optionally signed macOS, verifies complete artifacts, uploads to a draft and publishes only after verifying uploads. Cloud releases require an explicit public config variable; unsigned macOS releases are excluded.
+- Windows x64 builds are verified locally. Real upgrade/installation, remote publication, Linux and macOS await the documented external tests; previous release gates still apply. See [configuration, first release and verification boundaries](docs/automatic-updates.md).
 
 ## Pre-release blockers — 0.5.46 (Phase 7B)
 

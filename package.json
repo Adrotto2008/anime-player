@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.46",
+  "version": "0.5.47",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -15,7 +15,8 @@
   },
   "devDependencies": {
     "electron": "44.7.0",
-    "electron-builder": "26.15.3"
+    "electron-builder": "26.15.3",
+    "js-yaml": "4.3.2"
   },
   "build": {
     "appId": "com.adriano.animeplayer",
@@ -49,14 +50,16 @@
         "deb"
       ],
       "category": "AudioVideo",
-      "maintainer": "Arklight <adrianopalmeri02@gmail.com>"
+      "maintainer": "Arklight <adrianopalmeri02@gmail.com>",
+      "artifactName": "AnimePlayer-${version}-${arch}.${ext}"
     },
     "mac": {
       "target": [
         "dmg",
         "zip"
       ],
-      "category": "public.app-category.entertainment"
+      "category": "public.app-category.entertainment",
+      "artifactName": "AnimePlayer-${version}-${arch}.${ext}"
     },
     "portable": {
       "artifactName": "AnimePlayer-portable.exe"
@@ -73,11 +76,22 @@
     },
     "directories": {
       "output": "dist-phase5b"
-    }
+    },
+    "publish": [
+      {
+        "provider": "github",
+        "owner": "Adrotto2008",
+        "repo": "anime-player",
+        "releaseType": "release"
+      }
+    ],
+    "electronUpdaterCompatibility": ">=2.16"
   },
   "dependencies": {
     "@supabase/supabase-js": "2.109.0",
     "cheerio": "1.1.2",
+    "electron-updater": "6.8.10",
+    "semver": "7.7.3",
     "ws": "8.22.0"
   },
   "overrides": {
