@@ -41,7 +41,7 @@ app.whenReady().then(async()=>{
   async function capture(name){const surface=await require('./capture-surface').captureSurface(win);if(!evidence)return;fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,name+'.png'),surface.toPNG());}
   async function enable(){await until(`document.querySelector('[data-sort-handle]')`);assert.equal(await js(`document.querySelector('[data-organize-toggle]')`),null);}
   await win.loadFile(path.join(__dirname,'../renderer/index.html'));await until(`document.querySelector('.poster')`);await clickText('Continua offline');await until(`!document.querySelector('#dialog-root .scrim')`);await enable();
-  win.focus();win.webContents.focus();await tick(120);
+  win.show();win.focus();win.webContents.focus();await capture('00-ready');await tick(120);
   // Temporal evidence uses the real visible Electron surface. Capturing is
   // deliberately outside the benchmark to avoid measuring PNG compression.
   const trace=[];
@@ -51,9 +51,15 @@ app.whenReady().then(async()=>{
   }}
   const hoverIds=await ids('library'),hoverSelector=select('library',hoverIds[0])+' .poster',hr=await rect(hoverSelector,true);
   mouse('mouseMove',245,160);await tick(80);
-  mouse('mouseMove',hr.left+12,hr.top+20);await frames('01-hover-left');
+  // Wait for native hit testing after focus/compositor changes; no synthetic DOM events.
+  for(let attempt=0;attempt<5;attempt++){
+    const ready=await rect(hoverSelector,true);mouse('mouseMove',ready.left+(ready.right-ready.left)*.25,ready.top+(ready.bottom-ready.top)*.4);
+    await tick(35);if(await js(`document.querySelector(${JSON.stringify(hoverSelector)}).classList.contains('card-raised')`))break;
+    win.show();win.focus();win.webContents.focus();await capture('00-native-retry-'+attempt);mouse('mouseMove',245,160);await tick(35);
+  }
+  await until(`document.querySelector(${JSON.stringify(hoverSelector)}).classList.contains('card-raised')`);await frames('01-hover-left');
   const leftTilt=await js(`getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).transform`);
-  mouse('mouseMove',hr.right-12,hr.bottom-35);await frames('02-hover-right');
+  mouse('mouseMove',hr.left+(hr.right-hr.left)*.75,hr.top+(hr.bottom-hr.top)*.6);await until(`document.querySelector(${JSON.stringify(hoverSelector)}).classList.contains('card-raised')`);await frames('02-hover-right');
   const rightTilt=await js(`getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).transform`);assert.notEqual(leftTilt,rightTilt);
   assert.equal(await js(`getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).cursor`),'default');
   mouse('mouseMove',245,160);await frames('03-hover-return');await tick(800);
