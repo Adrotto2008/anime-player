@@ -1,14 +1,18 @@
 # Anime Player
 
-Anime Player **v0.5.52** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.53** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
 
+## Five-second recovery — 0.5.53
+
+- Stalled playback switches links after 5 seconds, including an unfinished seek; there is no additional seek grace. The next eligible provider is preferred, preserving observed time and language.
+
 ## Source engine and interrupted playback — 0.5.52
 
 - Automatic discovery now uses the independently tested source laboratory engine: strict title/catalog identity, complete pagination, validated TLS/DNS/redirects, and literal parsing of provider data. HLS and direct files retain separate stable identities. StreamingCommunity stays disabled.
-- A remote source that stops advancing for 20 seconds triggers recovery. Intentional pause, navigation and normal EOF do not. A temporary source is renewed once by its original work/episode ID before trying another eligible source of the same library item.
+- A remote source that stops advancing for 5 seconds triggers recovery, checked every second. Seeking uses the same 5-second threshold. Intentional pause, navigation and normal EOF do not. A stall immediately tries another eligible source of the same library item; network errors may renew the original source once.
 - Recovery preserves the observed time and requested language, rejects incompatible duration or an unfulfilled resume seek, and stops after finite attempts. A different edit can still share a similar duration; matching durations do not prove frame-exact alignment.
 - A private local proxy keeps provider cookies/Referer and HLS keys out of mpv URLs. Highest compatible HLS resolution is selected from the manifest; real mpv tracks are checked separately. Manual URLs, library UUIDs, ratings and franchise relationships remain intact.
 - See [source recovery and verification boundaries](docs/source-recovery.md). Windows builds and bounded live tests do not certify a full-film uninterrupted viewing session.

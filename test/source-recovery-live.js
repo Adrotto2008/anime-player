@@ -51,6 +51,15 @@ async function capture(player,name){
       player=new PlayerManager({store,paths:{userData:profile,shaderDir:path.join(__dirname,'..','shaders')},
         resolveAutomaticSource:renew,notify:(channel,payload)=>{if(['player:error','player:recovering','player:source-failed'].includes(channel))events.push({channel,
           payload:JSON.parse(redact(JSON.stringify(payload)))});}});
+      record.stallTimeoutMs=player.stallTimeoutMs;
+      assert.equal(record.stallTimeoutMs,5000);
+      const checkStall=player._checkStall.bind(player);
+      player._checkStall=(cur,now=Date.now())=>{
+        const requestedBefore=cur.session.requestedReason;
+        checkStall(cur,now);
+        if(!requestedBefore&&cur.session.requestedReason==='source-stalled')
+          record.watchdog={idleMs:now-cur.lastAdvanceAt,seeking:!!cur.seeking,position:cur.pos};
+      };
       await player.play(series.id,unit.id,{resumePos:40});record.phases.push({phase:'initial',...await capture(player,'film-'+i+'-initial')});
       // First demonstrate actual stop/reopen resuming a later checkpoint.
       player.seekAbsolute(120);await waitFor(()=>player.cur?.pos>=120);await sleep(1200);

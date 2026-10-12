@@ -15,7 +15,7 @@ const {PlaybackDiagnostics,exitMessage}=require('./playback-diagnostics');
 class PlayerManager {
   // paths: { shaderDir, userData }; notify(channel, payload)
   constructor({ store, paths, notify, resolveAutomaticSource, prepareSource=require('./source-engine').prepareSource,
-    progressIntervalMs = 5000, stallTimeoutMs=20000, stallPollMs=1000 }) {
+    progressIntervalMs = 5000, stallTimeoutMs=5000, stallPollMs=1000 }) {
     this.store = store; this.paths = paths; this.notify = notify; this.cur = null;
     this.resolveAutomaticSource = resolveAutomaticSource;
     this.prepareSource=prepareSource;this.stallTimeoutMs=stallTimeoutMs;this.stallPollMs=stallPollMs;
@@ -186,7 +186,7 @@ class PlayerManager {
     cur.saveInterval.unref?.();
     session.on('pause', paused => {cur.paused=paused;cur.lastAdvanceAt=Date.now();if(this.cur===cur && paused) {flushProgress();scheduleCheckpoint();}});
     session.on('seek', () => {cur.seeking=true;cur.seekStartedAt=Date.now();cur.lastAdvanceAt=Date.now();});
-    session.on('seeked', () => {if(this.cur===cur && cur.seeking) {cur.seeking=false;cur.lastAdvanceAt=Date.now();scheduleCheckpoint();}});
+    session.on('seeked', () => {if(this.cur===cur && cur.seeking) {cur.seeking=false;scheduleCheckpoint();}});
     session.on('speed',speed=>{cur.speed=speed;cur.lastAdvanceAt=Date.now();});
     session.on('time', (t) => {
       if(this.cur!==cur || !Number.isFinite(t))return;
@@ -334,7 +334,7 @@ class PlayerManager {
     const expectedDuration=cur.expectedDuration || cur.dur || undefined;
     const renewed=cur.renewed || new Set(),sourceId=source&&Identity.sourceId(cur.ep.id,source);
     if(source?.provider && source.providerEpisodeId && this.resolveAutomaticSource && cur.playbackVerified
-      && ['network-error','source-stalled'].includes(cur.failureReason) && !renewed.has(sourceId)) {
+      && cur.failureReason==='network-error' && !renewed.has(sourceId)) {
       renewed.add(sourceId);
       this.notify('player:recovering',{seriesId:cur.series.id,episodeId:cur.ep.id,position:resumePos,provider:source.provider,phase:'renewing'});
       return this.play(cur.series.id,cur.ep.id,{sourceId,attempted,requestId:cur.requestId,scope:cur.scope,effectiveMode,
@@ -356,7 +356,6 @@ class PlayerManager {
   _checkStall(cur,now=Date.now()) {
     if(!this._current(cur)||!cur.ep||!/^https?:\/\//i.test(cur.url)||!cur.session.loaded||cur.session.requestedReason
       ||cur.paused||cur.speed===0||cur.session.eof)return;
-    if(cur.seeking && now-(cur.seekStartedAt||now)<this.stallTimeoutMs*2)return;
     if(now-cur.lastAdvanceAt<this.stallTimeoutMs)return;
     cur.session.error='La sorgente non avanza da '+Math.round(this.stallTimeoutMs/1000)+' secondi';
     cur.session.quit('source-stalled');

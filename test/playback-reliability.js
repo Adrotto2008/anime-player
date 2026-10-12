@@ -230,11 +230,22 @@ test('recovery detects stalled video and preserves the last observed position on
   const {player,events}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);
   const old=player.cur;old.session.loaded=true;old.session.emit('duration',1000);old.session.emit('time',420);old.session.emit('time',421);
   old.session.quit=reason=>old.session.emit('exit',{reason,error:'stalled',eof:false});
-  player._checkStall(old,old.lastAdvanceAt+20001);await delay(20);
+  player._checkStall(old,old.lastAdvanceAt+5000);await delay(20);
   assert.notEqual(player.cur,old);assert.equal(player.cur.start,421);assert.equal(player.cur.expectedDuration,1000);
   assert.ok(events.some(([ch,v])=>ch==='player:recovering'&&v.position===421));
 });
-for(const state of ['pause','seek','speed','local','stopped'])test('recovery ignores intentional '+state,async t=>{
+test('recovery switches after five seconds even during a seek',async t=>{
+  const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
+  assert.equal(player.stallTimeoutMs,5000);
+  cur.session.loaded=true;let reason;cur.session.quit=r=>{reason=r;};
+  player._checkStall(cur,cur.lastAdvanceAt+4999);assert.equal(reason,undefined);
+  player._checkStall(cur,cur.lastAdvanceAt+5000);assert.equal(reason,'source-stalled');
+  reason=undefined;cur.seeking=true;cur.seekStartedAt=cur.lastAdvanceAt;
+  player._checkStall(cur,cur.seekStartedAt+4999);assert.equal(reason,undefined);
+  player._checkStall(cur,cur.seekStartedAt+5000);assert.equal(reason,'source-stalled');
+  cur.session.quit=r=>cur.session.emit('exit',{reason:r,eof:false});
+});
+for(const state of ['pause','speed','local','stopped'])test('recovery ignores intentional '+state,async t=>{
   const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
   cur.session.loaded=true;cur.lastAdvanceAt=Date.now()-25000;let quits=0;cur.session.quit=()=>quits++;
   if(state==='pause')cur.paused=true;
@@ -244,11 +255,28 @@ for(const state of ['pause','seek','speed','local','stopped'])test('recovery ign
   if(state==='stopped')cur.stopping=true;
   player._checkStall(cur);assert.equal(quits,0);cur.session.quit=reason=>cur.session.emit('exit',{reason,eof:false});
 });
-test('recovery waits a bounded interval for a seek that never completes',async t=>{
+test('seek completion without time movement does not restart the stall deadline',async t=>{
   const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
-  cur.session.loaded=true;cur.seeking=true;cur.seekStartedAt=Date.now()-50000;cur.lastAdvanceAt=cur.seekStartedAt;
+  cur.session.loaded=true;cur.session.emit('seek');const started=cur.lastAdvanceAt;
+  cur.session.emit('seeked');assert.equal(cur.lastAdvanceAt,started);
+  let reason;cur.session.quit=r=>{reason=r;};player._checkStall(cur,started+5000);assert.equal(reason,'source-stalled');
+  cur.session.quit=r=>cur.session.emit('exit',{reason:r,eof:false});
+});
+test('recovery stops a seek that has stalled for five seconds',async t=>{
+  const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
+  cur.session.loaded=true;cur.seeking=true;cur.seekStartedAt=Date.now()-5000;cur.lastAdvanceAt=cur.seekStartedAt;
   let reason;cur.session.quit=r=>{reason=r;};player._checkStall(cur);assert.equal(reason,'source-stalled');
   cur.session.quit=r=>cur.session.emit('exit',{reason:r,eof:false});
+});
+test('stalled playback changes source directly without renewing the failed source',async t=>{
+  const f=fixture(t);Object.assign(f.ep.sources[0],{provider:'animeunity',providerEpisodeId:123});
+  f.store.addSources(f.series.id,[{number:1,url:'https://other.test/1.mp4',provider:'animeworld'}]);let renewals=0;
+  const {player,events}=fakePlayback(t,f,{resolveAutomaticSource:async s=>{renewals++;return s;}});
+  await player.play(f.series.id,f.ep.id);const old=player.cur;
+  old.session.emit('duration',1000);old.session.emit('time',40);old.session.emit('time',41);
+  old.session.emit('exit',{reason:'source-stalled',error:'stalled',eof:false});await delay(20);
+  assert.equal(renewals,0);assert.equal(player.cur.source.provider,'animeworld');assert.equal(player.cur.start,41);
+  assert.ok(!events.some(([ch,v])=>ch==='player:recovering'&&v.phase==='renewing'));
 });
 test('recovery renews a stable source once, then tries the other provider without a loop',async t=>{
   const f=fixture(t);Object.assign(f.ep.sources[0],{provider:'animeunity',providerEpisodeId:123});
