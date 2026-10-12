@@ -1,4 +1,6 @@
 const { execFileSync, execSync } = require('child_process');
+for(const file of ['src/electron-security.js','test/release-integrity.js','test/release-integration.js','test/release-security.js','test/release-security-electron.js','test/release-security-renderer.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
+execFileSync(process.execPath,['--test','test/release-integrity.js','test/release-integration.js','test/release-security.js'],{stdio:'inherit'});
 for(const file of ['src/playback-shortcuts.js','src/skip-decision.js','test/mpv-shortcuts.js','test/shortcuts-electron.js','test/shortcuts-renderer.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/mpv-shortcuts.js'],{stdio:'inherit'});
 for(const file of ['src/organization.js','src/organization-service.js','renderer/sortable.js','renderer/card-motion.js','test/organization.js','test/organization-electron.js','test/organization-renderer.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
@@ -36,6 +38,7 @@ execFileSync(process.execPath, ['test/mpv-manager.js'], { stdio: 'inherit' });
 execFileSync(process.execPath, ['test/run.js'], { stdio: 'inherit' });
 for(const file of ['src/episode-ratings.js','test/audit-regressions.js','test/renderer-electron.js','test/renderer-runner.js']) execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 if(process.platform !== 'linux' || process.env.DISPLAY) {
+  execFileSync(process.execPath,['test/release-security-renderer.js'],{stdio:'inherit'});
   execFileSync(process.execPath,['test/shortcuts-renderer.js'],{stdio:'inherit'});
   execFileSync(process.execPath,['test/organization-renderer.js'],{stdio:'inherit'});
   execFileSync(process.execPath,['test/franchise-links-renderer.js'],{stdio:'inherit'});

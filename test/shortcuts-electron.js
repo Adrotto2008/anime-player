@@ -14,7 +14,7 @@ app.whenReady().then(async()=>{
   h('settings:shortcutCapture',active=>{win.shortcutCaptureActive=active===true;});
   // Exercise the actual production before-input listener, including its capture guard.
   const vm=require('vm'),main=fs.readFileSync(path.join(__dirname,'../main.js'),'utf8');
-  const listener=main.slice(main.indexOf("  win.webContents.on('before-input-event'"),main.indexOf("  win.loadFile("));
+  const listener=main.slice(main.indexOf("  win.webContents.on('before-input-event'"),main.indexOf("  ElectronSecurity.installWindowSecurity("));
   vm.runInNewContext(listener,{win});
   win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message);});
   const js=code=>win.webContents.executeJavaScript(code),tick=()=>new Promise(r=>setTimeout(r,25));

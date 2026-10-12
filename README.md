@@ -1,9 +1,15 @@
 # Anime Player
 
-Anime Player **v0.5.44** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.45** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Stabilization audit — 0.5.45 (Phase 7)
+
+- Existing unreadable, truncated or structurally invalid library files stop opening with a clear error and retain their original bytes. Only a missing file starts a new library. A failed account-file switch restores the previous valid Store and invalidates old requests.
+- Every production IPC validates the originating window, main frame and application entry. External navigation, webviews and permissions are blocked; ordinary HTTP/HTTPS guide links remain available through the browser.
+- Regression fixtures exercise corrupted files, account-switch failures and real Electron navigation/IPC isolation. No library schema migration, dependency upgrade, live cloud test or integration into the original repository is performed. See [release readiness and remaining gates](docs/release-readiness-7.md).
 
 ## mpv shortcuts and manual skips — 0.5.44 (Phase 6)
 

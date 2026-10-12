@@ -16,6 +16,8 @@ const { createRatingsService } = require('./src/ratings-service');
 const { createAdditionOperationService } = require('./src/addition-operations');
 const { createWorkQueue } = require('./src/work-queue');
 const { createOrganizationService } = require('./src/organization-service');
+const ElectronSecurity=require('./src/electron-security');
+const rendererEntry=path.join(__dirname,'renderer','index.html');
 const { discoverSeriesSources: discoverSources, createSourceDiscoveryQueue } = require('./src/source-discovery');
 
 // Source checkouts use a disposable local profile, never the installed app's profile.
@@ -55,13 +57,13 @@ function createWindow() {
     if(win.shortcutCaptureActive)return;
     if (input.type === 'keyDown' && (input.key === 'F12' || (input.control && input.shift && input.key.toLowerCase() === 'i'))) { win.webContents.toggleDevTools(); ev.preventDefault(); }
   });
-  win.loadFile(path.join(__dirname, 'renderer', 'index.html'));
-  win.webContents.setWindowOpenHandler(({ url }) => { if (/^https?:/.test(url)) shell.openExternal(url); return { action: 'deny' }; });
+  ElectronSecurity.installWindowSecurity(win,rendererEntry,url=>shell.openExternal(url));
+  win.loadFile(rendererEntry);
 }
 
 function register() {
   const lib = () => store.snapshot();
-  const h = (ch, fn) => ipcMain.handle(ch, async (_e, ...a) => fn(...a));
+  const h = (ch, fn) => ipcMain.handle(ch, async (event, ...a) => {ElectronSecurity.requireTrustedSender(event,win,rendererEntry);return fn(...a);});
 
   h('lib:get', () => lib());
   const organization=createOrganizationService({store});
@@ -400,7 +402,8 @@ async function refreshAiringStatuses() {
 
 app.whenReady().then(async () => {
   const userDataPath = app.getPath('userData');
-  store = new Store(path.join(userDataPath, 'library.json'));
+  try{store = new Store(path.join(userDataPath, 'library.json'));}
+  catch(error){dialog.showErrorBox('Libreria non aperta',`${error.message}\n\nNessun reset automatico. Conserva il file e ripristina soltanto un backup verificato.`);app.quit();return;}
   ratings = createRatingsService({store,notify:payload=>{
     if(!payload.reset && payload.status!=='loading')send('lib:changed',store.snapshot());
     send('series:ratingsProgress',payload);

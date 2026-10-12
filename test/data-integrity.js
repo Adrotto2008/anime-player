@@ -24,11 +24,12 @@ function film(store,format='MOVIE') {
 function ipc(store,player) {
   if(!player.beginRequest)player=Object.assign(new PlayerManager({store,paths:{userData:path.dirname(store.file),shaderDir:''},notify:()=>{}}),player);
   const handlers={},repo=path.join(__dirname,'..'),req=require('module').createRequire(path.join(repo,'main.js'));
+  const frame={url:require('url').pathToFileURL(path.join(repo,'renderer/index.html')).href},contents={mainFrame:frame},windowFixture={webContents:contents,isDestroyed:()=>false};
   const electron={app:{isPackaged:true,requestSingleInstanceLock:()=>true,whenReady:()=>({then:()=>{}}),on:()=>{},quit:()=>{}},
-    ipcMain:{handle:(ch,fn)=>handlers[ch]=(...args)=>fn(null,...args)}};
+    ipcMain:{handle:(ch,fn)=>handlers[ch]=(...args)=>fn({sender:contents,senderFrame:frame},...args)}};
   const context={require:name=>name==='electron'?electron:req(name),__dirname:repo,module:{exports:{}},process,console,setTimeout,clearTimeout};
-  vm.runInNewContext(fs.readFileSync(path.join(repo,'main.js'),'utf8')+'\nmodule.exports.fixture=(s,p,m)=>{store=s;player=p;mpvManager=m;register();};',context,{filename:'main.js'});
-  context.module.exports.fixture(store,player,{validate:async()=>({ok:true,path:'fixture'}),find:async()=>({ok:true,path:'fixture'})});
+  vm.runInNewContext(fs.readFileSync(path.join(repo,'main.js'),'utf8')+'\nmodule.exports.fixture=(s,p,m,w)=>{store=s;player=p;mpvManager=m;win=w;register();};',context,{filename:'main.js'});
+  context.module.exports.fixture(store,player,{validate:async()=>({ok:true,path:'fixture'}),find:async()=>({ok:true,path:'fixture'})},windowFixture);
   return handlers;
 }
 // A fluent fake models the same SELECT + conditional UPDATE contract as Supabase.

@@ -22,11 +22,12 @@ function fixture(t) {
 }
 function mainFixture(store,player,manager) {
   const handlers={},events={},req=require('module').createRequire(path.join(repo,'main.js'));
+  const frame={url:require('url').pathToFileURL(path.join(repo,'renderer/index.html')).href},contents={mainFrame:frame},windowFixture={webContents:contents,isDestroyed:()=>false};
   const electron={app:{isPackaged:true,requestSingleInstanceLock:()=>true,whenReady:()=>({then:()=>{}}),on:(ch,fn)=>{const prior=events[ch];events[ch]=prior?(...args)=>{prior(...args);fn(...args);}:fn;},quit:()=>{}},
-    ipcMain:{handle:(ch,fn)=>handlers[ch]=(...args)=>fn(null,...args)}};
+    ipcMain:{handle:(ch,fn)=>handlers[ch]=(...args)=>fn({sender:contents,senderFrame:frame},...args)}};
   const context={require:n=>n==='electron'?electron:req(n),__dirname:repo,module:{exports:{}},process,console,setTimeout,clearTimeout};
-  vm.runInNewContext(fs.readFileSync(path.join(repo,'main.js'),'utf8')+'\nmodule.exports.fixture=(s,p,m)=>{store=s;player=p;mpvManager=m;register();};',context);
-  context.module.exports.fixture(store,player,manager || {validate:async()=>({ok:true,path:'fixture'}),find:async()=>({ok:true,path:'fixture'})});
+  vm.runInNewContext(fs.readFileSync(path.join(repo,'main.js'),'utf8')+'\nmodule.exports.fixture=(s,p,m,w)=>{store=s;player=p;mpvManager=m;win=w;register();};',context);
+  context.module.exports.fixture(store,player,manager || {validate:async()=>({ok:true,path:'fixture'}),find:async()=>({ok:true,path:'fixture'})},windowFixture);
   return {handlers,events,electron};
 }
 function managed(t,f,options={}) {

@@ -168,6 +168,20 @@ class Store extends EventEmitter {
     let linkError,organizationError;
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      // An existing malformed file is not a first-run profile. Reject before
+      // migrations or a later settings/save can replace the original bytes.
+      if(!raw || typeof raw!=='object' || Array.isArray(raw) || !Array.isArray(raw.series))throw Error('Struttura della libreria non valida.');
+      for(const key of ['franchises','deletedFranchises','deletedSeries','deletedEpisodes'])if(raw[key]!=null&&!Array.isArray(raw[key]))throw Error(`Elenco ${key} non valido.`);
+      if(raw.settings!=null && (typeof raw.settings!=='object'||Array.isArray(raw.settings)))throw Error('Impostazioni non valide.');
+      for(const s of raw.series){
+        if(!s || typeof s!=='object' || Array.isArray(s) || typeof s.id!=='string' || typeof s.title!=='string')throw Error('Record serie non valido.');
+        for(const key of ['episodes','mediaParts','movieSources'])if(s[key]!=null&&!Array.isArray(s[key]))throw Error(`Elenco ${key} non valido.`);
+        for(const unit of [...(s.episodes||[]),...(s.mediaParts||[])]){
+          if(!unit || typeof unit!=='object' || Array.isArray(unit) || unit.sources!=null&&!Array.isArray(unit.sources))throw Error('Record episodio non valido.');
+          if(unit.progress!=null && (typeof unit.progress!=='object'||Array.isArray(unit.progress)))throw Error('Progresso non valido.');
+          for(const source of unit.sources||[])if(!source || typeof source!=='object' || typeof source.url!=='string')throw Error('Record sorgente non valido.');
+        }
+      }
       try{this.data.organization=Organization.validate(raw.organization);}catch(error){organizationError=error;throw error;}
       if(!Object.hasOwn(raw,'organization'))this._pendingMigrationBackup=true;
       if(!Object.hasOwn(raw,'settingsUpdatedAt'))this._pendingMigrationBackup=true;
@@ -204,7 +218,12 @@ class Store extends EventEmitter {
         try { configured = this.data.series.length > 0 && fs.statSync(this.data.settings.mpvPath).isFile(); } catch { /* onboarding richiesto */ }
         this.data.settings.onboardingComplete = Boolean(configured);
       }
-    } catch { /* primo avvio o file rovinato: si parte da zero */ }
+    } catch(error) {
+      if(error.code!=='ENOENT'){
+        const label=organizationError?'Organizzazione non valida':linkError?'Collegamenti franchise non validi':'Impossibile aprire la libreria';
+        throw new Error(`${label}; libreria non modificata; file originale non modificato: ${error.message}`,{cause:error});
+      }
+    }
     if(linkError)throw new Error(`Collegamenti franchise non validi; libreria non modificata: ${linkError.message}`);
     if(organizationError)throw new Error(`Organizzazione non valida; libreria non modificata: ${organizationError.message}`);
     this.data.organization ||= Organization.empty();
@@ -367,13 +386,20 @@ class Store extends EventEmitter {
   switchFile(file) {
     if (path.resolve(file) === path.resolve(this.file)) return;
     this.save(true, true);
+    const previousFile=this.file,previousData=this.data,previousBackup=this._pendingMigrationBackup;
     const deviceSettings = { mpvPath: this.data.settings.mpvPath || '', onboardingComplete: Boolean(this.data.settings.onboardingComplete) };
     this.file = file;
     this.scope++;
     this.revision++;
     this._pendingMigrationBackup=false;
     this.data = { settings: { ...DEFAULT_SETTINGS, ...deviceSettings }, series: [], deletedSeries: [], deletedEpisodes: [], updatedAt: 0, cloudDirty: false };
-    this.load();
+    try{this.load();}catch(error){
+      clearTimeout(this._timer);this._timer=null;
+      this.file=previousFile;this.data=previousData;this._pendingMigrationBackup=previousBackup;
+      // Keep the incremented scope: requests issued before the failed switch
+      // remain invalid, while future writes still target the valid old file.
+      throw error;
+    }
     this.data.settings.mpvPath = deviceSettings.mpvPath || this.data.settings.mpvPath || '';
     if (this.data.settings.mpvPath) this.data.settings.onboardingComplete = deviceSettings.onboardingComplete;
     this.save(true, true, { cloud: true, emit: false });
