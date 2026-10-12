@@ -77,9 +77,9 @@ class UpdateService{
   persist(){if(this.preferenceError)throw Error('File impostazioni illeggibile conservato: recuperalo prima di modificarlo.');fs.mkdirSync(this.profile,{recursive:true});fs.writeFileSync(this.file+'.tmp',JSON.stringify(this.preferences,null,2),{mode:0o600});fs.renameSync(this.file+'.tmp',this.file);}
   configure(patch){if(!patch||Object.keys(patch).some(k=>k!=='checkAtStartup')||typeof patch.checkAtStartup!=='boolean')throw Error('Preferenza aggiornamenti non valida.');const previous={...this.preferences};this.preferences.checkAtStartup=patch.checkAtStartup;try{this.persist();}catch(e){this.preferences=previous;throw e;}this.change({});return this.snapshot();}
   async run(fn){if(this.operation||this.state.status==='installing')return this.snapshot();this.operation=true;try{await fn();}catch(error){if(!['cancelled','error'].includes(this.state.status))this.fail(this.errorMessage(error));}finally{this.operation=false;this.change({});}return this.snapshot();}
-  check(){return this.run(async()=>{
+  check(origin='manual'){return this.run(async()=>{
     if(this.state.status==='downloaded')return;
-    this.change({status:'checking',error:null,release:null,progress:null});this.preferences.lastChecked=Date.now();if(!this.preferenceError)this.persist();
+    this.change({status:'checking',checkOrigin:origin==='startup'?'startup':'manual',error:null,release:null,progress:null});this.preferences.lastChecked=Date.now();if(!this.preferenceError)this.persist();
     if(!this.updater){this.change({status:'unsupported'});return;}
     await this.updater.checkForUpdates();
   });}
@@ -105,7 +105,7 @@ class UpdateService{
     try{if(saveError)throw saveError;this.verify(this.updater);this.backup(this.profile,this.state.currentVersion);this.updater.autoRunAppAfterInstall=!!this.restart;this.updater.quitAndInstall(true,!!this.restart);return this.state.status!=='error';}
     catch{this.fail('Integrità, salvataggio o backup fallito: installazione annullata.');return false;}
   }
-  start(){if(this.preferences.checkAtStartup&&!this.preferenceError&&this.updater){this.timer=setTimeout(()=>this.check(),10000);this.timer.unref?.();}}
+  start(){if(this.preferences.checkAtStartup&&!this.preferenceError&&this.updater){this.timer=setTimeout(()=>this.check('startup'),10000);this.timer.unref?.();}}
 }
 function createUpdateService({app,profile,notify,isPlaying,save}){
   const cap=capability({packaged:app.isPackaged,platform:process.platform,env:process.env,resourcesPath:process.resourcesPath,execPath:process.execPath});

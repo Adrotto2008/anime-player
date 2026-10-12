@@ -4,13 +4,21 @@ const api = window.animeApi; // il ponte si chiama animeApi: un `const api` acca
 const { setLanguage, t } = window.i18n;
 const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'manual', organizationContext:null, player: { playing: false }, stats: null, ratingLoads: {}, additions: [], descriptionRequests: new Set() };
 let library=state.lib,chartIndices=new WeakMap(),chartMappings=new WeakMap();
-let updateView;const updateNotifications=new Set();
+let updateView,updatePrompt;let startupUpdateShown=false,updatesReady=false;const updateNotifications=new Set();
 function receiveUpdate(payload){
   if(!payload)return;
   state.updates=payload;
   if(updateView?.root.isConnected)updateView.update(payload);
+  updatePrompt?.update(payload);
+  if(updatesReady&&!startupUpdateShown&&payload.checkOrigin==='startup'&&payload.status==='available'&&payload.release){
+    startupUpdateShown=true;
+    openDialog(state.lib.settings.language==='it'?'Aggiornamento disponibile':'Update available',close=>{
+      updatePrompt=window.UpdatePrompt({h,api,language:state.lib.settings.language,onState:receiveUpdate,onClose:close});
+      updatePrompt.update(payload);return updatePrompt.root;
+    },{locked:true,onClose:()=>{updatePrompt=null;},blockBackground:true});
+  }
   const key=payload.status+':'+payload.release?.version;
-  if(['available','downloaded'].includes(payload.status)&&!updateNotifications.has(key)){
+  if(payload.checkOrigin!=='startup'&&['available','downloaded'].includes(payload.status)&&!updateNotifications.has(key)){
     updateNotifications.add(key);
     toastAction(state.lib.settings.language==='it'?'Aggiornamento '+payload.release.version:'Update '+payload.release.version,t('settingsTitle'),openSettings);
   }
@@ -245,7 +253,8 @@ function openDialog(title, bodyBuilder, options = {}) {
   const root = $('#dialog-root');
   const previousFocus = document.activeElement;
   let closed = false;
-  const close = () => { if (closed) return; closed = true; scrim.remove(); options.onClose?.(); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
+  const blocked=[];
+  const close = () => { if (closed) return; closed = true; scrim.remove(); for(const [node,inert] of blocked)node.inert=inert; options.onClose?.(); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
   const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (!options.locked && e.target === scrim) close(); } });
   const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
   const head = h('div', { class: 'dialog-head' }, h('h2', null, title),
@@ -257,6 +266,10 @@ function openDialog(title, bodyBuilder, options = {}) {
   scrim.append(dlg);
   scrim.addEventListener('keydown', (e) => { if (!options.locked && e.key === 'Escape') close(); });
   root.append(scrim);
+  if(options.blockBackground){
+    for(const node of [...document.body.children,...root.children])if(node!==root&&node!==scrim&&!['SCRIPT','STYLE'].includes(node.tagName)){blocked.push([node,node.inert]);node.inert=true;}
+    scrim.addEventListener('keydown',e=>{if(e.key!=='Tab')return;const focusable=[...dlg.querySelectorAll('button,input,select,textarea,a[href]')].filter(node=>!node.disabled&&node.getClientRects().length);const i=focusable.indexOf(document.activeElement);if(focusable.length&&(e.shiftKey?i<=0:i<0||i===focusable.length-1)){e.preventDefault();focusable[e.shiftKey?focusable.length-1:0].focus();}});
+  }
   const first = body.querySelector('input:not([type=checkbox]), textarea, select') || dlg.querySelector('button');
   if (first) first.focus();
   return close;
@@ -1651,7 +1664,7 @@ function openSetup() {
     notifySourceDiscovery(sourceDiscovery, getSeries(id)?.title);
   });
   api.on('updates:state',receiveUpdate);
-  api.on('player:state', (p) => { state.player = p; renderPlayer(); if(state.updates){state.updates.playing=p.playing;updateView?.update(state.updates);} });
+  api.on('player:state', (p) => { state.player = p; renderPlayer(); if(state.updates){state.updates.playing=p.playing;updateView?.update(state.updates);updatePrompt?.update(state.updates);} });
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call(offer.kind==='intro'?'player:skipIntro':'player:skipEnding',offer)));
@@ -1668,5 +1681,7 @@ function openSetup() {
   render();
   if (!state.lib.settings.onboardingComplete) openSetup();
   else if (!state.sync.connected) openAccountDialog();
+  updatesReady=true;
+  receiveUpdate(await api.invoke('updates:state').catch(()=>null));
 })();
 })();

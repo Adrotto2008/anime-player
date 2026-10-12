@@ -1,4 +1,4 @@
-# Aggiornamenti integrati — Anime Player 0.5.47
+# Aggiornamenti integrati — Anime Player 0.5.48
 
 ## Analisi e architettura
 
@@ -14,7 +14,8 @@ electron-updater 6.8.10 è fissato per compatibilità con builder 26; semver val
 
 - Controllo all'avvio dopo 10 secondi, senza await nell'avvio, configurabile. Controllo manuale e ultima verifica persistente; una sola operazione di rete alla volta.
 - Feed pubblico fisso Adrotto2008/anime-player. Nessun URL, comando, percorso installer, token o header dal renderer. Nessuna autenticazione GitHub richiesta nei client distribuiti.
-- Versione/data/changelog quando disponibili; notifica discreta nella UI una sola volta per versione/stato nella sessione. Nessuna notifica di sistema ripetitiva.
+- Versione/data/changelog quando disponibili. A ogni avvio con controllo automatico abilitato, una release valida maggiore apre un popup modale che blocca clic e focus sullo sfondo; nessun popup per versione corrente o errore di rete. Una sola apertura per sessione, anche se lo stato viene notificato più volte; nessuna preferenza persistente nasconde le versioni già rifiutate. Il controllo manuale mantiene la notifica discreta.
+- Nel popup «Aggiorna» scarica e richiede il riavvio se la riproduzione è ferma. Durante mpv scarica senza riavviare; dopo aver fermato la riproduzione serve un'azione esplicita per installare. «Chiudi» ripristina lo sfondo e annulla il riavvio richiesto anche se il download continua: non arma installOnQuit. Portable/DEB aprono la release ufficiale. Note come testo, progresso e stato visibili; focus da tastiera confinato al popup.
 - Download esplicito con percentuale, velocità e byte; errori oscurati e possibilità di riprovare. Un trasferimento interrotto non abilita l'installazione. Nessun download di episodi introdotto.
 - Scaricamento permesso durante mpv; riavvio vietato con sessione, richiesta Play o fallback lingua pendenti. Interrompere volontariamente la riproduzione prima di riavviare.
 - Dopo il download, l'installazione resta disarmata. «Più tardi» arma l'installazione alla prossima chiusura volontaria; la casella consente di revocarla. Nessun timer chiude mpv. Chiudere l'app è la scelta volontaria di terminare la sessione.
@@ -59,7 +60,7 @@ Windows/Linux sono obbligatori; macOS partecipa solo quando configurato. Ogni bu
 Prima risolvere/accettare i gate di release precedenti ancora documentati (cloud live, migrazioni/RLS/Watch Room e installazione interattiva). Questo lavoro non li dichiara risolti.
 
 1. Rivedere codice e prove, configurare le variabili/segreti necessari e autorizzare la pubblicazione separatamente.
-2. Pubblicare il codice e il tag v0.5.47 quando autorizzato. Per una successiva versione: npm version <nuova-versione> --no-git-tag-version, aggiornare README/changelog, commit, tag corrispondente e push autorizzato.
+2. Pubblicare il codice e il tag v0.5.48 quando autorizzato. Per una successiva versione: npm version <nuova-versione> --no-git-tag-version, aggiornare README/changelog, commit, tag corrispondente e push autorizzato.
 3. Controllare workflow e release: Windows richiede AnimePlayer-Setup-<versione>.exe, .exe.blockmap e latest.yml; Linux latest-linux.yml, AppImage e DEB; macOS latest-mac.yml, DMG e ZIP quando abilitato. La portable resta disponibile. Non pubblicare soltanto l'EXE.
 4. Le versioni vecchie prive di updater devono installare manualmente la prima NSIS compatibile una volta. Conservare lo stesso profilo. Dopo quel passaggio le versioni successive vengono proposte dentro l'app.
 5. Prova obbligatoria prima di affermare il funzionamento completo: VM/utente Windows separato, installer versione A, dati sintetici con progressi/preferenze/account di test, release ufficiale B autorizzata, verifica/download/rinvio/riavvio, confronto dati dopo upgrade, riapertura e uninstall senza cancellazione dati. Ripetere su AppImage e Mac firmato; DEB con apt/privilegi.
@@ -70,11 +71,17 @@ Nuovi: src/updates.js, renderer/updates.js, scripts/release-verify.js, .github/w
 
 Modificati: main.js, preload.js, src/shutdown.js, renderer/app.js, renderer/index.html, renderer/style.css, package.json, package-lock.json, scripts/check.js, scripts/build.js, README.md; test/organization-electron.js sincronizza sempre le sequenze temporali con il compositor reale, anche senza esportazione PNG, con asserzioni precedenti conservate. test/capture-surface.js evita di rifocalizzare finestre già focalizzate e di alterare il puntatore nativo fra catture. test/renderer-electron.js aggiorna il mock dello stato updater e identifica il pannello diagnostico specifico, invece del primo pre (ora anche il changelog usa pre).
 
-Test specifici: 20 regressioni Node, 2 trasferimenti HTTP con il vero updater/downloader/hash (trasporto Node isolato, byte inerti, nessuna esecuzione installer), 8 gruppi Electron su finestra/renderer/preload/handler di produzione con updater simulato. Il trasferimento valido verifica anche il rifiuto di una cache manomessa prima dell'installazione. Lo shutdown attende progresso/salvataggio prima dell'installer. Un feed privo del primo manifest compatibile mostra una spiegazione specifica, senza fingere un aggiornamento riuscito.
+Test specifici 0.5.48: 21 regressioni Node, 2 trasferimenti HTTP con il vero updater/downloader/hash (trasporto Node isolato, byte inerti, nessuna esecuzione installer), 17 gruppi Electron su finestra/renderer/preload/handler di produzione con updater simulato. Il trasferimento valido verifica anche il rifiuto di una cache manomessa prima dell'installazione. Lo shutdown attende progresso/salvataggio prima dell'installer. Un feed privo del primo manifest compatibile mostra una spiegazione specifica, senza fingere un aggiornamento riuscito.
 
 I file di evidenza e il resoconto finale registrano esiti effettivi di check/dist e verifica dei pacchetti. Le simulazioni non dimostrano un upgrade NSIS, una release GitHub pubblicata, una firma, cloud live o Linux/macOS. Nessuna libreria/sessione personale letta o modificata durante i test; nessuna installazione, login, push, tag o release effettuati.
 
-### Esiti locali finali — 12 ottobre 2026
+### Esiti locali 0.5.48 — popup all'avvio
+
+- Check completo PASS; build Windows PASS con ripetizione della suite. 21 test Node updater, 2 trasferimenti/hash/cache con vero updater e 17 gruppi Electron di produzione con dati sintetici. Verificati popup automatico, focus confinato, ripristino dello sfondo, riapertura al nuovo renderer, assenza per versione corrente/errore/controllo manuale, aggiornamento con un clic, playback guard e chiusura durante download senza riavvio.
+- Portable/NSIS x64 estratti: 50 sorgenti e 15 shader uguali al checkout, configurazione pubblica confrontata con input esplicito; ASAR comune acd045aa7d4ebc120a58e0b3e3c926aa3a749fc4d10d1746a0006d441b69eb4f. Manifest e copie in outputs/popup-0.5.48 verificati con hash. Electron carica updater/dipendenze dal bundle .48 senza rete/installazione.
+- Portable .47 conservata come AnimePlayer-portable-0.5.47.exe, SHA-256 80326c863c1e9ae44842f1f27d8c9784582bfa74df7b6360d19ccacb538fbb4f. NSIS .47 e pacchetti .46 conservati. Installer .48 NotSigned; nessun upgrade reale, installazione, cloud live o pubblicazione. Restano i limiti esterni precedenti.
+
+### Esiti locali storici 0.5.47 — 12 ottobre 2026
 
 - npm run check: PASS. npm run dist: PASS; include di nuovo la suite completa. Tutti i test specifici finali: 20 Node + 2 trasferimenti con il vero updater + 8 gruppi Electron, senza fail/skip. npm audit: zero vulnerabilità riportate.
 - Portable e NSIS x64 .47 estratti senza esecuzione/installazione: 50 sorgenti e 15 shader uguali al checkout, manifest versione corretta, ASAR comune 6050e2331af882d38bb5c6d291fc5f1f87222ef8ad66a4c3a9c6d004b994e9c6, configurazione pubblica confrontata con l'input esplicito, nessun file personale nel bundle.

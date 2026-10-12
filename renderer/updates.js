@@ -1,6 +1,33 @@
 /* Isolated view: release notes are text, never HTML or privileged links. */
 (() => {
 'use strict';
+window.UpdatePrompt=function({h,api,language,onState,onClose}){
+  const tr=(it,en)=>language==='it'?it:en;
+  let current,closed=false;
+  const version=h('p'),status=h('p',{role:'status','aria-live':'polite'}),notes=h('pre',{class:'update-notes'}),meter=h('progress',{max:100,value:0,'aria-label':tr('Download aggiornamento','Update download')});
+  const close=h('button',{class:'btn','data-update-prompt':'close',onclick:()=>{closed=true;onClose();}},tr('Chiudi','Close'));
+  const submit=h('button',{class:'btn primary','data-update-prompt':'update',onclick:async()=>{
+    submit.disabled=true;
+    try{
+      if(!current.installable){await api.invoke('updates:releases');return;}
+      if(current.status!=='downloaded')onState(await api.invoke('updates:download'));
+      // Closing the popup cancels the requested restart, never the download.
+      if(!closed&&current.status==='downloaded'&&!current.playing)onState(await api.invoke('updates:install'));
+    }catch(error){status.textContent=error.message;}
+    finally{if(!closed)submit.disabled=!!current.busy||current.playing&&current.status==='downloaded'||['downloading','installing'].includes(current.status);}
+  }},tr('Aggiorna','Update'));
+  const root=h('section',{'data-update-prompt':true},version,status,notes,meter,h('div',{class:'row update-actions'},close,submit));
+  function update(s){
+    if(!s||closed)return;current=s;
+    version.textContent=tr('È disponibile Anime Player ','Anime Player is available: ')+s.release?.version+tr(' (installata: ',' (installed: ')+s.currentVersion+').';
+    notes.textContent=s.release?.notes||'';notes.hidden=!s.release?.notes;
+    meter.hidden=s.status!=='downloading';meter.value=Math.min(100,s.progress?.percent||0);
+    status.textContent=s.error||(s.status==='downloading'?tr('Download in corso… ','Downloading… ')+Math.min(100,s.progress?.percent||0).toFixed(1)+'%':s.status==='installing'?tr('Salvataggio e riavvio…','Saving and restarting…'):s.status==='downloaded'&&s.playing?tr('Aggiornamento scaricato. Chiudi il popup e interrompi la riproduzione prima di riavviare dalle Impostazioni.','Update downloaded. Close this popup and stop playback before restarting from Settings.'):s.reason||tr('Aggiorna per scaricare la nuova versione e riavviare.','Update to download the new version and restart.'));
+    submit.textContent=!s.installable?tr('Apri aggiornamento','Open update'):s.status==='downloaded'?tr('Aggiorna e riavvia','Update and restart'):tr('Aggiorna','Update');
+    submit.disabled=!!s.busy||s.status==='downloaded'&&s.playing||['downloading','installing'].includes(s.status);
+  }
+  return {root,update};
+};
 window.UpdateView=function({h,api,language,onState}){
   const it=language==='it',tr=(a,b)=>it?a:b;
   const statusNames={idle:tr('Pronto per la verifica.','Ready to check.'),checking:tr('Controllo in corso…','Checking…'),current:tr('Nessun aggiornamento disponibile.','You are up to date.'),available:tr('Nuova versione disponibile.','New version available.'),downloading:tr('Download in corso…','Downloading…'),downloaded:tr('Aggiornamento scaricato.','Update downloaded.'),cancelled:tr('Download interrotto. Puoi riprovare.','Download interrupted. Retry when ready.'),error:tr('Aggiornamento non riuscito.','Update failed.'),unsupported:tr('Installazione non disponibile per questo formato.','Installation unavailable for this format.'),installing:tr('Salvataggio e riavvio…','Saving and restarting…')};
