@@ -7,6 +7,8 @@ episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWor
 
 ## Pre-release blockers — 0.5.46 (Phase 7B)
 
+For a cloud-enabled Windows package, build with an explicitly supplied public configuration: set `SUPABASE_CONFIG_FILE` to a JSON file containing `url` and `publishableKey`, then run `npm run dist`. Verify the resulting packages with `node scripts/verify-windows-packages.js <report.json> <same-config.json>`. Without that input the build deliberately remains offline. The verifier checks the bundled configuration without logging the key; never supply credentials or secret keys.
+
 - Recognized root fields are explicit, including optional legacy fields. Unknown root data fails closed before load, import, merge, cloud transfer or replacement. Original files remain intact; failed backups stop transformations.
 - Logout immediately invalidates account requests and preserves the departing account's local outbox. Remote session revocation is limited to five seconds and reported separately; late replies cannot alter a newer account or login generation.
 - Electron is pinned to 44.7.0, electron-builder to 26.15.3; a build-only global-agent 4.1.3 override removes the remaining vulnerable logging chain. Sandbox, context isolation and IPC restrictions stay enabled. Source/build tooling requires Node.js >=22.12.0.

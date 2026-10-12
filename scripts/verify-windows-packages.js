@@ -5,6 +5,13 @@ const {execFileSync}=require('child_process'),asar=require('@electron/asar');
 async function main(){
 const zip=await require('app-builder-lib/out/toolsets/7zip').getPath7za(),root=path.resolve(__dirname,'..');
 const manifest=require('../package.json'),version=manifest.version,output=path.join(root,manifest.build.directories.output);
+const expectedConfig=process.argv[3]?JSON.parse(fs.readFileSync(path.resolve(process.argv[3]),'utf8')):{};
+if(process.argv[3]){
+ assert.deepEqual(Object.keys(expectedConfig).sort(),['publishableKey','url']);
+ const checked=require('../src/cloud').readConfig({},path.resolve(process.argv[3]));
+ assert.ok(checked.configured,'expected public config is invalid');
+ assert.equal(checked.url,expectedConfig.url);assert.equal(checked.key,expectedConfig.publishableKey);
+}
 const scratch=path.join(root,'.build-resources','verification-'+Date.now());fs.mkdirSync(scratch,{recursive:true});
 const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
 const extract=(file,dir)=>{fs.mkdirSync(dir,{recursive:true});execFileSync(zip,['x','-y',file,'-o'+dir],{stdio:'pipe',windowsHide:true});};
@@ -17,10 +24,10 @@ function inspect(dir){
  const names=asar.listPackage(archive);assert.ok(!names.some(name=>/(^|[\\/])(?:\.env(?:\..*)?|library\.json|supabase-session\.json|supabase-sync\.json)$/.test(name)),'personal file included');
  for(const name of expected){const text=asar.extractFile(archive,name).toString('utf8');assert.ok(!/sb_secret_[A-Za-z0-9_-]{16,}/.test(text),'private key literal');}
  const resources=path.dirname(archive),config=JSON.parse(fs.readFileSync(path.join(resources,'supabase-config.json')));
- assert.deepEqual(config,{},'This completion must be an offline build');
+ assert.deepEqual(config,expectedConfig,'bundled configuration differs from explicit build input');
  const exe=path.join(resources,'..','Anime Player.exe'),pe=fs.readFileSync(exe),offset=pe.readUInt32LE(0x3c);assert.equal(pe.readUInt16LE(offset+4),0x8664,'payload is not Windows x64');
  let shaders=0;for(const file of walk(path.join(root,'shaders'))){const relative=path.relative(path.join(root,'shaders'),file);assert.equal(hash(fs.readFileSync(file)),hash(fs.readFileSync(path.join(resources,'shaders',relative))),relative);shaders++;}
- return {version,arch:'x64',sourceFiles:expected.length,shaders,config:'empty offline config',asarHash:hash(fs.readFileSync(archive))};
+ return {version,arch:'x64',sourceFiles:expected.length,shaders,config:process.argv[3]?'validated public config':'empty offline config',asarHash:hash(fs.readFileSync(archive))};
 }
 const files={portable:path.join(output,'AnimePlayer-portable.exe'),nsis:path.join(output,'AnimePlayer-Setup-'+version+'.exe')};
 const report={version,packages:{}};
