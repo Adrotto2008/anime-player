@@ -77,7 +77,9 @@ app.whenReady().then(async()=>{
   mouse('mouseMove',ar.x+12,ar.y);await frames('05-reverse');
   mouse('mouseMove',destination.right-12,destination.y);await tick(60);mouse('mouseUp',destination.right-12,destination.y);await frames('06-landing');await until(`!document.querySelector('.sort-ghost') && !document.querySelector('.sort-saving')`);
   assert.equal(store.revision,revisionBeforeMotion+1);assert.ok(trace.some(f=>f.name==='06-landing' && f.state.landing));
-  assert.ok(trace.some(f=>f.name.startsWith('04-drag') && f.state.neighbors.length));
+  const sawNeighborMotion=trace.some(f=>f.name.startsWith('04-drag') && f.state.neighbors.length);
+  if(reducedMotion)assert.equal(sawNeighborMotion,false,'reduced-motion preference disables neighbor animation');
+  else assert.equal(sawNeighborMotion,true,'drag preview animates neighboring cards');
   ar=await start(select('library',(await ids('library'))[0]));mouse('mouseMove',destination.right-12,ar.y);await tick(100);const escapeSnapshot=store.snapshot();key('Escape');await frames('07-escape');mouse('mouseUp',destination.right-12,ar.y);await until(`!document.querySelector('.sort-ghost')`);assert.deepEqual(store.snapshot(),escapeSnapshot);
   ar=await start(select('library',(await ids('library'))[0]));mouse('mouseMove',120,200);await tick(50);const invalidSnapshot=store.snapshot();mouse('mouseUp',120,200);await frames('08-invalid');await until(`!document.querySelector('.sort-ghost')`);assert.deepEqual(store.snapshot(),invalidSnapshot);
   if(evidence)fs.writeFileSync(path.join(evidence,'animation-trace.json'),JSON.stringify(trace,null,2));
