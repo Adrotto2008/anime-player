@@ -128,15 +128,29 @@ jobs:
           const {verify}=require('./scripts/release-verify');
           for(const entry of JSON.parse(process.env.RELEASE_MATRIX).include)verify('release-assets',entry.platform,require('./package.json').version);
           NODE
-          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --title "Anime Player $GITHUB_REF_NAME" --generate-notes
-          gh release upload "$GITHUB_REF_NAME" release-assets/*
           node - <<'NODE'
           const fs=require('fs'),{execFileSync}=require('child_process'),crypto=require('crypto');
-          const data=JSON.parse(execFileSync('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/releases/tags/${process.env.GITHUB_REF_NAME}`],{encoding:'utf8'}));
-          if(!data.draft)throw Error('Expected draft release');
-          for(const name of fs.readdirSync('release-assets')){
+          const api=`repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`,tag=process.env.GITHUB_REF_NAME;
+          const releases=()=>JSON.parse(execFileSync('gh',['api',api],{encoding:'utf8'}));
+          let data=releases().find(r=>r.tag_name===tag);
+          if(data && !data.draft)throw Error('Release is already public: '+tag);
+          if(!data){
+            execFileSync('gh',['release','create',tag,'--verify-tag','--draft','--title',`Anime Player ${tag}`,'--generate-notes'],{stdio:'inherit'});
+            data=releases().find(r=>r.tag_name===tag);
+          }
+          if(!data || !data.draft)throw Error('Expected draft release');
+          const local=fs.readdirSync('release-assets'),remote=new Map(data.assets.map(a=>[a.name,a]));
+          const pending=local.filter(name=>{
+            const bytes=fs.readFileSync('release-assets/'+name),asset=remote.get(name);
+            const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex');
+            return !asset || asset.size!==bytes.length || asset.state!=='uploaded' || asset.digest && asset.digest!==digest;
+          });
+          if(pending.length)execFileSync('gh',['release','upload',tag,...pending.map(name=>'release-assets/'+name),'--clobber'],{stdio:'inherit'});
+          data=releases().find(r=>r.tag_name===tag);
+          if(!data || !data.draft)throw Error('Draft release not visible after upload');
+          for(const name of local){
             const bytes=fs.readFileSync('release-assets/'+name),asset=data.assets.find(a=>a.name===name);
-            if(!asset||asset.size!==bytes.length||asset.state!=='uploaded')throw Error('Incomplete upload: '+name);
+            if(!asset || asset.size!==bytes.length || asset.state!=='uploaded')throw Error('Incomplete upload: '+name);
             const digest='sha256:'+crypto.createHash('sha256').update(bytes).digest('hex');
             if(asset.digest && asset.digest!==digest)throw Error('Upload digest mismatch: '+name);
           }
