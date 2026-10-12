@@ -21,7 +21,7 @@ app.whenReady().then(async () => {
     store.addSeries({ title:'Standalone' }), store.addSeries({ title:'Survivor' })];
   const handle=(ch,fn)=>ipcMain.handle(ch,(_e,...args)=>fn(...args));
   handle('lib:get',()=>store.snapshot()); handle('presets:list',()=>[]); handle('app:version',()=>app.getVersion());
-  handle('updates:state',()=>null);
+  handle('updates:state',()=>null);handle('updates:ready',()=>null);handle('mpv:startup',()=>({ok:true,complete:true}));
   let authFixture={connected:false,configured:false},logoutFixture='timeout';
   handle('player:state',()=>({playing:false})); handle('auth:state',()=>authFixture);
   handle('auth:signOut',()=>{authFixture={connected:false,configured:true};return {local:true,remote:logoutFixture};});
@@ -76,8 +76,9 @@ app.whenReady().then(async () => {
   const js=async code=>{try{return await win.webContents.executeJavaScript(code);}catch(error){throw new Error(`Renderer script: ${code}\n${errors.join('\n')}\n${error.message}`);}};
   const tick=()=>new Promise(resolve=>setTimeout(resolve,80));
   const capture=async name=>{if(screenshotDir){fs.mkdirSync(screenshotDir,{recursive:true});fs.writeFileSync(path.join(screenshotDir,name+'.png'),(await require('./capture-surface').captureSurface(win)).toPNG());}};
-  await tick();
-  await js(`document.querySelector('#dialog-root .scrim .icon-btn')?.click()`);
+  for(let attempt=0;attempt<100;attempt++){if(await js(`Boolean(document.querySelector('#dialog-root .scrim .icon-btn'))`))break;await tick();}
+  assert.ok(await js(`Boolean(document.querySelector('#dialog-root .scrim .icon-btn'))`),'Startup dialog must finish initialization before exercising deletion');
+  await js(`document.querySelector('#dialog-root .scrim .icon-btn').click()`);
   // Exercise a real keyboard event immediately after each deletion, including the last child.
   for (const record of records.slice(0,3)) {
     await js(`Array.from(document.querySelectorAll('button')).find(x=>x.classList.contains('franchise-poster'))?.click()`);
@@ -85,7 +86,7 @@ app.whenReady().then(async () => {
     await tick();
     await js(`document.querySelector('.actions .danger').click()`);
     if(!baselineRenderer){
-      assert.strictEqual(await js(`document.querySelectorAll('#dialog-root .scrim').length`),1);
+      assert.strictEqual(await js(`document.querySelectorAll('#dialog-root .scrim').length`),1,await js(`Array.from(document.querySelectorAll('#dialog-root [role=dialog]')).map(d=>d.getAttribute('aria-label')).join(' | ')`));
       await js(`document.querySelector('#dialog-root .foot .danger').click()`);
       if(record===records[0]){
         await tick();assert.ok(store.getSeries(record.id));

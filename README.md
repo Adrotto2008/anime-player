@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.49** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.50** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Versions and persistent mpv setup — 0.5.50
+
+- Versions is a main navigation page with release history, pagination, explicit release selection, automatic/manual/pinned modes and optional startup notifications. Existing preferences are preserved.
+- Selected releases use their own official manifest and package with SHA-512 verification. Windows NSIS x64 downgrades to audited 0.5.47–0.5.49 are supported; older or unaudited formats are blocked. Backup is required; full rollback is not guaranteed.
+- Device configuration is completed only after mpv validation and persisted independently of account libraries. Missing configured executables trigger repair. Dismissal leaves setup incomplete. Startup notifications wait for dialogs and playback to finish.
+- See [version selection, compatibility boundaries and mpv persistence](docs/version-management.md) for implementation and remaining installation tests.
 
 ## Home banner color — 0.5.49
 
@@ -16,7 +23,7 @@ episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWor
 
 ## In-app updates — 0.5.47
 
-- Settings → Updates checks the fixed official GitHub repository, shows release notes, downloads with progress, and offers restart or installation on the next voluntary exit. Startup checks are delayed and optional; playback blocks restart. Portable and DEB display explicit alternative paths.
+- Versions checks the fixed official GitHub repository, shows release notes, downloads with progress, and offers restart or installation on the next voluntary exit. Startup checks are delayed and optional; playback blocks restart. Portable and DEB display explicit alternative paths.
 - electron-updater verifies downloads; the app rechecks the cached SHA-512 before installation. Shutdown awaits playback progress/save and creates verified backups of durable profile files. Library schemas, identities, account files and encrypted sessions retain their existing paths.
 - Tag-triggered GitHub Actions builds Windows/Linux and optionally signed macOS, verifies complete artifacts, uploads to a draft and publishes only after verifying uploads. Cloud releases require an explicit public config variable; unsigned macOS releases are excluded.
 - Windows x64 builds are verified locally. Real upgrade/installation, remote publication, Linux and macOS await the documented external tests; previous release gates still apply. See [configuration, first release and verification boundaries](docs/automatic-updates.md).

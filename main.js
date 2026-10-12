@@ -33,7 +33,11 @@ if (!app.requestSingleInstanceLock()) { app.quit(); }
 let win; let store; let player; let cloud; let roomSubscription; let updates;
 const animeWorld = new AnimeWorldClient();
 const animeUnity = new AnimeUnityClient();
-let mpvManager; let ratings;
+let mpvManager; let ratings; let mpvDevice; let mpvStartup;
+function completeMpv(result,directory=store.data.settings.mpvInstallDirectory){
+  if(!mpvDevice.data||mpvDevice.data.path!==result.path||mpvDevice.data.installDirectory!==directory||mpvDevice.data.version!==result.version)mpvDevice.complete(result,directory);mpvStartup={...result,complete:true};
+  if(store.data.settings.mpvPath!==result.path||store.data.settings.mpvInstallDirectory!==directory||!store.data.settings.onboardingComplete){store.setSettings({mpvPath:result.path,mpvInstallDirectory:directory,onboardingComplete:true});store.save(true,true);}
+}
 
 const shaderDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'shaders') : path.join(__dirname, 'shaders'));
 const send = (ch, payload) => {
@@ -79,6 +83,11 @@ function register() {
   h('organization:move',command=>organization.move(command));
   h('organization:section',command=>organization.section(command));
   h('app:version', () => app.getVersion());
+  h('updates:promptShown',()=>updates.markPrompt());
+  h('updates:ready',()=>{updates.start();return updates.snapshot();});
+  h('updates:list',page=>updates.list(page));
+  h('updates:select',version=>updates.select(version));
+  h('mpv:startup',()=>mpvStartup);
   h('updates:state',()=>updates?.snapshot() || null);
   h('updates:check',()=>updates.check());
   h('updates:download',()=>updates.download());
@@ -165,13 +174,17 @@ function register() {
     if (patch && Object.hasOwn(patch, 'mpvPath') && next.mpvPath) {
       const result = await mpvManager.validate(next.mpvPath);
       if (!result.ok) throw new Error(result.error || 'Il file selezionato non è un eseguibile mpv compatibile.');
+      if(scope!==store.scope)throw Error('Account cambiato: riprova.');
+      completeMpv(result);
     }
+    if(patch?.onboardingComplete===true&&(!next.mpvPath||!mpvStartup?.ok||mpvStartup.path!==next.mpvPath))throw Error('Configura e verifica mpv prima di completare.');
     if(patch && Object.hasOwn(patch,'shortcuts')){
       const shortcuts=require('./src/playback-shortcuts').validate(patch.shortcuts);
       await player.applyShortcuts(shortcuts);patch={...patch,shortcuts};
     }
     if(scope!==store.scope)throw Error('Account cambiato: riprova / Account changed: retry');
     store.setSettings(patch || {});
+    if(patch?.mpvPath)store.save(true,true);
     return lib();
   });
   h('settings:shortcuts',async raw=>{
@@ -183,7 +196,7 @@ function register() {
   });
   h('mpv:detect', async () => {
     const result = await mpvManager.find(store.data.settings.mpvPath);
-    if (result.ok && result.path !== store.data.settings.mpvPath) store.setSettings({ mpvPath: result.path });
+    if (result.ok) completeMpv(result);
     return { ...result, lib: lib() };
   });
   h('mpv:openGuide', async () => { await shell.openExternal(mpvManager.installGuide); return true; });
@@ -197,7 +210,7 @@ function register() {
     });
     if (r.canceled || !r.filePaths[0]) return { ok: false, status: 'cancelled', cancelled: true, lib: lib() };
     const result = await mpvManager.install(r.filePaths[0]);
-    if (result.ok) store.setSettings({ mpvPath: result.path, mpvInstallDirectory: result.installDirectory });
+    if (result.ok) completeMpv(result,result.installDirectory);
     return { ...result, lib: lib() };
   });
   h('mpv:browse', async () => {
@@ -206,7 +219,7 @@ function register() {
     if (r.canceled || !r.filePaths[0]) return lib();
     const result = await mpvManager.validate(r.filePaths[0]);
     if (!result.ok) throw new Error(result.error || 'Il file selezionato non è un eseguibile mpv compatibile.');
-    store.setSettings({ mpvPath: r.filePaths[0] });
+    completeMpv(result);
     return lib();
   });
 
@@ -451,10 +464,10 @@ app.whenReady().then(async () => {
   updates=require('./src/updates').createUpdateService({app,profile:userDataPath,notify:state=>send('updates:state',state),
     isPlaying:()=>!!(player.cur || player.activeRequest || player.pendingLanguageFallback),save:()=>store.save(true,true,{cloud:true})});
   register();
-  const detected = await mpvManager.find(store.data.settings.mpvPath);
-  if (detected.ok && detected.path !== store.data.settings.mpvPath) store.setSettings({ mpvPath: detected.path });
+  mpvDevice=new (require('./src/mpv-device').MpvDevice)(userDataPath);
+  mpvStartup=await mpvDevice.inspect(mpvManager,store.data.settings);
+  if(mpvStartup.ok)completeMpv(mpvStartup,mpvDevice.data.installDirectory);
   createWindow();
-  updates.start();
   cloud.start().catch((err) => console.warn('Avvio Supabase fallito:', err.message));
   setTimeout(() => refreshAiringStatuses().catch((err) => console.warn('Aggiornamento programmazione fallito:', err.message)), 1200);
 });

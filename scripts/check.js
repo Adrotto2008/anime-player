@@ -1,4 +1,5 @@
 const { execFileSync, execSync } = require('child_process');
+execFileSync(process.execPath,['--test','test/version-management.js'],{stdio:'inherit'});
 for(const file of ['src/updates.js','renderer/updates.js','scripts/release-verify.js','test/updates.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/updates.js'],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/updates-transfer.js'],{stdio:'inherit'});

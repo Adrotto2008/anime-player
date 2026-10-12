@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.49",
+  "version": "0.5.50",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -15,8 +15,7 @@
   },
   "devDependencies": {
     "electron": "44.7.0",
-    "electron-builder": "26.15.3",
-    "js-yaml": "4.3.2"
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.adriano.animeplayer",
@@ -92,7 +91,8 @@
     "cheerio": "1.1.2",
     "electron-updater": "6.8.10",
     "semver": "7.7.3",
-    "ws": "8.22.0"
+    "ws": "8.22.0",
+    "js-yaml": "4.3.2"
   },
   "overrides": {
     "global-agent": "4.1.3"

@@ -1,7 +1,7 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 const INVOKE = new Set([
-  'updates:state','updates:check','updates:download','updates:later','updates:install','updates:configure','updates:releases',
+  'updates:promptShown','mpv:startup','updates:ready','updates:list','updates:select','updates:state','updates:check','updates:download','updates:later','updates:install','updates:configure','updates:releases',
   'organization:context','organization:move','organization:section',
   'series:videoPreference', 'series:imdbSelect', 'episodes:sourceLanguage', 'player:languageFallback',
   'lib:get', 'library:export', 'library:import', 'series:search', 'series:create', 'series:addStart', 'series:addTasks', 'series:addCancel', 'series:addRetry', 'series:update', 'series:delete', 'series:refresh', 'series:ratings', 'series:discoverSources', 'movie:addLink', 'movie:play','content:addLink',

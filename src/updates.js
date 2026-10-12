@@ -18,13 +18,14 @@ function capability({packaged,platform,env={},resourcesPath,execPath}){
   if(platform==='darwin')return {format:'mac',installable:true,reason:'macOS richiede release firmate e notarizzate.'};
   return {format:'unsupported',installable:false,reason:'Installazione automatica non disponibile per questo formato.'};
 }
-function validateInfo(info,current){
-  if(!semver.valid(info?.version)||!semver.gt(info.version,current)||semver.prerelease(info.version))throw Error('Metadati versione non validi.');
+function validateInfo(info,current,selected=null){
+  if(!semver.valid(info?.version)||!(selected?info.version===selected.release.version:semver.gt(info.version,current))||semver.prerelease(info.version))throw Error('Metadati versione non validi.');
   if(!Array.isArray(info.files)||!info.files.length)throw Error('Pacchetto incompleto: file mancanti.');
   for(const file of info.files){
     if(typeof file.url!=='string'||!file.url||file.url.includes('\\')||file.url.includes('..')||!/^[-\w. ()+]+$/.test(file.url))throw Error('Origine del pacchetto non consentita.');
     if(typeof file.sha512!=='string'||Buffer.from(file.sha512,'base64').length!==64||!Number.isSafeInteger(file.size)||file.size<=0)throw Error('Pacchetto incompleto: hash o dimensione mancanti.');
   }
+  if(selected&&JSON.stringify(info.files)!==JSON.stringify(selected.info.files))throw Error('Manifest selezionato cambiato.');
   return {version:info.version,date:typeof info.releaseDate==='string'?info.releaseDate:'',notes:(typeof info.releaseNotes==='string'?info.releaseNotes:Array.isArray(info.releaseNotes)?info.releaseNotes.map(x=>String(x.note||'')).join('\n'):'').slice(0,24000)};
 }
 // Copy durable profile files only; retain all backups, never traverse Chromium caches.
@@ -52,21 +53,23 @@ function verifyDownloaded(updater){
 class UpdateService{
   constructor({app,profile,cap,updater=null,notify=()=>{},isPlaying=()=>false,save=()=>{},backup=backupProfile,verify=verifyDownloaded}){
     this.app=app;this.profile=profile;this.cap=cap;this.updater=updater;this.notify=notify;this.isPlaying=isPlaying;this.save=save;this.backup=backup;this.verify=verify;
-    this.file=path.join(profile,'updates.json');this.preferences={checkAtStartup:true,lastChecked:null};this.preferenceError=false;
-    try{const raw=JSON.parse(fs.readFileSync(this.file,'utf8'));if(typeof raw.checkAtStartup!=='boolean'||!(raw.lastChecked===null||Number.isFinite(raw.lastChecked)))throw Error('Impostazioni aggiornamenti non valide.');this.preferences=raw;}catch(error){if(error.code!=='ENOENT')this.preferenceError=true;}
+    this.file=path.join(profile,'updates.json');this.preferences={checkAtStartup:true,lastChecked:null,mode:'automatic',popupAtStartup:true,pinnedVersion:null};this.preferenceError=false;
+    try{const raw=JSON.parse(fs.readFileSync(this.file,'utf8'));if(typeof raw.checkAtStartup!=='boolean'||!(raw.lastChecked===null||Number.isFinite(raw.lastChecked)))throw Error('Impostazioni aggiornamenti non valide.');this.preferences={...this.preferences,...raw,mode:raw.mode||(raw.checkAtStartup?'automatic':'manual')};if(!['automatic','manual','pinned'].includes(this.preferences.mode)||typeof this.preferences.popupAtStartup!=='boolean'||(this.preferences.pinnedVersion!==null&&!semver.valid(this.preferences.pinnedVersion)))throw Error('Preferenze non valide.');}catch(error){if(error.code!=='ENOENT')this.preferenceError=true;}
+    this.catalog=new (require('./release-catalog').ReleaseCatalog)({current:app.getVersion(),cap});
     this.state={status:'idle',currentVersion:app.getVersion(),...cap,release:null,progress:null,error:null,installOnQuit:false,releasesURL:RELEASES};
     if(this.preferenceError)this.state.error='Impostazioni aggiornamenti illeggibili: file conservato, controllo automatico disattivato.';
     if(updater){
       updater.autoDownload=false;updater.autoInstallOnAppQuit=false;updater.allowDowngrade=false;updater.allowPrerelease=false;updater.fullChangelog=false;updater.disableWebInstaller=true;updater.logger=null;
-      updater.on('update-available',info=>{try{this.state.release=validateInfo(info,this.state.currentVersion);this.change({status:'available',error:null,progress:null});}catch{this.fail('Pacchetto non valido o incompleto: aggiornamento bloccato.');}});
+      updater.on('update-available',info=>{try{this.state.release=validateInfo(info,this.state.currentVersion,this.selected);this.change({status:'available',error:null,progress:null});}catch{this.fail('Pacchetto non valido o incompleto: aggiornamento bloccato.');}});
       updater.on('update-not-available',()=>this.change({status:'current',release:null,progress:null,error:null}));
       updater.on('download-progress',p=>{if(this.state.status==='downloading')this.change({progress:Object.fromEntries(['percent','bytesPerSecond','total','transferred'].map(k=>[k,Math.max(0,Number(p[k])||0)]))});});
-      updater.on('update-downloaded',info=>{try{const release=validateInfo(info,this.state.currentVersion);if(release.version!==this.state.release?.version||this.state.status!=='downloading')throw Error('Versione inattesa');this.change({status:'downloaded',error:null,progress:this.state.progress?{...this.state.progress,percent:100,transferred:this.state.progress.total,bytesPerSecond:0}:null});}catch{this.fail('Pacchetto scaricato non valido: installazione bloccata.');}});
+      updater.on('update-downloaded',info=>{try{const release=validateInfo(info,this.state.currentVersion,this.selected);if(release.version!==this.state.release?.version||this.state.status!=='downloading')throw Error('Versione inattesa');this.change({status:'downloaded',error:null,progress:this.state.progress?{...this.state.progress,percent:100,transferred:this.state.progress.total,bytesPerSecond:0}:null});}catch{this.fail('Pacchetto scaricato non valido: installazione bloccata.');}});
       updater.on('error',error=>this.fail(this.errorMessage(error)));
       updater.on('update-cancelled',()=>this.change({status:'cancelled',progress:null,error:'Download interrotto. Puoi riprovare.'}));
     }
   }
-  snapshot(){return {...this.state,preferences:{...this.preferences},busy:!!this.operation,playing:this.isPlaying()};}
+  markPrompt(){this.promptShown=true;return true;}
+  snapshot(){return {...this.state,startupPromptShown:!!this.promptShown,preferences:{...this.preferences},busy:!!this.operation,playing:this.isPlaying()};}
   errorMessage(error){
     if(this.state.status==='downloading')return 'Download fallito. Controlla la connessione e riprova.';
     if(['ERR_UPDATER_CHANNEL_FILE_NOT_FOUND','ERR_UPDATER_NO_PUBLISHED_VERSIONS'].includes(error?.code))return 'La release ufficiale non contiene ancora i metadati di aggiornamento. Occorre pubblicare la prima release compatibile.';
@@ -75,15 +78,40 @@ class UpdateService{
   change(patch){Object.assign(this.state,patch);this.notify(this.snapshot());}
   fail(error){this.change({status:'error',error,installOnQuit:false});}
   persist(){if(this.preferenceError)throw Error('File impostazioni illeggibile conservato: recuperalo prima di modificarlo.');fs.mkdirSync(this.profile,{recursive:true});fs.writeFileSync(this.file+'.tmp',JSON.stringify(this.preferences,null,2),{mode:0o600});fs.renameSync(this.file+'.tmp',this.file);}
-  configure(patch){if(!patch||Object.keys(patch).some(k=>k!=='checkAtStartup')||typeof patch.checkAtStartup!=='boolean')throw Error('Preferenza aggiornamenti non valida.');const previous={...this.preferences};this.preferences.checkAtStartup=patch.checkAtStartup;try{this.persist();}catch(e){this.preferences=previous;throw e;}this.change({});return this.snapshot();}
+  configure(patch){
+    if(!patch||!Object.keys(patch).length||Object.keys(patch).some(k=>!['checkAtStartup','mode','popupAtStartup','pinnedVersion'].includes(k)))throw Error('Preferenza aggiornamenti non valida.');
+    const next={...this.preferences,...patch};
+    if(Object.hasOwn(patch,'checkAtStartup')&&!Object.hasOwn(patch,'mode'))next.mode=patch.checkAtStartup?'automatic':'manual';
+    if(typeof next.checkAtStartup!=='boolean'||typeof next.popupAtStartup!=='boolean'||!['automatic','manual','pinned'].includes(next.mode)||(next.pinnedVersion!==null&&!semver.valid(next.pinnedVersion)))throw Error('Preferenza aggiornamenti non valida.');
+    next.checkAtStartup=next.mode==='automatic';if(next.mode==='pinned')next.pinnedVersion=next.pinnedVersion||this.state.currentVersion;
+    if(next.mode==='pinned'&&['downloading','downloaded','installing'].includes(this.state.status)&&this.state.release?.version!==next.pinnedVersion)throw Error('Completa o annulla il cambio versione prima di bloccare la versione.');
+    const previous=this.preferences;this.preferences=next;try{this.persist();}catch(e){this.preferences=previous;throw e;}if(next.mode==='pinned')this.change({installOnQuit:false});this.change({});return this.snapshot();
+  }
+  list(page){return this.catalog.page(page);}
+  select(version){
+    if(this.operation||['downloading','downloaded','installing'].includes(this.state.status))throw Error('Cambio versione già in corso.');
+    if(this.preferences.mode==='pinned'&&version!==this.preferences.pinnedVersion)throw Error('Sblocca la versione nelle preferenze prima di cambiarla.');
+    return this.run(async()=>{
+      this.change({status:'checking',checkOrigin:'manual',release:null,error:null,installOnQuit:false});
+      let selected;try{selected=await this.catalog.resolve(version);}catch(error){this.fail(String(error.message).slice(0,400));return;}
+      if(!this.updater||!this.cap.installable)throw Error('Formato non installabile.');
+      validateInfo(selected.info,this.state.currentVersion,selected);
+      this.selected=selected;this.updater.setFeedURL({provider:'generic',url:selected.base,useMultipleRangeRequest:false});
+      this.updater.allowDowngrade=semver.lt(version,this.state.currentVersion);this.updater.disableDifferentialDownload=true;
+      await this.updater.checkForUpdates();
+      if(this.state.status==='available')this.change({release:{...this.state.release,...selected.release}});
+    });
+  }
   async run(fn){if(this.operation||this.state.status==='installing')return this.snapshot();this.operation=true;try{await fn();}catch(error){if(!['cancelled','error'].includes(this.state.status))this.fail(this.errorMessage(error));}finally{this.operation=false;this.change({});}return this.snapshot();}
   check(origin='manual'){return this.run(async()=>{
-    if(this.state.status==='downloaded')return;
+    if(['downloaded','downloading','installing'].includes(this.state.status))return;
+    if(origin==='startup'&&(!this.preferences.checkAtStartup||this.preferences.mode!=='automatic'))return;
+    if(this.selected){this.updater.setFeedURL({...OFFICIAL});this.updater.allowDowngrade=false;this.selected=null;}
     this.change({status:'checking',checkOrigin:origin==='startup'?'startup':'manual',error:null,release:null,progress:null});this.preferences.lastChecked=Date.now();if(!this.preferenceError)this.persist();
     if(!this.updater){this.change({status:'unsupported'});return;}
     await this.updater.checkForUpdates();
   });}
-  download(){if(!this.cap.installable||!this.state.release||!['available','error','cancelled'].includes(this.state.status))throw Error('Download non disponibile.');return this.run(async()=>{
+  download(){if(this.preferences.mode==='pinned'&&this.state.release?.version!==this.preferences.pinnedVersion)throw Error('Versione bloccata: sblocca prima di scaricare.');if(!this.cap.installable||!this.state.release||!['available','error','cancelled'].includes(this.state.status))throw Error('Download non disponibile.');return this.run(async()=>{
     // v6 trusts an in-memory cache entry on retries within the same process.
     // Recreate its helper after a failed integrity check so its own disk-cache
     // validator rehashes/cleans the pending download before fetching again.
@@ -105,7 +133,7 @@ class UpdateService{
     try{if(saveError)throw saveError;this.verify(this.updater);this.backup(this.profile,this.state.currentVersion);this.updater.autoRunAppAfterInstall=!!this.restart;this.updater.quitAndInstall(true,!!this.restart);return this.state.status!=='error';}
     catch{this.fail('Integrità, salvataggio o backup fallito: installazione annullata.');return false;}
   }
-  start(){if(this.preferences.checkAtStartup&&!this.preferenceError&&this.updater){this.timer=setTimeout(()=>this.check('startup'),10000);this.timer.unref?.();}}
+  start(){if(this.timer)return;if(this.preferences.mode==='automatic'&&this.preferences.checkAtStartup&&!this.preferenceError&&this.updater){this.timer=setTimeout(()=>this.check('startup'),10000);this.timer.unref?.();}}
 }
 function createUpdateService({app,profile,notify,isPlaying,save}){
   const cap=capability({packaged:app.isPackaged,platform:process.platform,env:process.env,resourcesPath:process.resourcesPath,execPath:process.execPath});

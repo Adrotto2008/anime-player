@@ -10,17 +10,17 @@ function receiveUpdate(payload){
   state.updates=payload;
   if(updateView?.root.isConnected)updateView.update(payload);
   updatePrompt?.update(payload);
-  if(updatesReady&&!startupUpdateShown&&payload.checkOrigin==='startup'&&payload.status==='available'&&payload.release){
-    startupUpdateShown=true;
+  if(updatesReady&&!startupUpdateShown&&payload.checkOrigin==='startup'&&payload.status==='available'&&payload.release&&!payload.startupPromptShown&&payload.preferences.checkAtStartup&&payload.preferences.mode==='automatic'&&payload.preferences.popupAtStartup!==false&&!payload.playing&&!state.player.playing&&!$('#dialog-root').children.length){
+    startupUpdateShown=true;api.invoke('updates:promptShown').catch(()=>{});
     openDialog(state.lib.settings.language==='it'?'Aggiornamento disponibile':'Update available',close=>{
-      updatePrompt=window.UpdatePrompt({h,api,language:state.lib.settings.language,onState:receiveUpdate,onClose:close});
+      updatePrompt=window.UpdatePrompt({h,api,language:state.lib.settings.language,onState:receiveUpdate,onClose:close,onVersions:()=>{close();go({name:'versions'});}});
       updatePrompt.update(payload);return updatePrompt.root;
     },{locked:true,onClose:()=>{updatePrompt=null;},blockBackground:true});
   }
   const key=payload.status+':'+payload.release?.version;
   if(payload.checkOrigin!=='startup'&&['available','downloaded'].includes(payload.status)&&!updateNotifications.has(key)){
     updateNotifications.add(key);
-    toastAction(state.lib.settings.language==='it'?'Aggiornamento '+payload.release.version:'Update '+payload.release.version,t('settingsTitle'),openSettings);
+    toastAction(state.lib.settings.language==='it'?'Aggiornamento '+payload.release.version:'Update '+payload.release.version,state.lib.settings.language==='it'?'Versioni':'Versions',()=>go({name:'versions'}));
   }
 }
 Object.defineProperty(state,'lib',{get:()=>library,set:value=>{
@@ -254,7 +254,7 @@ function openDialog(title, bodyBuilder, options = {}) {
   const previousFocus = document.activeElement;
   let closed = false;
   const blocked=[];
-  const close = () => { if (closed) return; closed = true; scrim.remove(); for(const [node,inert] of blocked)node.inert=inert; options.onClose?.(); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
+  const close = () => { if (closed) return; closed = true; scrim.remove(); for(const [node,inert] of blocked)node.inert=inert; options.onClose?.(); queueMicrotask(()=>receiveUpdate(state.updates)); if (previousFocus?.isConnected) previousFocus.focus({ preventScroll: true }); };
   const scrim = h('div', { class: 'scrim', onmousedown: (e) => { if (!options.locked && e.target === scrim) close(); } });
   const dlg = h('div', { class: 'dialog', role: 'dialog', 'aria-modal': 'true', 'aria-label': title });
   const head = h('div', { class: 'dialog-head' }, h('h2', null, title),
@@ -301,6 +301,7 @@ function renderRail() {
     h('div', { class: 'nav-label' }, t('navBrowse')),
     navBtn(t('library'), 'library', () => go({ name: 'home' }), v === 'home' || v === 'series' || v === 'ratings-chart'),
     navBtn(t('stats'), 'stats', () => go({ name: 'stats' }), v === 'stats'),
+    navBtn(state.lib.settings.language==='it'?'Versioni':'Versions', 'refresh', () => go({name:'versions'}), v==='versions'),
     navBtn(t('social'), 'social', () => go({ name: 'social' }), v === 'social'),
     h('div', { class: 'nav-label' }, t('navTools')),
     navBtn(t('openLink'), 'link', openLinkDialog, false),
@@ -488,7 +489,7 @@ function render() {
     state.view.name === 'franchise' ? franchiseView(state.view.id) :
     state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
     state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
-    state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
+    state.view.name === 'versions' ? versionsView() : state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
   );
   organizationSizes.disconnect();
   for(const grid of main.querySelectorAll('.organized-grid[data-sort-family="visual"]')){sizeOrganizationGrid(grid);organizationSizes.observe(grid);}
@@ -1548,9 +1549,7 @@ function openSettings() {
     const skipOpening = h('input', { type: 'checkbox' }); skipOpening.checked = !!st.skipOpening;
     const skipEnding = h('input', { type: 'checkbox' }); skipEnding.checked = !!st.skipEnding;
     const sec = (title, ...kids) => h('section', { class: 'form-section' }, h('h3', null, title), kids);
-    updateView=window.UpdateView({h,api,language:st.language,onState:payload=>{state.updates=payload;}});
-    if(state.updates)updateView.update(state.updates);
-    updateView.load();
+
     return [
       sec(t('secPlayer'),
         field(t('mpvPath'), h('div', { class: 'row' }, mpv,
@@ -1571,12 +1570,16 @@ function openSettings() {
         h('div', { class: 'two' }, field(t('audioLanguages'), alang), field(t('subtitleLanguages'), slang))),
       sec(t('secAppearance'), h('div', { class: 'two' }, field(t('interfaceTheme'), theme), field(t('primaryLanguage'), language))),
       sec(t('secAdvanced'), field(t('userAgent'), ua), field(t('extraArgs'), extra)),
-      updateView.root,
       h('div', { class: 'foot' }, h('span', { class: 'muted small app-version' }, `${t('appVersion')}: ${state.version || '—'}`), h('button', { class: 'btn', onclick: close }, t('cancel')),
         h('button', { class: 'btn primary', onclick: async () => { await mutate('settings:set', { mpvPath: mpv.value.trim(), defaultPreset: preset.value, theme: theme.value, language: language.value, autoplayNext: auto.checked, skipOpening: skipOpening.checked, skipEnding: skipEnding.checked, alang: alang.value.trim(), slang: slang.value.trim(), userAgent: ua.value.trim(), extraArgs: extra.value.trim() }); toast(t('saved')); close(); } }, t('save')))];
   });
 }
 
+function versionsView(){
+  updateView=window.UpdateView({h,api,language:state.lib.settings.language,onState:receiveUpdate});
+  if(state.updates)updateView.update(state.updates);updateView.load();
+  return h('div',{class:'page versions-page'},h('div',{class:'head'},h('h1',null,state.lib.settings.language==='it'?'Versioni':'Versions')),updateView.root);
+}
 function shortcutsView() {
   const S=window.PlaybackShortcuts,draft={...S.effective(state.lib.settings.shortcuts)},status=h('p',{class:'muted small',role:'status'});
   const labels={next:'shortcutNext',previous:'shortcutPrevious',skipIntro:'shortcutIntro',skipEnding:'shortcutEnding'};
@@ -1604,8 +1607,8 @@ function shortcutsView() {
   return h('div',{class:'page'},h('div',{class:'head'},h('h1',null,t('playbackShortcuts'))),h('section',{class:'panel shortcuts-page'},h('p',{class:'muted'},t('shortcutsHint')),rows,status,h('div',{class:'foot'},save)));
 }
 
-function openSetup() {
-  openDialog(t('setupTitle'), (close) => {
+function openSetup(repair=false) {
+  openDialog(repair?(state.lib.settings.language==='it'?'Ripara configurazione mpv':'Repair mpv configuration'):t('setupTitle'), (close) => {
     const mpv = h('input', { class: 'input', value: state.lib.settings.mpvPath || '', placeholder: t('mpvPlaceholder') });
     const preset = h('select', { class: 'input', value: state.lib.settings.defaultPreset || 'aa-hq' }, state.presets.map((p) => h('option', { value: p.id }, p.label)));
     preset.value = state.lib.settings.defaultPreset || 'aa-hq';
@@ -1614,7 +1617,6 @@ function openSetup() {
     const message = h('div', { class: 'muted small setup-note' }, t('setupMessage'));
     const later = async () => {
       try {
-        state.lib = await mutate('settings:set', { onboardingComplete: true });
         close();
       } catch { /* toast */ }
     };
@@ -1664,7 +1666,7 @@ function openSetup() {
     notifySourceDiscovery(sourceDiscovery, getSeries(id)?.title);
   });
   api.on('updates:state',receiveUpdate);
-  api.on('player:state', (p) => { state.player = p; renderPlayer(); if(state.updates){state.updates.playing=p.playing;updateView?.update(state.updates);updatePrompt?.update(state.updates);} });
+  api.on('player:state', (p) => { state.player = p; renderPlayer(); if(state.updates){state.updates.playing=p.playing;updateView?.update(state.updates);updatePrompt?.update(state.updates);receiveUpdate(state.updates);} });
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call(offer.kind==='intro'?'player:skipIntro':'player:skipEnding',offer)));
@@ -1678,10 +1680,12 @@ function openSetup() {
   state.player = await api.invoke('player:state');
   state.sync = await api.invoke('auth:state').catch(() => ({ configured: false, connected: false }));
   if (state.sync.connected) state.profile = await api.invoke('profile:mine').catch(() => null);
+  const mpvStatus=await api.invoke('mpv:startup').catch(()=>null);
   render();
-  if (!state.lib.settings.onboardingComplete) openSetup();
+  if(mpvStatus?!mpvStatus.ok:!state.lib.settings.onboardingComplete)openSetup(mpvStatus?.repair);
   else if (!state.sync.connected) openAccountDialog();
   updatesReady=true;
-  receiveUpdate(await api.invoke('updates:state').catch(()=>null));
+  receiveUpdate(await api.invoke('updates:ready').catch(()=>api.invoke('updates:state').catch(()=>null)));
+  new MutationObserver(()=>receiveUpdate(state.updates)).observe($('#dialog-root'),{childList:true});
 })();
 })();
