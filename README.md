@@ -1,9 +1,13 @@
 # Anime Player
 
-Anime Player **v0.5.48** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.49** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Home banner color — 0.5.49
+
+- The large featured banner on Home now has a teal overlay, making this release easy to identify while keeping the current anime artwork and text readable.
 
 ## Startup update popup — 0.5.48
 

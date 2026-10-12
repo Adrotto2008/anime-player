@@ -1,4 +1,8 @@
-# Aggiornamenti integrati — Anime Player 0.5.48
+# Aggiornamenti integrati — Anime Player 0.5.49
+
+## Nota rilascio 0.5.49
+
+- Il banner grande in evidenza nella Home usa una tonalità turchese, per rendere riconoscibile questo aggiornamento senza cambiare gli artwork o gli altri elementi.
 
 ## Analisi e architettura
 
