@@ -80,13 +80,13 @@ for(const channel of ['settings:shortcuts','settings:set'])test('late shortcut s
   const saving=handlers[channel](channel==='settings:set'?{shortcuts:keys}:keys),rejected=assert.rejects(saving,/Account cambiato/);await entered.promise;
   f.store.switchFile(path.join(f.dir,'another-account.json'));const before=JSON.stringify(f.store.data);gate.resolve();await rejected;assert.equal(JSON.stringify(f.store.data),before);
 });
-function fakePlayback(t,f,{manualIntervals=false}={}) {
+function fakePlayback(t,f,{manualIntervals=false,...options}={}) {
   const intervals=new Set();
-  const req=require('module').createRequire(path.join(repo,'src/player.js')),context={__dirname:path.join(repo,'src'),require:n=>n==='./mpv'?{MpvSession:FakeSession,pipePath:()=> 'fixture'}:req(n),module:{exports:{}},console,setTimeout,clearTimeout,
+  const req=require('module').createRequire(path.join(repo,'src/player.js')),context={__dirname:path.join(repo,'src'),require:n=>n==='./mpv'?{MpvSession:FakeSession,pipePath:()=> 'fixture'}:req(n),module:{exports:{}},console,setTimeout,clearTimeout,AbortController,
     setInterval:manualIntervals?fn=>{const timer={fn};intervals.add(timer);return timer;}:setInterval,
     clearInterval:manualIntervals?timer=>intervals.delete(timer):clearInterval};
   vm.runInNewContext(fs.readFileSync(path.join(repo,'src/player.js'),'utf8'),context);
-  const events=[],player=new context.module.exports.PlayerManager({store:f.store,paths:{userData:f.dir,shaderDir:path.join(repo,'shaders')},notify:(...v)=>events.push(v),progressIntervalMs:40});
+  const events=[],player=new context.module.exports.PlayerManager({store:f.store,paths:{userData:f.dir,shaderDir:path.join(repo,'shaders')},notify:(...v)=>events.push(v),progressIntervalMs:40,...options});
   f.players.push(player);return {player,events,tick:()=>{for(const timer of intervals)timer.fn();}};
 }
 test('AP-09 continuous position events produce bounded periodic disk checkpoints',async t=>{
@@ -148,6 +148,11 @@ test('AP-14 IPC heartbeat accepts a reply while playback is paused',async t=>{
   const {session,sockets}=sessionFixture(t,{loadTimeoutMs:1000,heartbeatMs:20,responseTimeoutMs:50});sockets[0].emit('connect');session._onMessage({event:'file-loaded'});
   await delay(25);assert.ok(session.pendingCommandId);session._onMessage({request_id:session.pendingCommandId,error:'success',data:1});
   assert.equal(session.pendingCommandId,null);session.quit();
+});
+test('IPC heartbeat leaves initial media loading to the bounded source timeout',async t=>{
+  const {session,sockets,result}=sessionFixture(t,{loadTimeoutMs:100,heartbeatMs:10,responseTimeoutMs:15});
+  sockets[0].emit('connect');await delay(40);assert.equal(session.pendingCommandId,undefined);
+  const r=await result.promise;assert.equal(r.reason,'load-timeout');
 });
 for(const kind of ['url','movie'])test(`AP-07 ${kind} IPC Stop during mpv validation cancels launch`,async t=>{
   const f=fixture(t),{player,launches}=managed(t,f),gate=deferred(),entered=deferred();let pending;
@@ -218,4 +223,85 @@ test('AP-07 late skip events from a replaced session cannot control the current 
   const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const old=player.cur.session;
   await player.play(f.series.id,f.series.episodes[1].id);let skips=0;player.skipCurrentSegment=async()=>skips++;
   old.emit('skip','intro');assert.equal(skips,0);player.cur.session.emit('skip','intro');assert.equal(skips,1);
+});
+
+test('recovery detects stalled video and preserves the last observed position on fallback',async t=>{
+  const f=fixture(t);f.store.addSources(f.series.id,[{number:1,url:'https://other.test/1.mp4'}]);
+  const {player,events}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);
+  const old=player.cur;old.session.loaded=true;old.session.emit('duration',1000);old.session.emit('time',420);old.session.emit('time',421);
+  old.session.quit=reason=>old.session.emit('exit',{reason,error:'stalled',eof:false});
+  player._checkStall(old,old.lastAdvanceAt+20001);await delay(20);
+  assert.notEqual(player.cur,old);assert.equal(player.cur.start,421);assert.equal(player.cur.expectedDuration,1000);
+  assert.ok(events.some(([ch,v])=>ch==='player:recovering'&&v.position===421));
+});
+for(const state of ['pause','seek','speed','local','stopped'])test('recovery ignores intentional '+state,async t=>{
+  const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
+  cur.session.loaded=true;cur.lastAdvanceAt=Date.now()-25000;let quits=0;cur.session.quit=()=>quits++;
+  if(state==='pause')cur.paused=true;
+  if(state==='seek'){cur.seeking=true;cur.seekStartedAt=Date.now();}
+  if(state==='speed')cur.speed=0;
+  if(state==='local')cur.url='C:/fixture.mp4';
+  if(state==='stopped')cur.stopping=true;
+  player._checkStall(cur);assert.equal(quits,0);cur.session.quit=reason=>cur.session.emit('exit',{reason,eof:false});
+});
+test('recovery waits a bounded interval for a seek that never completes',async t=>{
+  const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
+  cur.session.loaded=true;cur.seeking=true;cur.seekStartedAt=Date.now()-50000;cur.lastAdvanceAt=cur.seekStartedAt;
+  let reason;cur.session.quit=r=>{reason=r;};player._checkStall(cur);assert.equal(reason,'source-stalled');
+  cur.session.quit=r=>cur.session.emit('exit',{reason:r,eof:false});
+});
+test('recovery renews a stable source once, then tries the other provider without a loop',async t=>{
+  const f=fixture(t);Object.assign(f.ep.sources[0],{provider:'animeunity',providerEpisodeId:123});
+  f.store.addSources(f.series.id,[{number:1,url:'https://other.test/1.mp4',provider:'animeworld'}]);let renewals=0;
+  const {player}=fakePlayback(t,f,{resolveAutomaticSource:async s=>{renewals++;return{...s,url:'https://fixture.test/renewed.mp4',resolutionState:'resolved'};}});
+  await player.play(f.series.id,f.ep.id);let cur=player.cur;cur.session.emit('duration',1000);cur.session.emit('time',40);cur.session.emit('time',41);
+  cur.session.emit('exit',{reason:'network-error',error:'network',eof:false});await delay(20);
+  assert.equal(renewals,1);assert.equal(player.cur.start,41);assert.equal(player.cur.source.provider,'animeunity');
+  cur=player.cur;cur.session.emit('duration',1000);cur.session.emit('time',41);cur.session.emit('time',42);
+  cur.session.emit('exit',{reason:'network-error',error:'network',eof:false});await delay(20);
+  assert.equal(renewals,1);assert.equal(player.cur.source.provider,'animeworld');assert.equal(player.cur.start,42);
+});
+test('recovery rejects a different duration without resetting saved progress',async t=>{
+  const f=fixture(t);f.store.setProgress(f.series.id,f.ep.id,{pos:420,duration:1000});const {player}=fakePlayback(t,f);
+  await player.play(f.series.id,f.ep.id,{resumePos:420,expectedDuration:1000});const cur=player.cur;
+  cur.session.quit=reason=>cur.session.emit('exit',{reason,error:cur.session.error,eof:false});
+  cur.session.emit('duration',800);await delay(10);
+  assert.equal(f.ep.progress.pos,420);assert.equal(f.ep.progress.watched,false);assert.equal(player.cur,null);
+});
+test('recovery rejects a replacement that starts at zero instead of the requested time',async t=>{
+  const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id,{resumePos:420,expectedDuration:1000});const cur=player.cur;
+  cur.session.quit=reason=>cur.session.emit('exit',{reason,error:cur.session.error,eof:false});
+  cur.session.emit('duration',1000);cur.session.emit('time',0);await delay(10);assert.equal(f.ep.progress.pos,420);assert.equal(player.cur,null);
+});
+test('recovery classifies a truncated EOF as failure, preserving watched state',async t=>{
+  const f=fixture(t);f.store.addSources(f.series.id,[{number:1,url:'https://other.test/1.mp4'}]);const {player}=fakePlayback(t,f);
+  await player.play(f.series.id,f.ep.id);const cur=player.cur;cur.session.emit('duration',1000);cur.session.emit('time',40);cur.session.emit('time',41);
+  cur.session.emit('exit',{reason:'eof',eof:true});await delay(20);assert.equal(player.cur.start,41);assert.equal(f.ep.progress.watched,false);
+});
+test('Stop during proxy preparation aborts and disposes a late proxy without launch',async t=>{
+  const f=fixture(t),gate=deferred(),entered=deferred();let signal,closed=0;
+  const {player,launches}=managed(t,f,{prepareSource:async(_s,o)=>{signal=o.signal;entered.resolve();await gate.promise;return{url:'http://127.0.0.1/test',close:async()=>closed++};}});
+  const pending=player.play(f.series.id,f.ep.id);await entered.promise;await player.stop();assert.equal(signal.aborted,true);
+  gate.resolve();await pending;assert.equal(closed,1);assert.equal(launches.length,0);
+});
+test('recovery cannot automatically change from known Japanese to Italian audio',async t=>{
+  const f=fixture(t);Object.assign(f.ep.sources[0],{provider:'animeunity',language:{audio:'ja',subtitles:'it',origin:'provider',confidence:'suggested'}});
+  f.store.addSources(f.series.id,[{number:1,url:'https://other.test/1.mp4',provider:'animeworld',
+    language:{audio:'it',subtitles:null,origin:'provider',confidence:'declared'}}]);
+  const {player,events}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
+  cur.session.emit('duration',1000);cur.session.emit('time',40);cur.session.emit('time',41);
+  cur.session.emit('exit',{reason:'source-error',error:'failed',eof:false});await delay(20);
+  assert.equal(player.cur,null);assert.ok(player.pendingLanguageFallback?.choices.includes('it'));
+  assert.ok(events.some(([ch])=>ch==='player:language-fallback'));
+});
+test('unrecoverable IPC failure clears pending playback state without trying another source',async t=>{
+  const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);
+  const cur=player.cur;cur.session.emit('exit',{reason:'ipc-timeout',error:'unresponsive',eof:false});
+  assert.equal(player.cur,null);assert.equal(player.activeRequest,null);
+});
+test('watchdog counts small frame-time changes at 24 fps as continued playback',async t=>{
+  const f=fixture(t),{player}=fakePlayback(t,f);await player.play(f.series.id,f.ep.id);const cur=player.cur;
+  cur.session.loaded=true;cur.session.emit('time',1);cur.lastAdvanceAt=0;
+  cur.session.emit('time',1+1/24);assert.ok(cur.lastAdvanceAt>0);
+  cur.lastAdvanceAt=0;cur.session.emit('time',1+1/24);assert.equal(cur.lastAdvanceAt,0,'repeating an identical time cannot reset a stall');
 });

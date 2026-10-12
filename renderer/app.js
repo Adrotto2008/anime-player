@@ -1708,6 +1708,9 @@ function openSetup(repair=false) {
   api.on('player:skip-offer', (offer) => toastAction(offer.kind === 'intro' ? t('skipIntro') : t('skipEnding'), t('skipNow'), () => call(offer.kind==='intro'?'player:skipIntro':'player:skipEnding',offer)));
   api.on('player:language-fallback', showLanguageFallback);
   api.on('player:language-warning', message => toast(message));
+  api.on('player:recovering', event => toast((state.lib.settings.language==='it'?'Riprendo da ':'Resuming at ')
+    +Math.floor(event.position/60)+':'+String(Math.floor(event.position%60)).padStart(2,'0')
+    +(event.phase==='renewing'?' · '+(state.lib.settings.language==='it'?'rinnovo link':'renewing link'):' · '+event.provider)));
   state.lib = await api.invoke('lib:get');
   state.organizationContext = await api.invoke('organization:context');
   state.additions=await api.invoke('series:addTasks').catch(()=>[]);

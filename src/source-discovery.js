@@ -9,7 +9,8 @@ const {partSources} = require('./content-parts');
 async function discoverSeriesSources(series,titles=[series.title],{store,animeUnity,animeWorld,isCurrent=()=>true,onProgress=()=>{}}){
   const outcomes={},linkedNumbers=new Set(),foundNumbers=new Set();
   titles=providerTitles(series,titles).map(title=>String(title).trim()).filter(Boolean);
-  const single=Model.singleWork(series),matching={...matchOptions(series),...(single?{episodeCount:undefined,contentMode:'parts'}:{})};
+  const single=Model.singleWork(series),matching={...matchOptions(series),canonicalEpisodeCount:series.episodeCount,
+    ...(single?{episodeCount:undefined,contentMode:'parts'}:{})};
   for(const[name,client,options]of[
     ['animeunity',animeUnity,{titles,...matching}],['animeworld',animeWorld,{titles,...matching}],
   ]){

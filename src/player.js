@@ -14,9 +14,11 @@ const {PlaybackDiagnostics,exitMessage}=require('./playback-diagnostics');
 
 class PlayerManager {
   // paths: { shaderDir, userData }; notify(channel, payload)
-  constructor({ store, paths, notify, resolveAutomaticSource, progressIntervalMs = 5000 }) {
+  constructor({ store, paths, notify, resolveAutomaticSource, prepareSource=require('./source-engine').prepareSource,
+    progressIntervalMs = 5000, stallTimeoutMs=20000, stallPollMs=1000 }) {
     this.store = store; this.paths = paths; this.notify = notify; this.cur = null;
     this.resolveAutomaticSource = resolveAutomaticSource;
+    this.prepareSource=prepareSource;this.stallTimeoutMs=stallTimeoutMs;this.stallPollMs=stallPollMs;
     this.playRequestId = 0;
     this.progressIntervalMs = progressIntervalMs;
     this.diagnostics = new PlaybackDiagnostics(paths.userData);
@@ -49,7 +51,9 @@ class PlayerManager {
   }
 
   beginRequest(seriesId = null, episodeId = null) {
+    this.activeRequest?.controller?.abort();
     const request = {requestId:++this.playRequestId, scope:this.store.scope, seriesId, episodeId};
+    request.controller=new AbortController();
     this._clearLanguageFallback();
     this.activeRequest = request;
     return request;
@@ -62,7 +66,8 @@ class PlayerManager {
 
   async play(seriesId, episodeId, opts = {}) {
     const request = opts.requestId == null ? this.beginRequest(seriesId, episodeId)
-      : {requestId:opts.requestId, scope:opts.scope ?? this.store.scope, seriesId, episodeId};
+      : {requestId:opts.requestId, scope:opts.scope ?? this.store.scope, seriesId, episodeId,
+        controller:opts.controller || this.activeRequest?.controller || new AbortController()};
     if (!this.isRequestActive(request)) return;
     const {requestId, scope} = request;
     let series = this.store.getSeries(seriesId);
@@ -72,7 +77,7 @@ class PlayerManager {
     if (!ep.sources.length) throw new Error('Questo episodio non ha ancora link.');
     this.activeRequest = request;
     const title = `${series.title}${ep.kind === 'part' ? ep.title ? ' · '+ep.title : '' : ' — Ep. '+ep.number+(ep.title ? ' · '+ep.title : '')}`;
-    const resume = !ep.progress.watched && ep.progress.pos > 0 ? Math.max(0, ep.progress.pos) : 0;
+    const resume = opts.resumePos ?? (!ep.progress.watched && ep.progress.pos > 0 ? Math.max(0, ep.progress.pos) : 0);
     const effectiveMode = opts.effectiveMode || Language.preference(series.videoPreference)?.mode || 'auto';
     const attempted = this._attempted(episodeId,opts.attempted);
     const ranked = Language.rankSources(ep.sources, effectiveMode).filter(item => !attempted.has(Identity.sourceId(episodeId,item.source)));
@@ -82,13 +87,14 @@ class PlayerManager {
     this.store.setProgress(seriesId, episodeId, {}); // aggiorna "ultima visione"
     const sourceId=Identity.sourceId(episodeId,source);
     attempted.add(sourceId);
-    if (source.provider && (urlLifetime(source.url).temporary || source.resolutionState === 'found')) {
+    const recovery={resumePos:resume,expectedDuration:opts.expectedDuration,renewed:opts.renewed||new Set(),controller:request.controller};
+    if (source.provider && (opts.forceRenew || urlLifetime(source.url).temporary || source.resolutionState === 'found')) {
       try {
         if (!this.resolveAutomaticSource) {
           const expiry = urlLifetime(source.url).expiresAt;
           if (source.resolutionState === 'found' || expiry && expiry <= Date.now()) throw new Error('Sorgente temporanea scaduta o URL multimediale non risolto');
         } else {
-          const fresh = await this.resolveAutomaticSource(source, series, ep);
+          const fresh = await this.resolveAutomaticSource(source, series, ep,{signal:request.controller.signal});
           if (requestId !== this.playRequestId) return;
           if(scope!==this.store.scope) {this.activeRequest=null;return;}
           if (!fresh || fresh.resolutionState !== 'resolved') throw new Error('URL multimediale non risolto');
@@ -101,11 +107,22 @@ class PlayerManager {
         if (requestId !== this.playRequestId) return;
         if(scope!==this.store.scope) {this.activeRequest=null;return;}
         this.store.markSourceFailure(seriesId, episodeId, source?.url, {error: error.message});
-        return this._fallback({series, ep, scope, sourceIndex, source, attempted, requestId, effectiveMode}, redact(error.message));
+        return this._fallback({series, ep, scope, sourceIndex, source, attempted, requestId, effectiveMode,...recovery}, redact(error.message));
       }
     }
-    if (!Language.eligible(source, effectiveMode)) return this._fallback({series,ep,scope,source,sourceIndex,attempted,requestId,effectiveMode}, 'La lingua della sorgente rinnovata non corrisponde');
-    return this._launch({ series, ep, scope, url: source.url, sourceIndex:ep.sources.findIndex(s=>Identity.sourceId(episodeId,s)===sourceId), source, attempted, requestId, effectiveMode, title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });
+    if (!Language.eligible(source, effectiveMode)) return this._fallback({series,ep,scope,source,sourceIndex,attempted,requestId,effectiveMode,...recovery}, 'La lingua della sorgente rinnovata non corrisponde');
+    let proxy;
+    try {proxy=await this.prepareSource(source,{signal:request.controller.signal,audio:effectiveMode==='it'?'it':effectiveMode==='ja-sub-it'?'ja':undefined});}
+    catch(error) {
+      if(!this.isRequestActive(request))return;
+      this.store.markSourceFailure(seriesId,episodeId,source.url,{error:error.message});
+      return this._fallback({series,ep,scope,source,sourceIndex,attempted,requestId,effectiveMode,...recovery},redact(error.message));
+    }
+    if(!this.isRequestActive(request)){await proxy?.close();return;}
+    try {return await this._launch({ series, ep, scope, url: source.url, playbackUrl:proxy?.url,proxy,
+      sourceIndex:ep.sources.findIndex(s=>Identity.sourceId(episodeId,s)===sourceId), source, attempted, requestId, effectiveMode,
+      ...recovery,title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });}
+    finally {if(proxy && this.cur?.proxy!==proxy)await proxy.close();}
   }
 
   _attempted(unitId,values=[]) { return new Set([...values].map(value=>typeof value==='string'?value:Identity.sourceId(unitId,value))); }
@@ -135,13 +152,15 @@ class PlayerManager {
     if(c.ep && !this.store.getSource(c.series.id,c.ep.id,c.source)) {this.activeRequest=null;return;}
     const script=this._writeShortcutScript();
     const pipe = pipePath();
-    const args = A4K.buildArgs({ settings: { ...settings, userAgent: c.userAgent || settings.userAgent }, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.referer, url: c.url, pipe, shaderDir: this.paths.shaderDir });
+    const args = A4K.buildArgs({ settings: { ...settings, userAgent: c.userAgent || settings.userAgent }, presetId: c.presetId, startPos: c.start, title: c.title, referer: c.proxy?'':c.referer, url: c.playbackUrl || c.url, pipe, shaderDir: this.paths.shaderDir });
     args.splice(args.length-2,0,`--script=${script.replace(/\\/g,'/')}`);
     const strictLanguage = ['it', 'ja-sub-it'].includes(c.effectiveMode);
     if (strictLanguage) args.splice(args.length - 2, 0, '--pause=yes', `--alang=${c.effectiveMode === 'it' ? 'it,ita' : 'ja,jpn'}`, '--slang=it,ita');
     const session = new MpvSession({ mpvPath: settings.mpvPath, args, pipe });
     this.cur = { ...c, session, pos: c.start || 0, dur: 0, playedSeconds: 0, lastReportedPos: c.start || 0, lastSave: 0, saveTimer: null, nav: null, stopping: false, startedAt: Date.now() };
     const cur = this.cur;
+    cur.lastAdvanceAt=Date.now();
+    cur.stallInterval=setInterval(()=>this._checkStall(cur),this.stallPollMs);cur.stallInterval.unref?.();
     session.once('loaded',()=>{if(this._current(cur))this._syncShortcuts();});
     if (strictLanguage) cur.languageTimer = setTimeout(() => {
       session.error = 'Impossibile rilevare le tracce del file'; session.quit('track-timeout');
@@ -165,12 +184,19 @@ class PlayerManager {
     };
     cur.saveInterval = setInterval(flushProgress, this.progressIntervalMs);
     cur.saveInterval.unref?.();
-    session.on('pause', paused => {if(this.cur===cur && paused) {flushProgress();scheduleCheckpoint();}});
-    session.on('seek', () => {cur.seeking=true;});
-    session.on('seeked', () => {if(this.cur===cur && cur.seeking) {cur.seeking=false;scheduleCheckpoint();}});
+    session.on('pause', paused => {cur.paused=paused;cur.lastAdvanceAt=Date.now();if(this.cur===cur && paused) {flushProgress();scheduleCheckpoint();}});
+    session.on('seek', () => {cur.seeking=true;cur.seekStartedAt=Date.now();cur.lastAdvanceAt=Date.now();});
+    session.on('seeked', () => {if(this.cur===cur && cur.seeking) {cur.seeking=false;cur.lastAdvanceAt=Date.now();scheduleCheckpoint();}});
+    session.on('speed',speed=>{cur.speed=speed;cur.lastAdvanceAt=Date.now();});
     session.on('time', (t) => {
       if(this.cur!==cur || !Number.isFinite(t))return;
       if(!this._live(cur)) {session.quit('account-change');return;}
+      if(cur.expectedDuration && !cur.durationReady)return;
+      if(cur.expectedDuration && !cur.resumeReady) {
+        if(Math.abs(t-cur.start)>3){session.error='La nuova sorgente non ha ripreso la posizione richiesta';session.quit('source-error');return;}
+        cur.resumeReady=true;
+      }
+      if(cur.observedTime==null || t!==cur.observedTime)cur.lastAdvanceAt=Date.now();
       if(cur.observedTime != null && t > cur.observedTime && cur.dur>0 && cur.ep && !cur.playbackVerified) {
         cur.playbackVerified=true;
         this.store.markSourcePlayback(cur.series.id,cur.ep.id,cur.url);
@@ -197,11 +223,18 @@ class PlayerManager {
         if (segment) { cur.offeredEnding = true; this.notify('player:skip-offer', { kind: 'ending', end: segment.end,requestId:cur.requestId,seriesId:cur.series.id,episodeId:cur.ep.id }); }
       }
     });
-    session.on('duration', (d) => { if(this.cur===cur && Number.isFinite(d))cur.dur = d; });
+    session.on('duration', (d) => {
+      if(this.cur!==cur || !Number.isFinite(d))return;
+      if(cur.expectedDuration && d>0 && Math.abs(d-cur.expectedDuration)>Math.max(3,cur.expectedDuration*0.01)) {
+        session.error='Durata diversa: cambio automatico sospeso per evitare un altro montaggio';session.quit('source-error');return;
+      }
+      cur.durationReady=d>0;cur.dur=d;
+    });
     session.on('nav', (dir) => { if(cur.requestId!==this.playRequestId)return;cur.nav = dir; session.quit('navigation'); });
     session.on('skip', (kind) => {if(this.cur===cur && cur.requestId===this.playRequestId)this.skipCurrentSegment(kind).catch(()=>{});});
     session.on('spawn-error', (e) => {
       clearTimeout(cur.languageTimer);
+      clearInterval(cur.stallInterval);cur.proxy?.close().catch(()=>{});
       clearInterval(cur.saveInterval);clearTimeout(cur.saveTimer);
       if (this.activeRequest?.requestId === cur.requestId) this.activeRequest = null;
       this._recordDiagnostic(cur,{reason:'spawn-error',error:redact(e.message),code:e.code});
@@ -234,16 +267,20 @@ class PlayerManager {
   }
 
   _onExit(cur, result) {
+    if(result.eof && !cur.stopping && cur.playbackVerified && cur.dur>0
+      && cur.pos<cur.dur-Math.max(3,cur.dur*0.01))
+      result={...result,eof:false,reason:'network-error',error:'La sorgente è terminata prima della durata prevista'};
     const { eof, error, code, signal, stderr, stdout } = result;
     clearTimeout(cur.languageTimer);
+    clearInterval(cur.stallInterval);cur.proxy?.close().catch(()=>{});
     clearInterval(cur.saveInterval);clearTimeout(cur.saveTimer);
     this._recordDiagnostic(cur,result);
     if (this.cur !== cur) return; // già sostituita da un'altra sessione
     const live=this._live(cur);
     this.cur = null;
-    if (this.activeRequest?.requestId === cur.requestId) this.activeRequest = null;
+    if (this.activeRequest?.requestId === cur.requestId && !error && !cur.stopping) this.activeRequest = null;
     if (cur.ep && live) {
-      this._flushProgress(cur,{final:true,eof,error});
+      this._flushProgress(cur,{final:true,eof,error:error || (cur.stopping?'interrupted':null)});
       if (typeof this.onWatchSession === 'function') {
         try {
           this.onWatchSession({
@@ -262,13 +299,14 @@ class PlayerManager {
     if (cur.stopping || !live || this.shuttingDown || (cur.requestId!=null && cur.requestId!==this.playRequestId)) return;
 
     if(error && (!cur.ep || ['ipc-timeout','ipc-disconnected','abnormal','unknown-exit'].includes(result.reason))) {
+      if(this.activeRequest?.requestId===cur.requestId){this.activeRequest.controller?.abort();this.activeRequest=null;}
       this.notify('player:error',exitMessage(result));return;
     }
 
     if (cur.ep && error && !eof) {
       this.store.markSourceFailure(cur.series.id, cur.ep.id, cur.url, {error, code});
       this.notify('player:source-failed', { seriesId:cur.series.id, episodeId:cur.ep.id, provider:(cur.source || cur.ep.sources[cur.sourceIndex])?.provider, code, signal, error:redact(error), stderr:redact(stderr), stdout:redact(stdout) });
-      this._fallback(cur, error).catch(e => this.notify('player:error', redact(e.message)));
+      this._fallback({...cur,failureReason:result.reason}, error).catch(e => this.notify('player:error', redact(e.message)));
       return;
     }
     if (!cur.ep) return;
@@ -286,16 +324,42 @@ class PlayerManager {
     const source = cur.source || cur.ep.sources[cur.sourceIndex];
     const attempted = this._attempted(cur.ep.id,cur.attempted || [source]);
     const provider = source?.provider;
-    const effectiveMode = cur.effectiveMode || Language.preference(cur.series.videoPreference)?.mode || 'auto';
+    let effectiveMode = cur.effectiveMode || Language.preference(cur.series.videoPreference)?.mode || 'auto';
+    if(effectiveMode==='auto' && cur.playbackVerified) {
+      const audio=Language.classification(source?.language)?.audio;
+      if(audio==='it')effectiveMode='it';
+      else if(audio==='ja' && Language.modesFor(source).includes('ja-sub-it'))effectiveMode='ja-sub-it';
+    }
+    const resumePos=cur.pos ?? cur.resumePos ?? cur.ep.progress.pos;
+    const expectedDuration=cur.expectedDuration || cur.dur || undefined;
+    const renewed=cur.renewed || new Set(),sourceId=source&&Identity.sourceId(cur.ep.id,source);
+    if(source?.provider && source.providerEpisodeId && this.resolveAutomaticSource && cur.playbackVerified
+      && ['network-error','source-stalled'].includes(cur.failureReason) && !renewed.has(sourceId)) {
+      renewed.add(sourceId);
+      this.notify('player:recovering',{seriesId:cur.series.id,episodeId:cur.ep.id,position:resumePos,provider:source.provider,phase:'renewing'});
+      return this.play(cur.series.id,cur.ep.id,{sourceId,attempted,requestId:cur.requestId,scope:cur.scope,effectiveMode,
+        resumePos,expectedDuration,renewed,controller:cur.controller,forceRenew:true});
+    }
     const remaining = Language.rankSources(cur.ep.sources, effectiveMode).filter(item => !attempted.has(Identity.sourceId(cur.ep.id,item.source)));
     // Prefer the other provider over another cached token for the failed one.
-    const next = effectiveMode === 'auto' ? remaining.find(item => item.source.provider !== provider) || remaining[0] : remaining[0];
+    const next = remaining.find(item => item.source.provider !== provider) || remaining[0];
     if (!next) {
       if (effectiveMode !== 'auto') return this._offerLanguageFallback({...cur,attempted,effectiveMode});
+      if(this.activeRequest?.requestId===cur.requestId)this.activeRequest=null;
       this.notify('player:error', `Impossibile riprodurre il link: ${redact(error)}`); return;
     }
-    this.notify('player:error', `Link non riproducibile (${redact(error)}). Provo la sorgente ${next.index + 1}…`);
-    return this.play(cur.series.id, cur.ep.id, {sourceIndex:next.index,sourceId:Identity.sourceId(cur.ep.id,next.source), attempted, requestId:cur.requestId, scope:cur.scope, effectiveMode});
+    this.notify('player:recovering',{seriesId:cur.series.id,episodeId:cur.ep.id,position:resumePos,provider:next.source.provider||'manual',phase:'fallback'});
+    return this.play(cur.series.id, cur.ep.id, {sourceIndex:next.index,sourceId:Identity.sourceId(cur.ep.id,next.source), attempted,
+      requestId:cur.requestId, scope:cur.scope, effectiveMode,resumePos,expectedDuration,renewed,controller:cur.controller});
+  }
+
+  _checkStall(cur,now=Date.now()) {
+    if(!this._current(cur)||!cur.ep||!/^https?:\/\//i.test(cur.url)||!cur.session.loaded||cur.session.requestedReason
+      ||cur.paused||cur.speed===0||cur.session.eof)return;
+    if(cur.seeking && now-(cur.seekStartedAt||now)<this.stallTimeoutMs*2)return;
+    if(now-cur.lastAdvanceAt<this.stallTimeoutMs)return;
+    cur.session.error='La sorgente non avanza da '+Math.round(this.stallTimeoutMs/1000)+' secondi';
+    cur.session.quit('source-stalled');
   }
 
   _clearLanguageFallback() {
@@ -310,7 +374,10 @@ class PlayerManager {
     cur.attempted=this._attempted(cur.ep.id,cur.attempted);
     const remaining = cur.ep.sources.filter(source => !cur.attempted.has(Identity.sourceId(cur.ep.id,source)));
     const choices = ['it','ja-sub-it','unknown'].filter(mode => mode !== cur.effectiveMode && remaining.some(source => Language.usable(source) && Language.eligible(source,mode)));
-    if (!choices.length) { this.notify('player:error','Nessuna sorgente riproducibile per la versione richiesta. Cerca nuovi link o aggiungi una sorgente.'); return; }
+    if (!choices.length) {
+      if(this.activeRequest?.requestId===cur.requestId)this.activeRequest=null;
+      this.notify('player:error','Nessuna sorgente riproducibile per la versione richiesta. Cerca nuovi link o aggiungi una sorgente.'); return;
+    }
     this._clearLanguageFallback();
     const token = randomUUID();
     this.pendingLanguageFallback = {...cur,token,choices,preferenceAt:cur.series.videoPreference?.updatedAt || 0,preferenceMode:cur.series.videoPreference?.mode || 'auto'};
@@ -325,7 +392,8 @@ class PlayerManager {
     const series = this.store.getSeries(pending.series.id);
     if (!this._live(pending) || pending.requestId !== this.playRequestId || !series || (series.videoPreference?.updatedAt || 0) !== pending.preferenceAt
       || (series.videoPreference?.mode || 'auto') !== pending.preferenceMode || !pending.choices.includes(mode)) return false;
-    return this.play(series.id,pending.ep.id,{requestId:pending.requestId,scope:pending.scope,attempted:pending.attempted,effectiveMode:mode});
+    return this.play(series.id,pending.ep.id,{requestId:pending.requestId,scope:pending.scope,attempted:pending.attempted,effectiveMode:mode,
+      resumePos:pending.pos??pending.resumePos,expectedDuration:pending.expectedDuration||pending.dur,renewed:pending.renewed,controller:pending.controller});
   }
 
   async changeVideoPreference(seriesId, mode) {
@@ -414,11 +482,12 @@ class PlayerManager {
   }
 
   async stop({invalidate = true,reason = 'app-stop'} = {}) {
-    if (invalidate) { this.playRequestId++; this.activeRequest = null; this._clearLanguageFallback(); }
+    if (invalidate) { this.playRequestId++; this.activeRequest?.controller?.abort();this.activeRequest = null; this._clearLanguageFallback(); }
     const cur = this.cur;
     if (!cur) return;
     if(cur.stopPromise)return cur.stopPromise;
     clearTimeout(cur.languageTimer);
+    clearInterval(cur.stallInterval);
     clearInterval(cur.saveInterval);clearTimeout(cur.saveTimer);cur.saveTimer=null;
     this._flushProgress(cur);
     cur.stopPromise = new Promise((resolve,reject) => {

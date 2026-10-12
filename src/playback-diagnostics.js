@@ -10,6 +10,7 @@ const messages={
   'track-timeout':'mpv non ha comunicato le tracce audio e sottotitoli.',
   'network-error':'mpv ha segnalato un errore di rete durante la riproduzione.',
   'source-error':'mpv non riesce a riprodurre questa sorgente.',
+  'source-stalled':'La sorgente video ha smesso di avanzare.',
   'abnormal':'mpv è terminato in modo anomalo.',
   'unknown-exit':'mpv è terminato senza comunicare il motivo.',
 };

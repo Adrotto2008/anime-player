@@ -7,8 +7,7 @@ const { CloudService } = require('./src/cloud');
 const A4K = require('./src/anime4k');
 const meta = require('./src/metadata');
 const { expandPattern, expandList, parseM3U, isValidSource, detectEpisodeNumber } = require('./src/patterns');
-const { AnimeWorldClient } = require('./src/animeworld');
-const { AnimeUnityClient } = require('./src/animeunity');
+const { AnimeWorldClient, AnimeUnityClient } = require('./src/source-engine');
 const { checkSources } = require('./src/source-check');
 const { createMpvManager } = require('./src/mpv-manager');
 const { createSeriesAdder } = require('./src/series-addition');
@@ -466,24 +465,10 @@ app.whenReady().then(async () => {
   }});
   mpvManager = createMpvManager({ userDataPath, installDirectory: store.data.settings.mpvInstallDirectory || '' });
   player = new PlayerManager({ store, paths: { shaderDir: shaderDir(), userData: userDataPath }, notify: send,
-    resolveAutomaticSource: async (source, series, episode) => {
-      const providerNumber=source.providerNumber ?? episode.number;
+    resolveAutomaticSource: async (source, series, episode,options) => {
       // Separate sessions keep refresh diagnostics/cookies independent of background discovery.
       const client = source.provider === 'animeunity' ? new AnimeUnityClient() : new AnimeWorldClient();
-      if (source.provider === 'animeunity' && source.providerEpisodeId) {
-        client.lastDiscovery = { errors: [] };
-        return client._resolveEpisode({ id: source.providerEpisodeId, number: providerNumber }, source.providerTitleUrl || `${client.baseUrl}/`);
-      }
-      if (source.provider === 'animeworld' && source.providerSourceId) return client.renewSource(source,providerNumber);
-      const titles = require('./src/source-state').providerTitles(series);
-      const fresh = await client.findSources({ titles, ...require('./src/source-match').matchOptions(series),
-        ...(episode.kind === 'part' ? {episodeCount:undefined,contentMode:'parts'} : {}),episodeNumbers:[providerNumber] });
-      const Language = require('./src/source-language');
-      const modes = Language.modesFor(source);
-      const selected = fresh.find(item => item.number === providerNumber && item.resolutionState === 'resolved'
-        && (!source.providerTitleUrl || item.providerTitleUrl === source.providerTitleUrl)
-        && (!modes.length || modes.some(mode => Language.eligible(item,mode))));
-      return selected ? {...selected, provider:source.provider} : null;
+      return client.renewSource(source,series,episode,options);
     },
   });
   cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send,

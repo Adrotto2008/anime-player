@@ -1,4 +1,8 @@
 const { execFileSync, execSync } = require('child_process');
+for(const file of ['src/source-engine.js',...require('fs').readdirSync('src/source-engine').filter(f=>f.endsWith('.mjs')).map(f=>'src/source-engine/'+f)])
+  execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
+execFileSync(process.execPath,['--test','test/source-engine.js'],{stdio:'inherit'});
+execFileSync(process.execPath,['--test',...require('fs').readdirSync('test/source-engine-tests').filter(f=>f.endsWith('.test.mjs')).map(f=>'test/source-engine-tests/'+f)],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/version-management.js'],{stdio:'inherit'});
 for(const file of ['src/updates.js','renderer/updates.js','scripts/release-verify.js','test/updates.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/updates.js'],{stdio:'inherit'});

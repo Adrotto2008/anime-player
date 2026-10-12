@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.51",
+  "version": "0.5.52",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -20,7 +20,14 @@
   "build": {
     "appId": "com.adriano.animeplayer",
     "productName": "Anime Player",
-    "protocols": [{ "name": "Anime Player password recovery", "schemes": ["animeplayer"] }],
+    "protocols": [
+      {
+        "name": "Anime Player password recovery",
+        "schemes": [
+          "animeplayer"
+        ]
+      }
+    ],
     "files": [
       "main.js",
       "preload.js",
@@ -89,11 +96,13 @@
   },
   "dependencies": {
     "@supabase/supabase-js": "2.109.0",
+    "acorn": "8.19.0",
     "cheerio": "1.1.2",
     "electron-updater": "6.8.10",
+    "js-yaml": "4.3.2",
     "semver": "7.7.3",
-    "ws": "8.22.0",
-    "js-yaml": "4.3.2"
+    "tough-cookie": "6.0.2",
+    "ws": "8.22.0"
   },
   "overrides": {
     "global-agent": "4.1.3"

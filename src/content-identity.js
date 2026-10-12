@@ -37,6 +37,7 @@ function automaticSources(unit) {
     const id=sourceId(unit.id,source);
     const {urlLifetime}=require('./source-state');
     descriptors.set(id,{id,provider:source.provider,...Language.metadata(source),
+      ...(source.engine?{engine:source.engine}:{}),
       ...(source.providerEpisodeId!=null?{providerEpisodeId:source.providerEpisodeId}:{}),
       ...(source.providerNumber!=null?{providerNumber:source.providerNumber}:{}),
       ...(source.referer && source.referer!==source.resolverReferer && !urlLifetime(source.referer).temporary?{referer:source.referer}:{}),

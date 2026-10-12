@@ -68,8 +68,9 @@ class MpvSession extends EventEmitter {
       this.send(['observe_property', 2, 'duration']);
       this.send(['observe_property', 3, 'pause']);
       this.send(['observe_property', 4, 'track-list']);
+      this.send(['observe_property', 5, 'speed']);
       this.heartbeatTimer=setInterval(()=>{
-        if(this.closed || this.requestedReason || this.pendingCommandId)return;
+        if(this.closed || this.requestedReason || !this.loaded || this.pendingCommandId)return;
         this.pendingCommandId=++this.nextCommandId;
         this.send(['get_property','time-pos'],this.pendingCommandId);
         this.responseTimer=setTimeout(()=>{this.error='Timeout della risposta IPC di mpv';this.quit('ipc-timeout');},this.responseTimeoutMs);
@@ -110,6 +111,7 @@ class MpvSession extends EventEmitter {
       else if (m.name === 'duration' && typeof m.data === 'number') this.emit('duration', m.data);
       else if (m.name === 'pause') this.emit('pause', !!m.data);
       else if (m.name === 'track-list' && Array.isArray(m.data)) this.emit('tracks', m.data);
+      else if (m.name === 'speed' && typeof m.data === 'number') this.emit('speed', m.data);
     } else if (m.event === 'end-file') {
       this.endReason=m.reason;
       if (m.reason === 'eof') this.eof = true;

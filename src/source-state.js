@@ -24,6 +24,8 @@ function urlLifetime(value) {
 
 function sourceMetadata(source) {
   return {
+    ...(source.engine?.version===1 && ['file','hls'].includes(source.engine.type) && source.engine.work?.provider===source.provider
+      ? {engine:JSON.parse(JSON.stringify(source.engine))} : {}),
     ...(Number.isSafeInteger(source.providerNumber) && source.providerNumber >= 0 ? {providerNumber:source.providerNumber} : {}),
     ...require('./source-language').metadata(source),
     ...(['found', 'resolved'].includes(source.resolutionState) ? { resolutionState: source.resolutionState } : {}),
