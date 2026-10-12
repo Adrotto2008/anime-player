@@ -58,14 +58,19 @@ app.whenReady().then(async()=>{
     win.show();win.focus();win.webContents.focus();await capture('00-native-retry-'+attempt);mouse('mouseMove',245,160);await tick(35);
   }
   await until(`document.querySelector(${JSON.stringify(hoverSelector)}).classList.contains('card-raised')`);await frames('01-hover-left');
+  const reducedMotion=await js(`matchMedia('(prefers-reduced-motion: reduce)').matches`);
   const leftTilt=await js(`getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).transform`);
   mouse('mouseMove',hr.left+(hr.right-hr.left)*.75,hr.top+(hr.bottom-hr.top)*.6);await until(`document.querySelector(${JSON.stringify(hoverSelector)}).classList.contains('card-raised')`);await frames('02-hover-right');
-  const rightTilt=await js(`getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).transform`);assert.notEqual(leftTilt,rightTilt);
+  const rightTilt=await js(`getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).transform`);
+  if(reducedMotion)assert.equal(leftTilt,rightTilt,'reduced-motion preference disables hover tilt');
+  else assert.notEqual(leftTilt,rightTilt);
   assert.equal(await js(`getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).cursor`),'default');
   mouse('mouseMove',245,160);await frames('03-hover-return');await tick(800);
   assert.ok(await js(`Math.abs(new DOMMatrixReadOnly(getComputedStyle(document.querySelector(${JSON.stringify(hoverSelector)})).transform).m42)<.1`));
-  const hoverTransforms=trace.filter(f=>f.name==='01-hover-left').map(f=>f.state.hover[0]);assert.ok(new Set(hoverTransforms).size>=3,JSON.stringify(hoverTransforms));
-  cases.push('progressive native hover, pointer-driven opposite 3D tilt, smooth mouseleave and default system cursor');
+  const hoverTransforms=trace.filter(f=>f.name==='01-hover-left').map(f=>f.state.hover[0]);
+  if(reducedMotion)assert.ok(new Set(hoverTransforms).size<=1,JSON.stringify(hoverTransforms));
+  else assert.ok(new Set(hoverTransforms).size>=3,JSON.stringify(hoverTransforms));
+  cases.push(reducedMotion?'native hover respects reduced-motion preference and default cursor':'progressive native hover, pointer-driven opposite 3D tilt, smooth mouseleave and default system cursor');
   const revisionBeforeMotion=store.revision,animationOrder=await ids('library');let ar=await start(select('library',animationOrder[0]));
   const destination=await rect(select('library',animationOrder[2]));
   for(let i=1;i<=5;i++){mouse('mouseMove',ar.x+(destination.right-12-ar.x)*i/5,ar.y);await frames('04-drag-'+i,2);}
