@@ -13,6 +13,7 @@ const Identity = require('./content-identity');
 const Links = require('./franchise-links');
 const Organization = require('./organization');
 const Descriptions=require('./descriptions');
+const {validateRoot,validateCloudEnvelope}=require('./library-schema');
 
 function newest(values) {
   return values.filter(Boolean).sort((a,b)=>(Number(b.updatedAt)||0)-(Number(a.updatedAt)||0) || JSON.stringify(b).localeCompare(JSON.stringify(a)))[0];
@@ -42,6 +43,7 @@ const EMPTY_SYNC_STATE = () => ({ mappings: {}, favorites: [], removedFavorites:
 function mergeLibrarySnapshots(localInput, remoteInput) {
   const local = localInput || EMPTY_LIBRARY();
   const remote = remoteInput || EMPTY_LIBRARY();
+  validateRoot(local);validateRoot(remote);
   const deletedSeries = new Map();
   const deletedEpisodes = new Map();
   const deletedFranchises = new Map();
@@ -173,6 +175,7 @@ function mergeDescriptions(winner,older,...records){
 }
 
 function compressLibraryForCloud(input) {
+  validateRoot(input || EMPTY_LIBRARY());
   const library = JSON.parse(JSON.stringify(input || EMPTY_LIBRARY()));
   library.series = (library.series || []).map((series) => {
     const episodes = series.episodes || [];
@@ -220,6 +223,7 @@ function compressLibraryForCloud(input) {
 }
 
 function expandLibraryFromCloud(input) {
+  validateRoot(input || EMPTY_LIBRARY());
   const library = JSON.parse(JSON.stringify(input || EMPTY_LIBRARY()));
   library.series = (library.series || []).map((series) => {
     const sourcePattern = series.sourcePattern || (series.episodes || []).find((episode) => episode.sourcePattern)?.sourcePattern;
@@ -267,16 +271,16 @@ function readConfig(env = process.env, configFile = null, bundledConfigFile = nu
   return { configured: true, url: parsed.origin, key };
 }
 
-function createSessionStorage({ safeStorage, file }) {
+function createSessionStorage({ safeStorage, file, isCurrent=()=>true }) {
   const read = () => {
     try {
-      if (!safeStorage.isEncryptionAvailable()) return null;
+      if (!isCurrent() || !safeStorage.isEncryptionAvailable()) return null;
       const encoded = JSON.parse(fs.readFileSync(file, 'utf8')).session;
       return encoded ? safeStorage.decryptString(Buffer.from(encoded, 'base64')) : null;
     } catch { return null; }
   };
   const write = (session) => {
-    if (!safeStorage.isEncryptionAvailable()) return;
+    if (!isCurrent() || !safeStorage.isEncryptionAvailable()) return;
     fs.mkdirSync(path.dirname(file), { recursive: true });
     const encrypted = safeStorage.encryptString(session).toString('base64');
     const tmp = `${file}.tmp`;
@@ -286,12 +290,12 @@ function createSessionStorage({ safeStorage, file }) {
   return {
     getItem: async () => read(),
     setItem: async (_key, value) => write(value),
-    removeItem: async () => { try { fs.unlinkSync(file); } catch { /* già rimosso */ } },
+    removeItem: async () => { if(!isCurrent())return;try { fs.unlinkSync(file); } catch(error) { if(error.code!=='ENOENT')throw error; } },
   };
 }
 
 class CloudService {
-  constructor({ store, userDataPath, safeStorage, notify = () => {}, beforeLibrarySwitch = async () => {}, env = process.env, client = null, isPackaged = false, resourcesPath = null }) {
+  constructor({ store, userDataPath, safeStorage, notify = () => {}, beforeLibrarySwitch = async () => {}, env = process.env, client = null, clientFactory=null, remoteSignOut=null, logoutTimeoutMs=5000, isPackaged = false, resourcesPath = null }) {
     this.store = store;
     this.beforeLibrarySwitch=beforeLibrarySwitch;
     this.libraryFile = store.file;
@@ -309,16 +313,18 @@ class CloudService {
     this.state = this._loadState();
     this.client = client;
     this.safeStorage = safeStorage;
+    this._clientGeneration=0;this._requestAbort=new AbortController();
+    this._authRequestId=0;this._session=null;this.logoutTimeoutMs=logoutTimeoutMs;
+    this.sessionFile=path.join(userDataPath,'supabase-session.json');
+    this._clientFactory=clientFactory || (!client && this.config.configured ? ()=>this._createClient() : null);
+    this._remoteSignOut=remoteSignOut || (async (session,signal)=>{
+      if(!session?.access_token)throw Error('Sessione remota non disponibile: revoca non confermata.');
+      const remote=createClient(this.config.url,this.config.key,{auth:{persistSession:false,autoRefreshToken:false,detectSessionInUrl:false},global:{fetch:(url,init)=>fetch(url,{...init,signal})}});
+      // Public SDK endpoint accepts the departing user's JWT, not a server key.
+      return remote.auth.admin.signOut(session.access_token,'local');
+    });
     if (!this.client && this.config.configured) {
-      this.client = createClient(this.config.url, this.config.key, {
-        auth: {
-          storage: createSessionStorage({ safeStorage, file: path.join(userDataPath, 'supabase-session.json') }),
-          autoRefreshToken: true,
-          persistSession: true,
-          detectSessionInUrl: false,
-        },
-        realtime: { transport: WebSocket },
-      });
+      this.client = this._clientFactory();
     }
     this._accountEpoch = 0;
     this._stateRevision = 0;
@@ -335,12 +341,46 @@ class CloudService {
 
   get user() { return this._user; }
   set user(value) {
-    if((this._user?.id || null)!==(value?.id || null))this._accountEpoch++;
+    if((this._user?.id || null)!==(value?.id || null)){this._accountEpoch++;this._cancelRequests();}
     this._user=value;
   }
-  _context(userId) { return {userId,epoch:this._accountEpoch,scope:this.store.scope,file:this.store.file,stateFile:this.file}; }
+  _cancelRequests(){this._requestAbort?.abort();this._requestAbort=new AbortController();this.syncing=null;clearTimeout(this.syncTimer);}
+  _createClient(){
+    const generation=this._clientGeneration;
+    return createClient(this.config.url,this.config.key,{
+      auth:{storage:createSessionStorage({safeStorage:this.safeStorage,file:this.sessionFile,isCurrent:()=>generation===this._clientGeneration}),autoRefreshToken:true,persistSession:true,detectSessionInUrl:false},
+      global:{fetch:(url,init={})=>{
+        if(generation!==this._clientGeneration)return Promise.reject(Error('Contesto account scaduto.'));
+        const signal=init.signal?AbortSignal.any([init.signal,this._requestAbort.signal]):this._requestAbort.signal;
+        return fetch(url,{...init,signal});
+      }},realtime:{transport:WebSocket},
+    });
+  }
+  _rotateAuthClient(){
+    if(!this._clientFactory)return;
+    const old=this.client;this.authSubscription?.unsubscribe();this.authSubscription=null;
+    this._clientGeneration++;
+    Promise.resolve(old?.auth.stopAutoRefresh?.()).catch(()=>{});
+    Promise.resolve(old?.removeAllChannels?.()).catch(()=>{});
+    this.client=this._clientFactory();if(this._started)this._subscribeAuth();
+  }
+  _subscribeAuth(){
+    if(!this.client?.auth.onAuthStateChange)return;
+    const generation=this._clientGeneration;
+    const {data:{subscription}}=this.client.auth.onAuthStateChange((_event,session)=>{
+      if(generation!==this._clientGeneration || this._authChanging || (this._logoutPromise && this._logoutRequest===this._authRequestId) || this.stopped)return;
+      this._session=session;this.user=session?.user || null;this._publish();
+      const epoch=this._accountEpoch;
+      setTimeout(()=>{if(epoch!==this._accountEpoch || this.stopped)return;(this.user?this.sync():this._activateLibrary(null)).catch(error=>this._failed(error));},0);
+    });this.authSubscription=subscription;
+  }
+  _context(userId) { return {userId,epoch:this._accountEpoch,scope:this.store.scope,file:this.store.file,stateFile:this.file,signal:this._requestAbort.signal}; }
+  _query(query,context){
+    const request=context?.signal && typeof query.abortSignal==='function'?query.abortSignal(context.signal):query;
+    return context?.strict?Promise.resolve(request).then(result=>{if(!this._current(context))throw Error('Contesto account scaduto.');return result;}):request;
+  }
   _current(context) {
-    return context && !this.stopped && this.user?.id===context.userId && this._accountEpoch===context.epoch
+    return context && !this.stopped && !this._authChanging && this.user?.id===context.userId && this._accountEpoch===context.epoch
       && this.activeLibraryUserId===context.userId && this.store.scope===context.scope && this.store.file===context.file && this.file===context.stateFile;
   }
 
@@ -362,29 +402,22 @@ class CloudService {
   }
 
   status() {
-    return { configured: this.config.configured, connected: Boolean(this.user), user: this.user ? { id: this.user.id, email: this.user.email } : null, error: this.config.error || null, syncing: Boolean(this.syncing), pendingCatalogMatches: this.pendingCatalogMatches };
+    return { configured: this.config.configured, connected: Boolean(this.user), user: this.user ? { id: this.user.id, email: this.user.email } : null, error: this.config.error || null, syncing: Boolean(this.syncing), pendingCatalogMatches: this.pendingCatalogMatches, logout:this.logoutStatus || null, authGeneration:this._authRequestId };
   }
 
   _publish(message = null) { this.notify('sync:state', { ...this.status(), message }); }
 
   async start() {
+    this._started=true;
     this.store.on('progress', this._onProgress);
     this.store.on('settings', this._onSettings);
     this.store.on('changed', this._onLibraryChanged);
     if (!this.client) { this._publish(); return; }
-    const { data: { subscription } } = this.client.auth.onAuthStateChange((_event, session) => {
-      this.user = session && session.user || null;
-      this._publish();
-      setTimeout(() => {
-        if(this.stopped)return;
-        (this.user?this.sync():this._activateLibrary(null)).catch(error=>this._failed(error));
-      },0);
-    });
-    this.authSubscription = subscription;
+    this._subscribeAuth();
     const epoch=this._accountEpoch;
     const { data: { session }, error } = await this.client.auth.getSession();
     if (error) this._failed(error);
-    if(epoch===this._accountEpoch)this.user = session && session.user || null;
+    if(epoch===this._accountEpoch){this._session=session;this.user = session && session.user || null;}
     this._publish();
     if (this.user) this.sync().catch((err) => this._failed(err));
     // Retry local outbox while the app is open; network errors never block local playback.
@@ -393,6 +426,7 @@ class CloudService {
 
   stop() {
     this.stopped = true;
+    this._cancelRequests();
     clearTimeout(this.syncTimer);
     clearInterval(this.timer);
     if (this.authSubscription) this.authSubscription.unsubscribe();
@@ -433,69 +467,113 @@ class CloudService {
 
   async signUp(email, password) {
     this._requireClient();
-    const { data, error } = await this.client.auth.signUp({ email, password });
-    if (error) throw error;
-    if (data.user && data.session) await this.ensureProfile(data.user.id);
+    if(this._localTransition)await this._localTransition;
+    const request=++this._authRequestId;this._authChanging=true;
+    this._rotateAuthClient();
+    let result;try{result=await this.client.auth.signUp({email,password});}finally{if(request===this._authRequestId)this._authChanging=false;}
+    if(request!==this._authRequestId)throw Error('Richiesta registrazione superata da un cambio account.');
+    const {data,error}=result;if(error)throw error;
+    if (data.user && data.session) {
+      this.logoutStatus=null;this._session=data.session;this.user=data.user;await this._activateLibrary(data.user.id);
+      const context=this._context(data.user.id);await this.ensureProfile(data.user.id,{},context);
+      if(!this._current(context))throw Error('Contesto registrazione scaduto.');
+      this.sync().catch(err=>this._failed(err));this._publish();
+    }
     return { user: data.user, needsEmailConfirmation: Boolean(data.user && !data.session), connected: Boolean(data.session) };
   }
 
   async signIn(email, password) {
     this._requireClient();
-    const { data, error } = await this.client.auth.signInWithPassword({ email, password });
-    if (error) throw error;
-    if (this.syncing) await this.syncing.catch(() => {});
-    this.user = data.user;
+    if(this._localTransition)await this._localTransition;
+    const request=++this._authRequestId;this._authChanging=true;this._accountEpoch++;this._cancelRequests();
+    this._rotateAuthClient();
+    let result;
+    try{result=await this.client.auth.signInWithPassword({email,password});}finally{if(request===this._authRequestId)this._authChanging=false;}
+    if(request!==this._authRequestId)throw Error('Richiesta accesso superata da un cambio account.');
+    const {data,error}=result;if(error)throw error;
+    this.logoutStatus=null;this._session=data.session || null;this.user = data.user;
     await this._activateLibrary(data.user.id);
-    await this.ensureProfile(data.user.id);
+    const context=this._context(data.user.id);await this.ensureProfile(data.user.id,{},context);
+    if(!this._current(context))throw Error('Contesto accesso scaduto.');
     this.sync().catch((err) => this._failed(err));
     this._publish();
     return data.user;
   }
 
-  async signOut() {
+  signOut() {
+    if(this._logoutPromise && this._logoutRequest===this._authRequestId)return this._logoutPromise;
     this._requireClient();
-    if (this.syncing) await this.syncing.catch(() => {});
-    const { error } = await this.client.auth.signOut();
-    if (error) throw error;
-    this.user = null;
-    await this._activateLibrary(null);
-    this._publish();
+    // Flush the departing account's library and outbox before changing paths.
+    // Failure is explicit and stops logout rather than silently losing edits.
+    this.store.save(true,true,{cloud:true,emit:false});this._saveState();
+    const session=this._session,oldClient=this.client;
+    const request=++this._authRequestId;this._authChanging=false;this._accountEpoch++;this.user=null;this._cancelRequests();
+    this._logoutRequest=request;
+    this.store.scope++;this.store.revision++;
+    this.store.accountTransitioning=true;
+    this.logoutStatus={local:true,remote:'pending'};this._publish('Disconnesso localmente; revoca remota in corso.');
+    this.authSubscription?.unsubscribe();this.authSubscription=null;
+    this._clientGeneration++;this._session=null;
+    try{fs.unlinkSync(this.sessionFile);}catch(error){if(error.code!=='ENOENT'){this._authBlocked=true;this.logoutStatus.remote='unconfirmed';throw Error('Logout locale: impossibile rimuovere la sessione cifrata. Dati account conservati; accesso bloccato fino al recupero del file.');}}
+    Promise.resolve(oldClient.auth.stopAutoRefresh?.()).catch(()=>{});
+    Promise.resolve(oldClient.removeAllChannels?.()).catch(()=>{});
+    this.client=this._clientFactory?this._clientFactory():null;if(this._started)this._subscribeAuth();
+    const controller=new AbortController();let timer;
+    const remote=Promise.resolve().then(()=>this._remoteSignOut(session,controller.signal)).then(result=>result?.error?{remote:'error'}:{remote:'confirmed'},()=>({remote:'error'}));
+    const deadline=new Promise(resolve=>{timer=setTimeout(()=>{controller.abort();resolve({remote:'timeout'});},this.logoutTimeoutMs);});
+    const remoteResult=Promise.race([remote,deadline]).finally(()=>clearTimeout(timer));
+    remoteResult.then(outcome=>{if(request===this._authRequestId){this.logoutStatus={...this.logoutStatus,...outcome};if(this._authBlocked)this._publish('Contesto locale bloccato; esito revoca remota: '+outcome.remote);}});
+    this._localTransition=this._activateLibrary(null).then(()=>{this.store.accountTransitioning=false;},error=>{
+      this._authBlocked=true;
+      throw Error('Cambio libreria non riuscito; dati account conservati e operazioni bloccate fino al recupero del file. '+error.message);
+    });
+    const running=(async()=>{
+      await this._localTransition;
+      const outcome=await remoteResult;
+      if(request===this._authRequestId){this.logoutStatus={local:true,...outcome};this._publish(outcome.remote==='confirmed'?'Logout locale completato; revoca remota confermata.':'Logout locale completato; revoca remota non confermata.');}
+      return {local:true,...outcome,authGeneration:request};
+    })().finally(()=>{if(this._logoutPromise===running){this._logoutPromise=null;this._localTransition=null;}});
+    this._logoutPromise=running;return running;
   }
 
   async getSession() {
-    if (!this.client) return this.status();
+    if (!this.client || this._authBlocked || this._authChanging || this._logoutPromise) return this.status();
     const epoch=this._accountEpoch;
     const { data, error } = await this.client.auth.getSession();
     if (error) throw error;
-    if(epoch===this._accountEpoch)this.user = data.session && data.session.user || null;
+    if(epoch===this._accountEpoch && !this._authChanging){this._session=data.session;this.user = data.session && data.session.user || null;}
     return { ...this.status(), user: this.user ? { id: this.user.id, email: this.user.email, email_confirmed_at: this.user.email_confirmed_at || null } : null };
   }
 
   _requireClient() {
+    if(this._authBlocked)throw Error('Contesto account bloccato: recupera i file prima di accedere.');
     if (!this.client) throw new Error(this.config.error || 'Supabase non configurato.');
   }
 
   _requireUser() {
     this._requireClient();
+    if(this._authChanging)throw Error('Cambio account in corso.');
     if (!this.user) throw new Error('Accedi a Supabase per continuare.');
     return this.user;
   }
 
-  async ensureProfile(userId, profile = {}) {
+  async ensureProfile(userId, profile = {},context) {
     this._requireClient();
-    const { error } = await this.client.from('profiles').upsert({ id: userId, ...profile }, { onConflict: 'id' });
+    const { error } = await this._query(this.client.from('profiles').upsert({ id: userId, ...profile }, { onConflict: 'id' }),context);
     if (error) throw error;
   }
 
   async getProfile(userId = null) {
     const user = this._requireUser();
-    const { data, error } = await this.client.from('profiles').select('id,username,display_name,avatar_url,bio,created_at,updated_at').eq('id', userId || user.id).maybeSingle();
+    const context={...this._context(user.id),strict:true};
+    const { data, error } = await this._query(this.client.from('profiles').select('id,username,display_name,avatar_url,bio,created_at,updated_at').eq('id', userId || user.id).maybeSingle(),context);
     if (error) throw error;
     return data;
   }
 
   async updateProfile(patch) {
     const user = this._requireUser();
+    const context={...this._context(user.id),strict:true};
     const allowed = ['username', 'display_name', 'avatar_url', 'bio'];
     const value = Object.fromEntries(Object.entries(patch || {}).filter(([key]) => allowed.includes(key)));
     if (Object.hasOwn(value, 'username')) {
@@ -518,7 +596,7 @@ class CloudService {
       value.bio = String(value.bio).trim();
       if (value.bio.length > 280) throw new Error('La descrizione può contenere al massimo 280 caratteri.');
     }
-    const { data, error } = await this.client.from('profiles').upsert({ id: user.id, ...value, updated_at: nowIso() }, { onConflict: 'id' }).select().single();
+    const { data, error } = await this._query(this.client.from('profiles').upsert({ id: user.id, ...value, updated_at: nowIso() }, { onConflict: 'id' }).select().single(),context);
     if (error) throw error;
     return data;
   }
@@ -556,7 +634,8 @@ class CloudService {
     if (this.syncing) return this.syncing;
     if (!this.client || !this.user || this.stopped) return;
     const userId = this.user.id;
-    this.syncing = this._syncForUser(userId).finally(() => { this.syncing = null; this._publish(); if (this.user && this.user.id !== userId) this._scheduleSync(0); });
+    const running=this._syncForUser(userId).finally(() => { if(this.syncing!==running)return;this.syncing = null; this._publish(); if (this.user && this.user.id !== userId) this._scheduleSync(0); });
+    this.syncing=running;
     this._publish();
     return this.syncing;
   }
@@ -567,7 +646,7 @@ class CloudService {
     const context=this._context(userId);
     await this._syncPrivateLibrary(userId,context);
     if(!this._current(context))return;
-    await this.ensureProfile(userId);
+    await this.ensureProfile(userId,{},context);
     if(!this._current(context))return;
     const catalog = await this._resolveCatalog(context);
     if(!this._current(context))return;
@@ -591,6 +670,7 @@ class CloudService {
 
   async getMyProfile() {
     const user = this._requireUser();
+    const context={...this._context(user.id),strict:true};
     const profile = await this.getProfile(user.id);
     return profile || { id: user.id, username: null, display_name: null, avatar_url: null, bio: null };
   }
@@ -659,16 +739,17 @@ class CloudService {
   async _syncPrivateLibrary(userId,context=this._context(userId)) {
     if(!this._current(context))return;
     const readStateRevision=this._stateRevision;
-    const { data: remote, error } = await this.client.from('user_library_snapshots').select('snapshot,revision,updated_at').eq('user_id', userId).maybeSingle();
+    const { data: remote, error } = await this._query(this.client.from('user_library_snapshots').select('snapshot,revision,updated_at').eq('user_id', userId).maybeSingle(),context);
     if(!this._current(context))return;
     if (error) throw error;
     const localDirty = Boolean(this.store.data.cloudDirty) || readStateRevision!==this._stateRevision;
+    if(remote)validateCloudEnvelope(remote.snapshot);
     const localRevision = Number(this.state.libraryRevision) || 0;
     if (!remote) {
       const token=this.store.versionToken(),stateRevision=this._stateRevision;
       const snapshot = this._privateSnapshot();
       snapshot.library.settings = Object.fromEntries(Object.entries(snapshot.library.settings || {}).filter(([key]) => !DEVICE_SETTINGS.includes(key)));
-      const { data, error: insertError } = await this.client.from('user_library_snapshots').insert({ user_id: userId, snapshot, revision: 1, updated_at: nowIso() }).select('revision,updated_at').single();
+      const { data, error: insertError } = await this._query(this.client.from('user_library_snapshots').insert({ user_id: userId, snapshot, revision: 1, updated_at: nowIso() }).select('revision,updated_at').single(),context);
       if(!this._current(context))return;
       if (insertError) { if (insertError.code === '23505') {this._scheduleSync(1000);return;} throw insertError; }
       this.state.libraryRevision = Number(data.revision) || 1;
@@ -699,7 +780,7 @@ class CloudService {
     const history = new Map([...(remote.snapshot?.history || []), ...this.state.history].map((record) => [record.id, record]));
     Object.assign(snapshot,JSON.parse(JSON.stringify({history:[...history.values()],sync:{ ...(remote.snapshot?.sync || {}), mappings: this.state.mappings, favorites: this.state.favorites, removedFavorites: this.state.removedFavorites, settingsUpdatedAt: this.state.settingsUpdatedAt }})));
     const updatedAt = nowIso();
-    const { data, error: updateError } = await this.client.from('user_library_snapshots').update({ snapshot, revision: Number(remote.revision) + 1, updated_at: updatedAt }).eq('user_id', userId).eq('revision', remote.revision).select('revision,updated_at').maybeSingle();
+    const { data, error: updateError } = await this._query(this.client.from('user_library_snapshots').update({ snapshot, revision: Number(remote.revision) + 1, updated_at: updatedAt }).eq('user_id', userId).eq('revision', remote.revision).select('revision,updated_at').maybeSingle(),context);
     if(!this._current(context))return;
     if (updateError) throw updateError;
     if (!data) { this.state.libraryRevision = 0; this._saveState(); this._scheduleSync(1000); return; }
@@ -721,7 +802,7 @@ class CloudService {
   async _resolveCatalog(context) {
     const series = this.store.data.series.filter((item) => item.anilistId != null);
     const ids = [...new Set(series.flatMap((item) => [String(item.anilistId), `anilist:${item.anilistId}`]))];
-    const { data: animeRows, error: animeError } = await this.client.from('anime').select('id,external_id').in('external_id', ids);
+    const { data: animeRows, error: animeError } = await this._query(this.client.from('anime').select('id,external_id').in('external_id', ids),context);
     if(context && !this._current(context))return;
     if (animeError) throw animeError;
     const localAnime = new Map();
@@ -734,7 +815,7 @@ class CloudService {
       this.pendingCatalogMatches = series.reduce((count, item) => count + Math.max(1, item.episodes.length), 0);
       return { episodes: new Map(), anime: new Map() };
     }
-    const { data: episodeRows, error: episodeError } = await this.client.from('episodes').select('id,anime_id,episode_number,season_number').in('anime_id', remoteAnimeIds);
+    const { data: episodeRows, error: episodeError } = await this._query(this.client.from('episodes').select('id,anime_id,episode_number,season_number').in('anime_id', remoteAnimeIds),context);
     if(context && !this._current(context))return;
     if (episodeError) throw episodeError;
     const remoteEpisodes = new Map();
@@ -775,7 +856,7 @@ class CloudService {
   async _syncProgress(userId, catalog,context) {
     const token=this.store.versionToken();
     const pendingLocal=Boolean(this.store.data.cloudDirty);
-    const { data: remoteRows, error } = await this.client.from('user_progress').select('episode_id,position_seconds,completed,updated_at').eq('user_id', userId);
+    const { data: remoteRows, error } = await this._query(this.client.from('user_progress').select('episode_id,position_seconds,completed,updated_at').eq('user_id', userId),context);
     if(context && !this._current(context))return;
     if (error) throw error;
     const remoteByEpisode = new Map((remoteRows || []).map((row) => [row.episode_id, row]));
@@ -797,7 +878,7 @@ class CloudService {
       pending.push({ user_id: userId, episode_id: remoteId, position_seconds: Math.max(0, progress.pos || 0), completed: Boolean(progress.watched), updated_at: nowIso(progress.updatedAt) });
     }
     if (pending.length) {
-      const { error: upsertError } = await this.client.from('user_progress').upsert(pending, { onConflict: 'user_id,episode_id' });
+      const { error: upsertError } = await this._query(this.client.from('user_progress').upsert(pending, { onConflict: 'user_id,episode_id' }),context);
       if(context && !this._current(context))return;
       if (upsertError) throw upsertError;
     }
@@ -805,7 +886,7 @@ class CloudService {
 
   async _syncHistory(userId, catalog,context) {
     const reverseMap = new Map([...catalog.episodes].map(([local, remote]) => [remote, local]));
-    const { data: remoteRows, error: selectError } = await this.client.from('watch_history').select('id,episode_id,started_at,finished_at,watched_seconds').eq('user_id', userId);
+    const { data: remoteRows, error: selectError } = await this._query(this.client.from('watch_history').select('id,episode_id,started_at,finished_at,watched_seconds').eq('user_id', userId),context);
     if(context && !this._current(context))return;
     if (selectError) throw selectError;
     const knownIds = new Set(this.state.history.map((record) => record.id));
@@ -823,7 +904,7 @@ class CloudService {
       if (episodeId) pending.push({ id: record.id, user_id: userId, episode_id: episodeId, started_at: record.startedAt, finished_at: record.finishedAt, watched_seconds: record.watchedSeconds });
     }
     if (!pending.length) return;
-    const { error } = await this.client.from('watch_history').upsert(pending, { onConflict: 'id' });
+    const { error } = await this._query(this.client.from('watch_history').upsert(pending, { onConflict: 'id' }),context);
     if(context && !this._current(context))return;
     if (error) throw error;
     const sent = new Set(pending.map((record) => record.id));
@@ -831,7 +912,7 @@ class CloudService {
   }
 
   async _syncFavorites(userId, catalog,context) {
-    const { data: remoteRows, error } = await this.client.from('favorites').select('anime_id').eq('user_id', userId);
+    const { data: remoteRows, error } = await this._query(this.client.from('favorites').select('anime_id').eq('user_id', userId),context);
     if(context && !this._current(context))return;
     if (error) throw error;
     const localAnime = new Map([...catalog.anime].map(([local, remote]) => [remote, local]));
@@ -843,7 +924,7 @@ class CloudService {
     const localFavoriteAnime = new Set(this.state.favorites.map((id) => catalog.anime.get(id)).filter(Boolean));
     const additions = [...localFavoriteAnime].filter((id) => !remoteFavorites.has(id)).map((anime_id) => ({ user_id: userId, anime_id }));
     if (additions.length) {
-      const { error: insertError } = await this.client.from('favorites').insert(additions);
+      const { error: insertError } = await this._query(this.client.from('favorites').insert(additions),context);
       if(context && !this._current(context))return;
       if (insertError) throw insertError;
     }
@@ -851,7 +932,7 @@ class CloudService {
     for (const localId of this.state.removedFavorites) {
       const animeId = catalog.anime.get(localId);
       if (animeId) {
-        const { error: deleteError } = await this.client.from('favorites').delete().eq('user_id', userId).eq('anime_id', animeId);
+        const { error: deleteError } = await this._query(this.client.from('favorites').delete().eq('user_id', userId).eq('anime_id', animeId),context);
         if(context && !this._current(context))return;
         if (deleteError) throw deleteError;
         removed.push(localId);
@@ -862,7 +943,7 @@ class CloudService {
 
   async _syncSettings(userId,context) {
     const token=this.store.versionToken();
-    const { data: remote, error } = await this.client.from('settings').select('settings,updated_at').eq('user_id', userId).maybeSingle();
+    const { data: remote, error } = await this._query(this.client.from('settings').select('settings,updated_at').eq('user_id', userId).maybeSingle(),context);
     if(context && !this._current(context) || !this.store.matchesToken(token))return;
     if (error) throw error;
     const localUpdatedAt = Math.max(this.state.settingsUpdatedAt || 0,this.store.data.settingsUpdatedAt || 0);
@@ -877,26 +958,26 @@ class CloudService {
     }
     const settings = Object.fromEntries(CLOUD_SETTINGS.filter((key) => Object.hasOwn(this.store.data.settings, key) && validCloudSetting(key, this.store.data.settings[key])).map((key) => [key, this.store.data.settings[key]]));
     const row = { user_id: userId, settings, updated_at: nowIso(localUpdatedAt || Date.now()) };
-    const { error: upsertError } = await this.client.from('settings').upsert(row, { onConflict: 'user_id' });
+    const { error: upsertError } = await this._query(this.client.from('settings').upsert(row, { onConflict: 'user_id' }),context);
     if(context && !this._current(context) || !this.store.matchesToken(token))return;
     if (upsertError) throw upsertError;
     if (!localUpdatedAt) this.state.settingsUpdatedAt = Date.now();
   }
 
   async searchUsers(query) {
-    this._requireUser();
+    const user=this._requireUser(),context={...this._context(user.id),strict:true};
     const value = String(query || '').trim();
     if (value.length < 2) return [];
     let result;
     if (value.includes('@') && !value.startsWith('@')) {
       const email = value.toLowerCase();
       if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) return [];
-      result = await this.client.rpc('search_profiles_by_email', { search_email: email });
+      result = await this._query(this.client.rpc('search_profiles_by_email', { search_email: email }),context);
     } else {
       const nickname = value.replace(/^@+/, '').trim();
       if (nickname.length < 2) return [];
       const escaped = nickname.replace(/[\\%_]/g, (character) => `\\${character}`);
-      result = await this.client.from('profiles').select('id,username,display_name,avatar_url,bio').ilike('username', `%${escaped}%`).limit(20);
+      result = await this._query(this.client.from('profiles').select('id,username,display_name,avatar_url,bio').ilike('username', `%${escaped}%`).limit(20),context);
     }
     const { data, error } = result;
     if (error) throw error;
@@ -905,79 +986,89 @@ class CloudService {
 
   async sendFriendRequest(receiverId) {
     const user = this._requireUser();
-    const { data, error } = await this.client.from('friend_requests').insert({ sender_id: user.id, receiver_id: receiverId }).select().single();
+    const context={...this._context(user.id),strict:true};
+    const { data, error } = await this._query(this.client.from('friend_requests').insert({ sender_id: user.id, receiver_id: receiverId }).select().single(),context);
     if (error) throw error;
     return data;
   }
 
   async listFriendRequests() {
     const user = this._requireUser();
-    const { data, error } = await this.client.from('friend_requests').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: false });
+    const context={...this._context(user.id),strict:true};
+    const { data, error } = await this._query(this.client.from('friend_requests').select('*').or(`sender_id.eq.${user.id},receiver_id.eq.${user.id}`).order('created_at', { ascending: false }),context);
     if (error) throw error;
     return data;
   }
 
   async respondFriendRequest(requestId, status) {
     const user = this._requireUser();
+    const context={...this._context(user.id),strict:true};
     if (!['accepted', 'rejected', 'cancelled'].includes(status)) throw new Error('Stato richiesta non valido.');
     const actorColumn = status === 'cancelled' ? 'sender_id' : 'receiver_id';
-    const { data, error } = await this.client.from('friend_requests')
+    const { data, error } = await this._query(this.client.from('friend_requests')
       .update({ status, responded_at: nowIso() })
       .eq('id', requestId)
       .eq(actorColumn, user.id)
       .select()
-      .single();
+      .single(),context);
     if (error) throw error;
     return data;
   }
 
   async listFriends() {
     const user = this._requireUser();
-    const { data, error } = await this.client.from('friendships').select('user_id,friend_id,created_at').or(`user_id.eq.${user.id},friend_id.eq.${user.id}`);
+    const context={...this._context(user.id),strict:true};
+    const { data, error } = await this._query(this.client.from('friendships').select('user_id,friend_id,created_at').or(`user_id.eq.${user.id},friend_id.eq.${user.id}`),context);
     if (error) throw error;
     const ids = data.map((row) => row.user_id === user.id ? row.friend_id : row.user_id);
     if (!ids.length) return [];
-    const { data: profiles, error: profileError } = await this.client.from('profiles').select('id,username,display_name,avatar_url,bio').in('id', ids);
+    const { data: profiles, error: profileError } = await this._query(this.client.from('profiles').select('id,username,display_name,avatar_url,bio').in('id', ids),context);
     if (profileError) throw profileError;
     return profiles;
   }
 
   async removeFriend(friendId) {
     const user = this._requireUser();
-    const { error } = await this.client.from('friendships').delete().or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`);
+    const context={...this._context(user.id),strict:true};
+    const { error } = await this._query(this.client.from('friendships').delete().or(`and(user_id.eq.${user.id},friend_id.eq.${friendId}),and(user_id.eq.${friendId},friend_id.eq.${user.id})`),context);
     if (error) throw error;
   }
 
   async createWatchRoom({ animeId = null, episodeId = null } = {}) {
     const user = this._requireUser();
-    const { data, error } = await this.client.from('watch_rooms').insert({ host_id: user.id, anime_id: animeId, episode_id: episodeId, status: 'waiting' }).select().single();
+    const context={...this._context(user.id),strict:true};
+    const { data, error } = await this._query(this.client.from('watch_rooms').insert({ host_id: user.id, anime_id: animeId, episode_id: episodeId, status: 'waiting' }).select().single(),context);
     if (error) throw error;
-    const { error: memberError } = await this.client.from('watch_room_members').upsert({ room_id: data.id, user_id: user.id, role: 'host' }, { onConflict: 'room_id,user_id' });
+    const { error: memberError } = await this._query(this.client.from('watch_room_members').upsert({ room_id: data.id, user_id: user.id, role: 'host' }, { onConflict: 'room_id,user_id' }),context);
     if (memberError) throw memberError;
     return data;
   }
 
   async joinWatchRoom(roomId) {
     const user = this._requireUser();
-    const { data: existing, error: selectError } = await this.client.from('watch_room_members').select('role,left_at').eq('room_id', roomId).eq('user_id', user.id).maybeSingle();
+    const context={...this._context(user.id),strict:true};
+    const { data: existing, error: selectError } = await this._query(this.client.from('watch_room_members').select('role,left_at').eq('room_id', roomId).eq('user_id', user.id).maybeSingle(),context);
     if (selectError) throw selectError;
     if (existing && existing.left_at == null) return;
-    const { error } = await this.client.from('watch_room_members').upsert({ room_id: roomId, user_id: user.id, role: existing && existing.role === 'host' ? 'host' : 'member', left_at: null }, { onConflict: 'room_id,user_id' });
+    const { error } = await this._query(this.client.from('watch_room_members').upsert({ room_id: roomId, user_id: user.id, role: existing && existing.role === 'host' ? 'host' : 'member', left_at: null }, { onConflict: 'room_id,user_id' }),context);
     if (error) throw error;
   }
 
   subscribeWatchRoom(roomId, { onPlayback = () => {}, onPresence = () => {} } = {}) {
     const user = this._requireUser();
-    const channel = this.client.channel(`watch-room:${roomId}`, { config: { broadcast: { self: false }, presence: { key: user.id } } });
-    channel.on('broadcast', { event: 'playback' }, ({ payload }) => onPlayback(payload));
-    channel.on('presence', { event: 'sync' }, () => onPresence(channel.presenceState()));
-    channel.subscribe((status) => { if (status === 'SUBSCRIBED') channel.track({ userId: user.id, onlineAt: nowIso() }); });
+    const context={...this._context(user.id),strict:true};
+    const client=this.client;
+    const channel = client.channel(`watch-room:${roomId}`, { config: { broadcast: { self: false }, presence: { key: user.id } } });
+    channel.on('broadcast', { event: 'playback' }, ({ payload }) => {if(this._current(context))onPlayback(payload);});
+    channel.on('presence', { event: 'sync' }, () => {if(this._current(context))onPresence(channel.presenceState());});
+    channel.subscribe((status) => { if (status === 'SUBSCRIBED' && this._current(context)) channel.track({ userId: user.id, onlineAt: nowIso() }); });
     return {
       sendPlayback: async (type, details = {}) => {
+        if(!this._current(context))throw Error('Contesto account scaduto.');
         if (!['PLAY', 'PAUSE', 'SEEK', 'EPISODE_CHANGED'].includes(type)) throw new Error('Evento playback non valido.');
         return channel.send({ type: 'broadcast', event: 'playback', payload: { type, ...details, sentAt: nowIso() } });
       },
-      unsubscribe: () => this.client.removeChannel(channel),
+      unsubscribe: () => client.removeChannel(channel),
     };
   }
 }

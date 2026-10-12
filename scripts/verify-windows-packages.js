@@ -2,7 +2,8 @@
 // Extract only into the checkout; never execute the installer or portable.
 const fs=require('fs'),path=require('path'),crypto=require('crypto'),assert=require('assert');
 const {execFileSync}=require('child_process'),asar=require('@electron/asar');
-const zip=require('7zip-bin').path7za,root=path.resolve(__dirname,'..');
+async function main(){
+const zip=await require('app-builder-lib/out/toolsets/7zip').getPath7za(),root=path.resolve(__dirname,'..');
 const manifest=require('../package.json'),version=manifest.version,output=path.join(root,manifest.build.directories.output);
 const scratch=path.join(root,'.build-resources','verification-'+Date.now());fs.mkdirSync(scratch,{recursive:true});
 const hash=bytes=>crypto.createHash('sha256').update(bytes).digest('hex');
@@ -35,3 +36,5 @@ for(const [kind,file] of Object.entries(files)){
 assert.equal(report.packages.portable.asarHash,report.packages.nsis.asarHash,'package payloads differ');
 const destination=path.resolve(process.argv[2]||path.join(scratch,'package-verification.json'));
 fs.writeFileSync(destination,JSON.stringify(report,null,2));console.log(JSON.stringify(report,null,2));
+}
+main().catch(error=>{console.error(error);process.exitCode=1;});

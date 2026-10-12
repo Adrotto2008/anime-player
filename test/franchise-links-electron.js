@@ -23,7 +23,7 @@ app.whenReady().then(async()=>{
   h('franchise:linkPreview',(id,link)=>service.previewLink(id,link));h('franchise:linkCreate',token=>service.createLinked(token));
   h('franchise:linkDecide',(id,link,patch)=>service.decideLink(id,link,patch));h('franchise:linkManual',(id,target,type)=>service.manualLink(id,target,type));
   win=new BrowserWindow({show:false,width:1180,height:850,webPreferences:{preload:path.join(__dirname,'../preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
-  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message);});
+  win.webContents.on('console-message',(event,level,message)=>{if(event.level==='error'||level>=3)errors.push(event.message||message);});
   store.on('changed',()=>{if(!win.isDestroyed())win.webContents.send('lib:changed',store.snapshot());});
   await win.loadFile(path.join(__dirname,'../renderer/index.html'));
   const js=code=>win.webContents.executeJavaScript(code);

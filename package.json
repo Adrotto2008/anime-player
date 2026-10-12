@@ -1,7 +1,7 @@
 {
   "name": "anime-player",
   "productName": "Anime Player",
-  "version": "0.5.45",
+  "version": "0.5.46",
   "description": "Libreria di anime a link, riprodotti con mpv e Anime4K",
   "main": "main.js",
   "license": "MIT",
@@ -14,8 +14,8 @@
     "check": "node scripts/check.js"
   },
   "devDependencies": {
-    "electron": "^33.0.0",
-    "electron-builder": "^25.0.0"
+    "electron": "44.7.0",
+    "electron-builder": "26.15.3"
   },
   "build": {
     "appId": "com.adriano.animeplayer",
@@ -79,5 +79,11 @@
     "@supabase/supabase-js": "2.109.0",
     "cheerio": "1.1.2",
     "ws": "8.22.0"
+  },
+  "overrides": {
+    "global-agent": "4.1.3"
+  },
+  "engines": {
+    "node": ">=22.12.0"
   }
 }

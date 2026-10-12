@@ -13,6 +13,7 @@ const Identity = require('./content-identity');
 const Links = require('./franchise-links');
 const Organization = require('./organization');
 const Descriptions=require('./descriptions');
+const {validateRoot}=require('./library-schema');
 
 const DEFAULT_SETTINGS = {
   mpvPath: '',
@@ -45,6 +46,7 @@ const personalRating = (value) => {
 const uid = () => crypto.randomUUID();
 
 function validateLibraryData(input) {
+  validateRoot(input);
   if (!input || typeof input !== 'object' || Array.isArray(input)) throw new Error('Il file non contiene una libreria valida.');
   if (!Array.isArray(input.series)) throw new Error('La libreria importata non contiene un elenco di serie.');
   if (input.settings != null && (typeof input.settings !== 'object' || Array.isArray(input.settings))) {
@@ -168,6 +170,7 @@ class Store extends EventEmitter {
     let linkError,organizationError;
     try {
       const raw = JSON.parse(fs.readFileSync(this.file, 'utf8'));
+      validateRoot(raw);
       // An existing malformed file is not a first-run profile. Reject before
       // migrations or a later settings/save can replace the original bytes.
       if(!raw || typeof raw!=='object' || Array.isArray(raw) || !Array.isArray(raw.series))throw Error('Struttura della libreria non valida.');
@@ -279,6 +282,8 @@ class Store extends EventEmitter {
     const write = () => {
       this._timer=null;
       try {
+        validateRoot(this.data);
+        this.assertFileCompatible();
         if(this._pendingMigrationBackup && !this._migrationBackups.has(path.resolve(this.file))) {
           if(this.backup())this._migrationBackups.add(path.resolve(this.file));
         }
@@ -300,7 +305,10 @@ class Store extends EventEmitter {
     return true;
   }
 
-  snapshot() { return JSON.parse(JSON.stringify(this.data)); }
+  assertFileCompatible(file=this.file) {
+    try{validateRoot(JSON.parse(fs.readFileSync(file,'utf8')));}catch(error){if(error.code!=='ENOENT')throw error;}
+  }
+  snapshot() { validateRoot(this.data);return JSON.parse(JSON.stringify(this.data)); }
   // No asynchronous work is allowed in this atomic local commit. All metadata
   // is prepared first; failed backup/write restores both data and revision.
   transaction(fn) {
@@ -342,6 +350,7 @@ class Store extends EventEmitter {
   }
   importData(input) {
     const next = validateLibraryData(input);
+    this.assertFileCompatible();
     this.backup('pre-import');
     for (const series of next.series) series.videoPreference ||= Language.preference(this.getSeries(series.id)?.videoPreference);
     const previous = this.data;
@@ -356,6 +365,8 @@ class Store extends EventEmitter {
   applyCloudData(input, updatedAt, {expected, pending=false} = {}) {
     if(expected && !this.matchesToken(expected))return false;
     const next = validateLibraryData(input);
+    this.assertFileCompatible();
+    this.backup('pre-cloud');
     const deleted=new Set(next.deletedSeries.map(s=>s.id));
     const deletedUnits=new Set(next.deletedEpisodes.map(e=>`${e.seriesId}:${e.id}`));
     next.series=next.series.filter(s=>!deleted.has(s.id));
@@ -406,11 +417,14 @@ class Store extends EventEmitter {
   }
 
   writeLibraryFile(file, data) {
+    const next=validateLibraryData(data);
+    this.assertFileCompatible(file);
+    this.backup('pre-replace',file);
     const previousFile = this.file;
     const previousData = this.data;
     const previousBackup = this._pendingMigrationBackup;
     this.file = file;
-    this.data = validateLibraryData(data);
+    this.data = next;
     const repaired = this.repairFranchiseGroups();
     this.migrateFranchises();
     try { this.save(true, true, { cloud: !repaired, emit: false }); }

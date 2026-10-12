@@ -16,9 +16,9 @@ app.whenReady().then(async()=>{
   fs.cpSync(path.join(source,'renderer'),path.join(temp,'renderer'),{recursive:true});fs.cpSync(path.join(source,'src'),path.join(temp,'src'),{recursive:true});
   const file=path.join(temp,'renderer/app.js');fs.writeFileSync(file,fs.readFileSync(file,'utf8').replace('/* ---------- avvio ---------- */','window.ratingsTest={state,go,render,loadSeriesRatings,ratingsChartView};\n/* ---------- avvio ---------- */'));
   win=new BrowserWindow({show:false,width:1180,height:760,webPreferences:{preload:path.join(source,'preload.js'),sandbox:true,contextIsolation:true,backgroundThrottling:false}});
-  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message);});
+  win.webContents.on('console-message',(event,level,message)=>{if(event.level==='error'||level>=3)errors.push(event.message||message);});
   await win.loadFile(path.join(temp,'renderer/index.html'));await tick();const js=code=>win.webContents.executeJavaScript(code);
-  const capture=async name=>{await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');fs.writeFileSync(path.join(path.dirname(resultFile),name),(await win.webContents.capturePage()).toPNG());};
+  const capture=async name=>{fs.writeFileSync(path.join(path.dirname(resultFile),name),(await require('./capture-surface').captureSurface(win)).toPNG());};
   await js(`ratingsTest.go({name:'ratings-chart',id:${JSON.stringify(series.id)}})`);await tick();
   assert.equal(await js(`document.querySelector('.ratings-status').dataset.status`),'loading');assert.equal(await js(`document.querySelector('.ratings-status button').disabled`),true);assert.match(await js(`document.querySelector('.ratings-status').textContent`),/250.*1200/);
   for(let i=0;i<4;i++){await js(`ratingsTest.go({name:'home'});ratingsTest.go({name:'ratings-chart',id:${JSON.stringify(series.id)}})`);}

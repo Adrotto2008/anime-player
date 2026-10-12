@@ -63,7 +63,11 @@ function createWindow() {
 
 function register() {
   const lib = () => store.snapshot();
-  const h = (ch, fn) => ipcMain.handle(ch, async (event, ...a) => {ElectronSecurity.requireTrustedSender(event,win,rendererEntry);return fn(...a);});
+  const h = (ch, fn) => ipcMain.handle(ch, async (event, ...a) => {
+    ElectronSecurity.requireTrustedSender(event,win,rendererEntry);
+    if(store?.accountTransitioning && !['lib:get','auth:state','player:state','player:stop','app:version'].includes(ch))throw Error('Cambio account in corso: attendi prima di modificare la libreria.');
+    return fn(...a);
+  });
 
   h('lib:get', () => lib());
   const organization=createOrganizationService({store});

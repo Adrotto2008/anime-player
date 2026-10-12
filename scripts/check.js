@@ -1,4 +1,6 @@
 const { execFileSync, execSync } = require('child_process');
+for(const file of ['src/library-schema.js','test/capture-surface.js','test/pre-release-schema.js','test/pre-release-logout.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
+execFileSync(process.execPath,['--test','test/pre-release-schema.js','test/pre-release-logout.js'],{stdio:'inherit'});
 for(const file of ['src/electron-security.js','test/release-integrity.js','test/release-integration.js','test/release-security.js','test/release-security-electron.js','test/release-security-renderer.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/release-integrity.js','test/release-integration.js','test/release-security.js'],{stdio:'inherit'});
 for(const file of ['src/playback-shortcuts.js','src/skip-decision.js','test/mpv-shortcuts.js','test/shortcuts-electron.js','test/shortcuts-renderer.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});

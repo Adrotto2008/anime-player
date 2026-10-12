@@ -1,9 +1,16 @@
 # Anime Player
 
-Anime Player **v0.5.45** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.46** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Pre-release blockers — 0.5.46 (Phase 7B)
+
+- Recognized root fields are explicit, including optional legacy fields. Unknown root data fails closed before load, import, merge, cloud transfer or replacement. Original files remain intact; failed backups stop transformations.
+- Logout immediately invalidates account requests and preserves the departing account's local outbox. Remote session revocation is limited to five seconds and reported separately; late replies cannot alter a newer account or login generation.
+- Electron is pinned to 44.7.0, electron-builder to 26.15.3; a build-only global-agent 4.1.3 override removes the remaining vulnerable logging chain. Sandbox, context isolation and IPC restrictions stay enabled. Source/build tooling requires Node.js >=22.12.0.
+- Offline Windows candidates remain separate from the original repository. Live cloud, interactive upgrade/uninstall, long sessions and Linux/macOS are not certified. See [decisions, compatibility and remaining release gates](docs/pre-release-blockers-7b.md).
 
 ## Stabilization audit — 0.5.45 (Phase 7)
 

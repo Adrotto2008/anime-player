@@ -16,7 +16,7 @@ app.whenReady().then(async()=>{
   const vm=require('vm'),main=fs.readFileSync(path.join(__dirname,'../main.js'),'utf8');
   const listener=main.slice(main.indexOf("  win.webContents.on('before-input-event'"),main.indexOf("  ElectronSecurity.installWindowSecurity("));
   vm.runInNewContext(listener,{win});
-  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message);});
+  win.webContents.on('console-message',(event,level,message)=>{if(event.level==='error'||level>=3)errors.push(event.message||message);});
   const js=code=>win.webContents.executeJavaScript(code),tick=()=>new Promise(r=>setTimeout(r,25));
   const until=async condition=>{for(let i=0;i<240;i++){if(await js(`Boolean(${condition})`))return;await tick();}throw Error('Missing '+condition);};
   const click=text=>js(`Array.from(document.querySelectorAll('button')).find(b=>b.textContent.trim()===${JSON.stringify(text)}).click()`);
@@ -32,7 +32,7 @@ app.whenReady().then(async()=>{
   await control('skipIntro','Modifica');key('Space');await until(`document.querySelector('[role="status"]').textContent.includes('Conflitto')`);key('Escape');cases.push('standard mpv conflict rejected');
   await control('skipEnding','Disabilita');assert.equal(await value('skipEnding'),'Disabilitata');await click('Salva');await until(`document.querySelector('[role="status"]').textContent.includes('prossimo avvio')`);assert.equal(saved.at(-1).skipIntro,'Ctrl+I');assert.equal(saved.at(-1).skipEnding,'');cases.push('disable and save with explicit next-launch feedback');
   live=true;await control('skipEnding','Ripristina predefinito');await control('skipIntro','Modifica');key('F8',['control','alt']);await until(`document.querySelector('[data-shortcut="skipIntro"]').value==='Ctrl + Alt + F8'`);await click('Salva');await until(`document.querySelector('[role="status"]').textContent.includes('sessione mpv corrente')`);cases.push('special key capture, default restore and live-application feedback');
-  if(evidence){fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,'scorciatoie-ui.png'),(await win.webContents.capturePage()).toPNG());}
+  if(evidence){fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,'scorciatoie-ui.png'),(await require('./capture-surface').captureSurface(win)).toPNG());}
   await win.reload();await until(`document.querySelectorAll('#rail button').length`);await click('Scorciatoie');await until(`document.querySelector('[data-shortcut="skipIntro"]')`);assert.equal(await value('skipIntro'),'Ctrl + Alt + F8');assert.equal(await value('skipEnding'),'Ctrl + Shift + e');cases.push('reload retains settings without editing content');
   assert.equal(errors.length,0,JSON.stringify(errors));report({ok:true});clearTimeout(timeout);win.destroy();clearTimeout(store._timer);app.exit(0);
 }).catch(error=>{report({ok:false,error:error.stack});clearTimeout(timeout);win?.destroy();clearTimeout(store?._timer);app.exit(1);});

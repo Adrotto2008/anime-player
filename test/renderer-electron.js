@@ -21,7 +21,9 @@ app.whenReady().then(async () => {
     store.addSeries({ title:'Standalone' }), store.addSeries({ title:'Survivor' })];
   const handle=(ch,fn)=>ipcMain.handle(ch,(_e,...args)=>fn(...args));
   handle('lib:get',()=>store.snapshot()); handle('presets:list',()=>[]); handle('app:version',()=>app.getVersion());
-  handle('player:state',()=>({playing:false})); handle('auth:state',()=>({connected:false,configured:false}));
+  let authFixture={connected:false,configured:false},logoutFixture='timeout';
+  handle('player:state',()=>({playing:false})); handle('auth:state',()=>authFixture);
+  handle('auth:signOut',()=>{authFixture={connected:false,configured:true};return {local:true,remote:logoutFixture};});
   handle('player:diagnostics',()=>[{reason:'ipc-timeout',error:'Synthetic timeout',code:0}]);
   const fallbackChoices = [];
   handle('series:videoPreference',(id,mode)=>{store.setVideoPreference(id,mode);return store.snapshot()});
@@ -63,7 +65,7 @@ app.whenReady().then(async () => {
   handle('series:addCancel',id=>{additionClicks.push(['cancel',id]);return true;});
   handle('series:addRetry',id=>{additionClicks.push(['retry',id]);return [];});
   win = new BrowserWindow({show:false,webPreferences:{preload:path.join(__dirname,'../preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:!screenshotDir}});
-  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message)});
+  win.webContents.on('console-message',(event,level,message)=>{if(event.level==='error'||level>=3)errors.push(event.message||message)});
   store.on('changed',()=>win.webContents.send('lib:changed',store.snapshot()));
   await win.loadFile(baselineRenderer ? path.join(baselineRenderer,'index.html') : path.join(__dirname,'../renderer/index.html'));
   if(baselineRenderer){
@@ -72,7 +74,7 @@ app.whenReady().then(async () => {
   }
   const js=async code=>{try{return await win.webContents.executeJavaScript(code);}catch(error){throw new Error(`Renderer script: ${code}\n${errors.join('\n')}\n${error.message}`);}};
   const tick=()=>new Promise(resolve=>setTimeout(resolve,80));
-  const capture=async name=>{if(screenshotDir){await js('new Promise(r=>requestAnimationFrame(()=>requestAnimationFrame(r)))');fs.mkdirSync(screenshotDir,{recursive:true});fs.writeFileSync(path.join(screenshotDir,name+'.png'),(await win.webContents.capturePage()).toPNG());}};
+  const capture=async name=>{if(screenshotDir){fs.mkdirSync(screenshotDir,{recursive:true});fs.writeFileSync(path.join(screenshotDir,name+'.png'),(await require('./capture-surface').captureSurface(win)).toPNG());}};
   await tick();
   await js(`document.querySelector('#dialog-root .scrim .icon-btn')?.click()`);
   // Exercise a real keyboard event immediately after each deletion, including the last child.
@@ -255,7 +257,16 @@ app.whenReady().then(async () => {
     await js(`Array.from(document.querySelectorAll('#dialog-root button')).find(x=>x.textContent===window.i18n.t('playerDiagnostics')).click()`);await tick();
     assert.ok((await js(`document.querySelector('#dialog-root pre').textContent`)).includes('ipc-timeout'));
   }
-  report({ok:true,cases:['phase4 indeterminate and counted progress','phase4 navigation during background work','phase4 cancel and reachable retry','original-only description and hidden retired setting','season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation','repaired One Piece group title and seasons','saved Monsters standalone navigation','empty categories hidden','manual franchise title','franchise deletion warning and Escape cancellation','management menu survives background saves','manual season attachment and reclassification','manual film attachment and links','film sources and video preference without synthetic episodes','franchise merge preview with explicit duplicate preservation','complete group deletion and immediate keyboard search','player error notification and diagnostics dialog'],errors});
+
+  for(const outcome of ['timeout','error','confirmed']){
+    logoutFixture=outcome;authFixture={connected:true,configured:true,user:{id:'synthetic',email:'synthetic@fixture.test'}};win.webContents.send('sync:state',authFixture);await tick();
+    await js(`Array.from(document.querySelectorAll('#rail button')).find(b=>b.textContent.includes('synthetic@fixture.test')).click()`);await tick();
+    await js(`Array.from(document.querySelectorAll('#dialog-root button')).find(b=>b.textContent===window.i18n.t('signOut')).click()`);await tick();
+    assert.equal(await js(`document.body.textContent.includes(window.i18n.t(${JSON.stringify(outcome==='confirmed'?'accountOffline':'logoutRemoteUnconfirmed')}))`),true);
+  }
+  assert.deepStrictEqual(errors,[]);
+  report({ok:true,cases:['phase4 indeterminate and counted progress','phase4 navigation during background work','phase4 cancel and reachable retry','original-only description and hidden retired setting','season deletion','last season deletion','standalone deletion','failed deletion and cancel','immediate keyboard input','AniList search','selected record navigation','IMDb global and sequel navigation','measured versus metadata duration','keyboard language preference and restoration','resolved language availability','manual classification versus observed tags','explicit fallback consent and Escape cancellation','repaired One Piece group title and seasons','saved Monsters standalone navigation','empty categories hidden','manual franchise title','franchise deletion warning and Escape cancellation','management menu survives background saves','manual season attachment and reclassification','manual film attachment and links','film sources and video preference without synthetic episodes','franchise merge preview with explicit duplicate preservation','complete group deletion and immediate keyboard search','player error notification and diagnostics dialog','logout UI timeout/error/remote confirmation'],errors});
+  console.log('Electron logout UI: timeout/error distinguish local sign-out from remote confirmation; confirmed sign-out remains offline.');
   console.log('Electron Windows: deletion/input/search/navigation/thumbnails; keyboard version selector, availability, explicit fallback approval and Escape cancellation verified.');
   clearTimeout(store._timer); clearTimeout(timeout); win.destroy(); app.exit(0);
 }).catch(error=>{report({ok:false,error:error.stack});console.error(error);clearTimeout(timeout);if(win)win.destroy();app.exit(1);});

@@ -24,7 +24,7 @@ app.whenReady().then(async()=>{
   h('lib:get',()=>store.snapshot());h('presets:list',()=>[]);h('app:version',()=> '0.5.43');h('auth:state',()=>({connected:false,configured:false}));h('player:state',()=>({playing:false}));h('series:addTasks',()=>[]);
   h('series:ratings',()=>store.snapshot());h('organization:context',()=>service.context());h('organization:move',command=>service.move(command));h('organization:section',command=>service.section(command));
   win=new BrowserWindow({show:true,width:1180,height:850,webPreferences:{preload:path.join(__dirname,'../preload.js'),contextIsolation:true,nodeIntegration:false,sandbox:true,backgroundThrottling:false}});
-  win.webContents.on('console-message',(_e,level,message)=>{if(level>=3)errors.push(message);});
+  win.webContents.on('console-message',(event,level,message)=>{if(event.level==='error'||level>=3)errors.push(event.message||message);});
   store.on('changed',()=>{if(!win.isDestroyed())win.webContents.send('lib:changed',store.snapshot());});
   const js=code=>win.webContents.executeJavaScript(code),tick=(ms=35)=>new Promise(r=>setTimeout(r,ms));
   const until=async condition=>{for(let i=0;i<160;i++){if(await js(`Boolean(${condition})`))return;await tick();}throw new Error('DOM condition failed: '+condition);};
@@ -36,7 +36,7 @@ app.whenReady().then(async()=>{
   const key=(code,modifiers=[])=>{win.webContents.sendInputEvent({type:'keyDown',keyCode:code,modifiers});win.webContents.sendInputEvent({type:'keyUp',keyCode:code,modifiers});};
   async function start(selector){const r=await rect(selector+' .poster, '+selector+' .resume',true);mouse('mouseMove',r.x,r.y);mouse('mouseDown',r.x,r.y);mouse('mouseMove',r.x+10,r.y+1);await until(`document.querySelector('.sort-ghost')`);return r;}
   async function end(point){mouse('mouseUp',point.x,point.y);await until(`!document.querySelector('.sort-ghost') && !document.querySelector('.sort-saving')`);await tick(130);}
-  async function capture(name){if(!evidence)return;fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,name+'.png'),(await win.webContents.capturePage()).toPNG());}
+  async function capture(name){if(!evidence)return;fs.mkdirSync(evidence,{recursive:true});fs.writeFileSync(path.join(evidence,name+'.png'),(await require('./capture-surface').captureSurface(win)).toPNG());}
   async function enable(){await until(`document.querySelector('[data-sort-handle]')`);assert.equal(await js(`document.querySelector('[data-organize-toggle]')`),null);}
   await win.loadFile(path.join(__dirname,'../renderer/index.html'));await until(`document.querySelector('.poster')`);await clickText('Continua offline');await until(`!document.querySelector('#dialog-root .scrim')`);await enable();
   win.focus();win.webContents.focus();await tick(120);

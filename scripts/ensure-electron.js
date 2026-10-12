@@ -11,6 +11,6 @@ if (typeof electronBinary !== 'string' || !fs.existsSync(electronBinary)) {
   const packagePath = path.relative(process.cwd(), electronInstaller);
   throw new Error(
     `Binario Electron non disponibile (${packagePath}). Controlla la connessione e reinstalla le dipendenze con "npm ci", poi riprova. ` +
-    'Se ELECTRON_SKIP_BINARY_DOWNLOAD è impostato, rimuovilo e ripeti il comando.',
+    'Con Electron 44 puoi predisporre il binario con "npx install-electron --no". Il download richiede Node.js >=22.12.',
   );
 }

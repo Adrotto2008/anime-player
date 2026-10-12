@@ -343,7 +343,7 @@ function openAccountDialogForMode(mode) {
     const switchMode = () => { close(); openAccountDialogForMode(mode === 'signIn' ? 'signUp' : 'signIn'); };
     if (status.connected) {
       const signOut = h('button', { class: 'btn danger', onclick: async () => {
-        try { await api.invoke('auth:signOut'); state.sync = await api.invoke('auth:state'); state.profile = null; renderRail(); close(); toast(t('accountOffline')); }
+        try { const result=await api.invoke('auth:signOut'),current=await api.invoke('auth:state'); if(result?.authGeneration!=null && result.authGeneration!==current.authGeneration)return; state.sync = current; state.profile = null; renderRail(); close(); toast(t(result?.remote==='confirmed'?'accountOffline':'logoutRemoteUnconfirmed')); }
         catch (error) { message.textContent = cleanErr(error); }
       } }, t('signOut'));
       return [info, message, h('div', { class: 'foot' }, h('button', { class: 'btn', onclick: close }, t('close')), signOut)];
