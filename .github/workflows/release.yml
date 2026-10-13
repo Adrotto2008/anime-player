@@ -12,8 +12,13 @@ on:
         description: Allow an ad-hoc signed macOS package without Apple notarization
         type: boolean
         default: false
+      reuse_run_id:
+        description: Reuse successful Windows/Linux assets when application files are identical
+        type: string
+        default: ''
 permissions:
   contents: read
+  actions: read
 concurrency:
   group: release-${{ github.ref }}
   cancel-in-progress: false
@@ -32,13 +37,29 @@ jobs:
         env:
           MAC_ENABLED: ${{ vars.ENABLE_MAC_RELEASE }}
           INCLUDE_MAC: ${{ inputs.include_macos }}
+          REUSE_RUN: ${{ inputs.reuse_run_id }}
+          GH_TOKEN: ${{ github.token }}
         run: |
           node - <<'NODE'
           const fs=require('fs'),v=require('./package.json').version;
           if(v.includes('-'))throw Error('Stable package version required');
           if(process.env.GITHUB_EVENT_NAME!=='workflow_dispatch' && process.env.GITHUB_REF_NAME!=='v'+v)throw Error('Tag must equal stable package version');
-          const include=[{os:'windows-latest',platform:'win32'},{os:'ubuntu-latest',platform:'linux'}];
+          let include=[{os:'windows-latest',platform:'win32'},{os:'ubuntu-latest',platform:'linux'}];
+          if(process.env.REUSE_RUN){
+            if(!/^\d+$/.test(process.env.REUSE_RUN))throw Error('Invalid source run ID');
+            const {execFileSync}=require('child_process'),base=`repos/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.REUSE_RUN}`;
+            const source=JSON.parse(execFileSync('gh',['api',base],{encoding:'utf8'}));
+            const jobs=JSON.parse(execFileSync('gh',['api',base+'/jobs?per_page=100'],{encoding:'utf8'})).jobs;
+            for(const platform of ['win32','linux'])if(!jobs.some(j=>j.name.endsWith(', '+platform+')') && j.conclusion==='success'))throw Error('Reusable '+platform+' build did not pass');
+            execFileSync('git',['fetch','origin',source.head_sha,'--depth=1']);
+            const files=['main.js','preload.js','src','renderer','shaders','package.json','package-lock.json','scripts/build.js','scripts/build-config.js','scripts/release-verify.js'];
+            const changed=execFileSync('git',['diff','--name-only',source.head_sha,'HEAD','--',...files],{encoding:'utf8'});
+            if(changed.trim())throw Error('Application or packaging input changed; assets cannot be reused: '+changed);
+            include=[];
+            console.log('Verified unchanged application and reusable Windows/Linux assets from run '+process.env.REUSE_RUN);
+          }
           if(process.env.MAC_ENABLED==='true' || process.env.INCLUDE_MAC==='true')include.push({os:'macos-15-intel',platform:'darwin'});
+          if(!include.length)throw Error('No platform selected');
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'value='+JSON.stringify({include})+'\n');
           NODE
   build:
@@ -134,12 +155,27 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: write
+      actions: read
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
       - run: npm ci --ignore-scripts
+      - uses: actions/download-artifact@v4
+        if: inputs.reuse_run_id != ''
+        with:
+          name: release-win32
+          run-id: ${{ inputs.reuse_run_id }}
+          github-token: ${{ github.token }}
+          path: release-assets
+      - uses: actions/download-artifact@v4
+        if: inputs.reuse_run_id != ''
+        with:
+          name: release-linux
+          run-id: ${{ inputs.reuse_run_id }}
+          github-token: ${{ github.token }}
+          path: release-assets
       - uses: actions/download-artifact@v4
         with:
           pattern: release-*
@@ -152,7 +188,8 @@ jobs:
         run: |
           node - <<'NODE'
           const {verify}=require('./scripts/release-verify');
-          for(const entry of JSON.parse(process.env.RELEASE_MATRIX).include)verify('release-assets',entry.platform,require('./package.json').version);
+          const platforms=new Set(['win32','linux',...JSON.parse(process.env.RELEASE_MATRIX).include.map(e=>e.platform)]);
+          for(const platform of platforms)verify('release-assets',platform,require('./package.json').version);
           NODE
           node - <<'NODE'
           const fs=require('fs'),{execFileSync}=require('child_process'),crypto=require('crypto');
