@@ -48,7 +48,7 @@ const ok = (name) => console.log('  ok mpv:', name);
     assert.strictEqual(upgradedManager.managedPath, manager.managedPath);
     ok('copia persistente gestita precede PATH e non dipende dalla versione app');
 
-    const missing = createMpvManager({ platform: process.platform, arch: process.arch, env: { PATH: '' }, userDataPath: path.join(tmp, 'empty'), run: async () => ({ code: 0, stdout: 'mpv 0.40.0' }), home: tmp });
+    const missing = createMpvManager({ platform: process.platform, arch: process.arch, env: { PATH: '' }, userDataPath: path.join(tmp, 'empty'), fileSystem: { statSync: () => { throw new Error('missing'); } }, run: async () => ({ code: 0, stdout: 'mpv 0.40.0' }), home: tmp });
     result = await missing.find('');
     assert.strictEqual(result.status, 'not-found');
     assert.strictEqual(result.ok, false);
