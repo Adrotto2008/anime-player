@@ -56,6 +56,38 @@ test('theatrical OVA/Movie category needs exact MAL, year, title and singleton e
   c.provider.search=async()=>({records:[{...r,ids:{},year:null}],complete:true});
   assert.deepEqual(await c.findSources(target),[]);
 });
+test('source discovery searches verified aliases beyond the first three without weakening identity',async()=>{
+  const queries=[],clover={...work,providerId:'195604',title:'Black Clover 2',titles:['Black Clover 2'],
+    format:'TV',year:2026,episodes:12,ids:{anilist:195604,mal:777}};
+  const c=client({search:async q=>{queries.push(q);return{records:q==='Black Clover 2'?[clover]:[],complete:true};}});
+  const found=await c.findSources({titles:['Black Clover Season 2','Black Clover S2','Black Clover seconda stagione','Black Clover 2'],
+    format:'TV',year:2026,episodeCount:12,anilistId:195604,malId:777});
+  assert.equal(found.length,2);assert.ok(queries.includes('Black Clover 2'));
+  assert.ok(found.every(source=>source.engine.work.providerId==='195604'));
+});
+test('ReZero two-part OVA resolves each verified film to its own canonical episode',async()=>{
+  const memorySnow={...work,providerId:'1369',title:'Re:ZERO -Starting Life in Another World- Memory Snow',
+    titles:['Re:Zero kara Hajimeru Isekai Seikatsu - Memory Snow','Re:ZERO -Starting Life in Another World- Memory Snow'],
+    format:'MOVIE',year:2018,episodes:1,ids:{mal:36286,anilist:100049}};
+  const frozenBond={...work,providerId:'2577',title:'Re:ZERO -Starting Life in Another World- The Frozen Bond',
+    titles:['Re:Zero kara Hajimeru Isekai Seikatsu - Hyouketsu no Kizuna','Re:ZERO -Starting Life in Another World- The Frozen Bond'],
+    format:'MOVIE',year:2019,episodes:1,ids:{anilist:100049}};
+  const queries=[],c=client({
+    search:async q=>{queries.push(q);return{records:[memorySnow,frozenBond].filter(record=>record.titles.includes(q)),complete:true};},
+    units:async selected=>[{provider:'animeunity',workId:selected.providerId,id:selected.providerId==='1369'?'9001':'9002',number:'1'}],
+    resolve:async()=>[{url:'https://cdn.test/component.mp4',type:'file',headers:{Referer:'https://embed.test/'}}],
+  });
+  const found=await c.findSources({titles:['Re:Zero OVA'],format:'OVA',year:2016,episodeCount:2,anilistId:100049});
+  assert.deepEqual([...new Set(found.map(source=>source.number))],[1,2]);
+  assert.ok(found.every(source=>source.providerNumber===1));
+  assert.deepEqual([...new Set(found.map(source=>source.engine.work.ids.mal).filter(Boolean))],[36286]);
+  assert.ok(found.some(source=>source.number===2&&source.engine.work.title===frozenBond.title));
+  assert.ok(queries.includes(memorySnow.titles[0])&&queries.includes(frozenBond.titles[0]));
+  const sequel=found.find(source=>source.number===2);
+  const renewed=await c.renewSource(sequel,{title:'Re:Zero OVA'},{number:2});
+  assert.equal(renewed.number,2);assert.equal(renewed.providerNumber,1);
+  assert.equal(renewed.engine.work.title,frozenBond.title);
+});
 test('legacy ReZero aggregate renews only its already attached named component, keeping its unit number',async()=>{
   const r={...work,title:'Re:Zero -Starting Life in Another World- Memory Snow',
     titles:['Re:Zero -Starting Life in Another World- Memory Snow','Re:Zero kara Hajimeru Isekai Seikatsu - Memory Snow'],

@@ -1,9 +1,14 @@
 # Anime Player
 
-Anime Player **v0.5.53** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.54** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Automatic source discovery — 0.5.54
+
+- Provider search now includes verified title aliases beyond the first three queries; strict title, catalogue ID, format, year and episode-count checks still decide whether a result is accepted.
+- The two established Re:Zero AniList 100049 components (Memory Snow and The Frozen Bond) resolve independently to their existing canonical episodes using component titles, years and MAL IDs. Provider work/unit IDs and provider episode numbers remain attached for safe renewal; no library identities or progress are merged.
 
 ## Five-second recovery — 0.5.53
 
@@ -102,7 +107,7 @@ For a cloud-enabled Windows package, build with an explicitly supplied public co
 
 - Initial movie imports and later relation scans share one AniList evidence policy. Reciprocal side-story/parent or prequel/sequel links can associate films and extras; conflicting parents, mixed relations and incomplete metadata remain proposals. Titles alone never establish membership. Later scans use the same bounded season resolver as initial addition.
 - Work format, persistent UUID and display category remain separate. ONA side stories stay out of main TV seasons, and Break Time stays a spin-off. Isekai Quartet retains its own group and character-sharing links without importing the originating universes. Steins;Gate 0 is exposed through the explicit alternate 23β episode as a separate proposal, not invented as television season 2.
-- AniList currently represents Re:Zero's Memory Snow and The Frozen Bond together as OVA work 100049 with two episode units. Those units retain separate IDs/titles; the application does not invent two provider works or convert them into TV seasons.
+- AniList represents Re:Zero's Memory Snow and The Frozen Bond together as OVA work 100049 with two episode units. Source discovery resolves the existing provider entries using their separate MAL IDs and maps each to its existing episode; it does not create or merge library works or convert them into TV seasons.
 - Existing Manage content controls now include an optional relationship label (cour/part, prequel, sequel, spin-off, crossover, remake/reboot and others). Manual category, label, order and detachment take precedence through refresh, reopen, import and cloud snapshots. Provider evidence and concise reasons appear on cards/details; uncertain alternatives are not claimed as proven remakes or reboots.
 - No destructive migration, automatic duplicate cleanup, schema change or dependency is introduced. Tests use sanitized public AniList graphs and isolated synthetic libraries. See [Phase 3 decisions and rollback](docs/relation-classification-3.md) for scope and limitations.
 

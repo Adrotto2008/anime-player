@@ -10,9 +10,22 @@ function targetFor(titles,options={}) {
   return {title:titles[0],titles,format:options.format,year:options.year,
     episodes:options.canonicalEpisodeCount??options.episodeCount,ids:{anilist:options.anilistId,mal:options.malId}};
 }
+const rezeroComponents = [
+  {number:1,title:'Re:Zero kara Hajimeru Isekai Seikatsu - Memory Snow',
+    titles:['Re:Zero kara Hajimeru Isekai Seikatsu - Memory Snow','Re:Zero -Starting Life in Another World- Memory Snow'],
+    format:'OVA',year:2018,episodes:1,ids:{mal:36286},path:/memory-snow(?:\.|$)/i},
+  {number:2,title:'Re:Zero kara Hajimeru Isekai Seikatsu - Hyouketsu no Kizuna',
+    titles:['Re:Zero kara Hajimeru Isekai Seikatsu - Hyouketsu no Kizuna','Re:Zero -Starting Life in Another World- The Frozen Bond'],
+    format:'MOVIE',year:2019,episodes:1,ids:{mal:38414},path:/(?:the-frozen-bond|hyouketsu-no-kizuna)(?:\.|$)/i},
+];
+function componentTargets(target) {
+  return Number(target.ids?.anilist)===100049 && target.format==='OVA' && Number(target.episodes)===2
+    ? rezeroComponents.map(({number,...component})=>({...component,canonicalNumber:number})) : [];
+}
 function queriesFor(titles) {
-  const prefix=String(titles[0]).split(/\s+/).slice(0,3).join(' ');
-  return [...new Set([...titles.slice(0,3),...(titles[0].split(/\s+/).length>3?[prefix]:[])])];
+  const aliases=[...new Set(titles.filter(title=>typeof title==='string').map(title=>title.trim()).filter(Boolean))];
+  const prefix=String(aliases[0]||'').split(/\s+/).slice(0,3).join(' ');
+  return [...new Set([...aliases.slice(0,12),...(aliases[0]?.split(/\s+/).length>3?[prefix]:[])])];
 }
 function reconcileCategory(target,record,identity) {
   const a=identity.assessCandidate(target,record);
@@ -28,12 +41,9 @@ function legacyTarget(series,source) {
   // Renew an already attached named component in the aggregate, not a new
   // guessed slot. The existing unit UUID/number and public URL remain binding.
   const pathname=new URL(source.providerTitleUrl).pathname;
-  if(/memory-snow(?:\.|$)/i.test(pathname))return {title:'Re:Zero kara Hajimeru Isekai Seikatsu - Memory Snow',
-    titles:['Re:Zero kara Hajimeru Isekai Seikatsu - Memory Snow','Re:Zero -Starting Life in Another World- Memory Snow'],
-    format:'OVA',year:2018,episodes:1,ids:{mal:36286}};
-  if(/(?:the-frozen-bond|hyouketsu-no-kizuna)(?:\.|$)/i.test(pathname))return {title:'Re:Zero kara Hajimeru Isekai Seikatsu - Hyouketsu no Kizuna',
-    titles:['Re:Zero kara Hajimeru Isekai Seikatsu - Hyouketsu no Kizuna','Re:Zero -Starting Life in Another World- The Frozen Bond'],
-    format:'MOVIE',year:2019,episodes:1,ids:{mal:38414}};
+  const component=rezeroComponents.find(item=>item.path.test(pathname));
+  if(component)return {title:component.title,titles:component.titles,format:component.format,
+    year:component.year,episodes:component.episodes,ids:component.ids};
   return target;
 }
 class EngineClient {
@@ -46,46 +56,55 @@ class EngineClient {
     const m=await load(),provider=await this.getProvider(),target=targetFor(titles,options);
     this.lastDiscovery={status:'title_not_found',errors:[],candidates:[],episodesFound:0};
     if(!titles.length)return [];
-    const queries=queriesFor(titles),records=[];
-    for(const q of queries) {
-      const r=await provider.search(q);
-      if(!r.complete){this.lastDiscovery.status='search_incomplete';return [];}
-      records.push(...r.records.map(record=>reconcileCategory(target,record,m.identity)));
-    }
+    const targets=componentTargets(target);
+    if(!targets.length)targets.push(target);
     const sources=[],numbers=new Set();
-    // Dub and sub variants are independent user choices, not title ambiguity.
-    for(const audio of ['ja','it',null]) {
-      const match=m.identity.chooseCandidate(target,records.filter(r=>(r.audio||null)===audio));
-      this.lastDiscovery.candidates.push(...match.assessments.map(a=>({title:a.candidate.title,id:a.candidate.providerId,
-        selected:match.selected===a.candidate,reasons:a.reasons,evidence:a.evidence,decision:a.decision})));
-      if(match.status!=='matched')continue;
-      const work=match.selected;
-      try {
-        const units=await provider.units(work);
-        // Preserve opaque/range/decimal labels in diagnostics; the existing
-        // library has integer episode keys and cannot safely import these.
-        const unitNumbers=units.map(u=>m.identity.parseEpisodeLabel(u.number)).filter(n=>n.kind==='number')
-          .map(n=>Number(n.value)).filter(n=>Number.isSafeInteger(n)&&n>=0);
-        for(const unit of units) {
-          const label=m.identity.parseEpisodeLabel(unit.number);
-          if(label.kind!=='number'){this.lastDiscovery.errors.push({phase:'unit',code:'unsupported_library_episode_label',label:label.raw});continue;}
-          const number=Number(label.value);
-          if(!Number.isSafeInteger(number)||number<0)continue;
-          numbers.add(number);
-          if(episodeNumbers&&!episodeNumbers.includes(number))continue;
-          try {
-            const media=await provider.resolve(work,unit);
-            for(const s of media)sources.push(this.descriptor(s,work,unit,number,unitNumbers));
-          }catch(e){this.lastDiscovery.errors.push({phase:'episode',number,message:redact(e.code||e.message)});}
-        }
-      }catch(e){this.lastDiscovery.errors.push({phase:'variant',message:redact(e.code||e.message)});}
+    let recordsCount=0;
+    for(const searchTarget of targets) {
+      if(searchTarget.canonicalNumber!=null && episodeNumbers && !episodeNumbers.includes(searchTarget.canonicalNumber))continue;
+      const records=[];
+      for(const q of queriesFor(searchTarget.titles)) {
+        const r=await provider.search(q);
+        if(!r.complete){this.lastDiscovery.status='search_incomplete';return [];}
+        records.push(...r.records.map(record=>reconcileCategory(searchTarget,record,m.identity)));
+      }
+      recordsCount+=records.length;
+      // Dub and sub variants are independent user choices, not title ambiguity.
+      for(const audio of ['ja','it',null]) {
+        const match=m.identity.chooseCandidate(searchTarget,records.filter(r=>(r.audio||null)===audio));
+        this.lastDiscovery.candidates.push(...match.assessments.map(a=>({title:a.candidate.title,id:a.candidate.providerId,
+          selected:match.selected===a.candidate,reasons:a.reasons,evidence:a.evidence,decision:a.decision,
+          ...(searchTarget.canonicalNumber==null?{}:{canonicalNumber:searchTarget.canonicalNumber})})));
+        if(match.status!=='matched')continue;
+        const work=match.selected;
+        try {
+          const units=await provider.units(work);
+          // Preserve opaque/range/decimal labels in diagnostics; the existing
+          // library has integer episode keys and cannot safely import these.
+          const unitNumbers=units.map(u=>m.identity.parseEpisodeLabel(u.number)).filter(n=>n.kind==='number')
+            .map(n=>Number(n.value)).filter(n=>Number.isSafeInteger(n)&&n>=0);
+          for(const unit of units) {
+            const label=m.identity.parseEpisodeLabel(unit.number);
+            if(label.kind!=='number'){this.lastDiscovery.errors.push({phase:'unit',code:'unsupported_library_episode_label',label:label.raw});continue;}
+            const providerNumber=Number(label.value);
+            if(!Number.isSafeInteger(providerNumber)||providerNumber<0)continue;
+            const number=searchTarget.canonicalNumber??providerNumber;
+            numbers.add(number);
+            if(episodeNumbers&&!episodeNumbers.includes(number))continue;
+            try {
+              const media=await provider.resolve(work,unit);
+              for(const s of media)sources.push(this.descriptor(s,work,unit,number,unitNumbers,providerNumber));
+            }catch(e){this.lastDiscovery.errors.push({phase:'episode',number,message:redact(e.code||e.message)});}
+          }
+        }catch(e){this.lastDiscovery.errors.push({phase:'variant',message:redact(e.code||e.message)});}
+      }
     }
     this.lastDiscovery.episodesFound=numbers.size;this.lastDiscovery.episodeNumbers=[...numbers];
-    this.lastDiscovery.status=sources.length?'found':this.lastDiscovery.errors.length?'media_unresolved':records.length?'title_rejected':'title_not_found';
+    this.lastDiscovery.status=sources.length?'found':this.lastDiscovery.errors.length?'media_unresolved':recordsCount?'title_rejected':'title_not_found';
     return sources;
   }
-  descriptor(s,work,unit,number,numbers) {
-    return {number,url:s.url,provider:this.id,providerEpisodeId:this.id==='animeunity'?Number(unit.id):String(unit.id),
+  descriptor(s,work,unit,number,numbers,providerNumber=number) {
+    return {number,providerNumber,url:s.url,provider:this.id,providerEpisodeId:this.id==='animeunity'?Number(unit.id):String(unit.id),
       providerSourceId:s.sourceId || (s.type==='hls'?'hls':'file'),providerTitleUrl:work.url,
       referer:s.headers?.Referer,resolverReferer:s.headers?.Referer,
       resolutionState:'resolved',resolvedAt:Date.now(),providerPartNumbers:numbers,
@@ -117,7 +136,9 @@ class EngineClient {
     const chosen=media.find(s=>type?s.type===type&&(!s.sourceId||s.sourceId===source.providerSourceId)
       :s.sourceId===source.providerSourceId)||(!type?media.find(s=>s.type==='hls')||media[0]:null);
     if(!chosen)throw Error('renewal_source_missing');
-    return this.descriptor(chosen,work,unit,source.providerNumber??episode.number,units.map(u=>Number(u.number)).filter(Number.isSafeInteger));
+    const number=Number.isSafeInteger(source.number)?source.number:episode.number;
+    const providerNumber=Number.isSafeInteger(source.providerNumber)?source.providerNumber:Number(unit.number);
+    return this.descriptor(chosen,work,unit,number,units.map(u=>Number(u.number)).filter(Number.isSafeInteger),providerNumber);
   }
 }
 class AnimeUnityClient extends EngineClient {constructor(options){super('animeunity',options);}}
