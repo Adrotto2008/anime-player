@@ -87,7 +87,7 @@ class PlayerManager {
     this.store.setProgress(seriesId, episodeId, {}); // aggiorna "ultima visione"
     const sourceId=Identity.sourceId(episodeId,source);
     attempted.add(sourceId);
-    const recovery={resumePos:resume,expectedDuration:opts.expectedDuration,renewed:opts.renewed||new Set(),controller:request.controller};
+    const recovery={resumePos:resume,expectedDuration:opts.expectedDuration,partyContent:opts.partyContent,renewed:opts.renewed||new Set(),controller:request.controller};
     if (source.provider && (opts.forceRenew || urlLifetime(source.url).temporary || source.resolutionState === 'found')) {
       try {
         if (!this.resolveAutomaticSource) {
@@ -121,7 +121,7 @@ class PlayerManager {
     if(!this.isRequestActive(request)){await proxy?.close();return;}
     try {return await this._launch({ series, ep, scope, url: source.url, playbackUrl:proxy?.url,proxy,
       sourceIndex:ep.sources.findIndex(s=>Identity.sourceId(episodeId,s)===sourceId), source, attempted, requestId, effectiveMode,
-      ...recovery,title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });}
+      ...recovery,partyContent:opts.partyContent,title, start: resume, referer: source.referer || series.referer, userAgent: source.userAgent, presetId: this.presetFor(series) });}
     finally {if(proxy && this.cur?.proxy!==proxy)await proxy.close();}
   }
 
@@ -142,6 +142,17 @@ class PlayerManager {
     return this._launch({ series: null, ep: null, url, scope:request.scope, sourceIndex: 0, requestId:request.requestId, title, start: 0, referer: '', presetId: presetId || this.store.data.settings.defaultPreset });
   }
 
+  async playPartySource(source,content,{start=0,expectedDuration,signal,effectiveMode='auto'}={}){
+    if(!require('./patterns').isValidSource(source.url))throw Error('Sorgente non valida');
+    const request=this.beginRequest();let proxy;
+    try{proxy=await this.prepareSource(source,{signal:signal||request.controller.signal});
+      if(!this.isRequestActive(request)||signal?.aborted){await proxy?.close();return;}
+      await this._launch({series:null,ep:null,source,url:source.url,playbackUrl:proxy?.url,proxy,scope:request.scope,requestId:request.requestId,title:content.title,partyContent:content,start,expectedDuration,effectiveMode,referer:source.referer||'',userAgent:source.userAgent,presetId:this.store.data.settings.defaultPreset});
+    }finally{if(proxy&&this.cur?.proxy!==proxy)await proxy.close();}
+  }
+
+  _partyEvent(type,data){try{Promise.resolve(this.onPartyEvent?.(type,data)).catch(()=>{});}catch{}}
+
   async _launch(c) {
     const settings = this.store.data.settings;
     if (!settings.mpvPath) throw new Error('mpv non configurato: imposta il percorso in Impostazioni.');
@@ -161,7 +172,7 @@ class PlayerManager {
     const cur = this.cur;
     cur.lastAdvanceAt=Date.now();
     cur.stallInterval=setInterval(()=>this._checkStall(cur),this.stallPollMs);cur.stallInterval.unref?.();
-    session.once('loaded',()=>{if(this._current(cur))this._syncShortcuts();});
+    session.once('loaded',()=>{if(this._current(cur)){this._syncShortcuts();this._partyEvent('loaded');}});
     if (strictLanguage) cur.languageTimer = setTimeout(() => {
       session.error = 'Impossibile rilevare le tracce del file'; session.quit('track-timeout');
     }, 15000);
@@ -184,10 +195,12 @@ class PlayerManager {
     };
     cur.saveInterval = setInterval(flushProgress, this.progressIntervalMs);
     cur.saveInterval.unref?.();
-    session.on('pause', paused => {cur.paused=paused;cur.lastAdvanceAt=Date.now();if(this.cur===cur && paused) {flushProgress();scheduleCheckpoint();}});
+    session.on('pause', paused => {const changed=cur.paused!==paused;cur.paused=paused;cur.lastAdvanceAt=Date.now();if(this.cur===cur && paused) {flushProgress();scheduleCheckpoint();}if(changed&&this.cur===cur)this._partyEvent('pause',paused);});
     session.on('seek', () => {cur.seeking=true;cur.seekStartedAt=Date.now();cur.lastAdvanceAt=Date.now();});
-    session.on('seeked', () => {if(this.cur===cur && cur.seeking) {cur.seeking=false;scheduleCheckpoint();}});
-    session.on('speed',speed=>{cur.speed=speed;cur.lastAdvanceAt=Date.now();});
+    session.on('seeked', () => {if(this.cur===cur && cur.seeking) {cur.seeking=false;scheduleCheckpoint();this._partyEvent('seeked',{kind:cur.partyAction||'seek'});cur.partyAction=null;}});
+    session.on('speed',speed=>{const changed=cur.speed!==speed;cur.speed=speed;cur.lastAdvanceAt=Date.now();if(changed&&this.cur===cur)this._partyEvent('speed');});
+    session.on('buffering',buffering=>{cur.buffering=buffering;if(this.cur===cur)this._partyEvent('buffering');});
+    session.on('party-status',()=>this._partyEvent('status'));
     session.on('time', (t) => {
       if(this.cur!==cur || !Number.isFinite(t))return;
       if(!this._live(cur)) {session.quit('account-change');return;}
@@ -208,14 +221,14 @@ class PlayerManager {
       cur.pos = t;
       if (Math.abs(delta) >= 5) scheduleCheckpoint();
       const skips = cur.ep && Array.isArray(cur.ep.skipTimes) ? cur.ep.skipTimes : [];
-      if (this.store.data.settings.skipOpening && !cur.skippedIntro) {
+      if (this.store.data.settings.skipOpening && !cur.skippedIntro && (!this.allowPartyAutomaticSkip||this.allowPartyAutomaticSkip())) {
         const segment = skips.find((x) => (x.skipType === 'op' || x.skipType === 'mixed-op') && t >= x.start && t < x.end);
         if (segment) { cur.skippedIntro = true; session.seekAbsolute(segment.end); }
       } else if (!cur.offeredIntro) {
         const segment = skips.find((x) => (x.skipType === 'op' || x.skipType === 'mixed-op') && t >= x.start && t < x.end);
         if (segment) { cur.offeredIntro = true; this.notify('player:skip-offer', { kind: 'intro', end: segment.end,requestId:cur.requestId,seriesId:cur.series.id,episodeId:cur.ep.id }); }
       }
-      if (this.store.data.settings.skipEnding && !cur.skippedEnding) {
+      if (this.store.data.settings.skipEnding && !cur.skippedEnding && (!this.allowPartyAutomaticSkip||this.allowPartyAutomaticSkip())) {
         const segment = skips.find((x) => (x.skipType === 'ed' || x.skipType === 'mixed-ed' || x.skipType === 'mixed-ending') && t >= x.start && t < x.end);
         if (segment) { cur.skippedEnding = true; session.seekAbsolute(segment.end); }
       } else if (!cur.offeredEnding) {
@@ -245,6 +258,7 @@ class PlayerManager {
     session.on('exit', (r) => this._onExit(cur, r));
     session.start();
     this._emitState();
+    this._partyEvent('launch');
   }
 
   _flushProgress(cur, {final=false,eof=false,error=null} = {}) {
@@ -296,6 +310,7 @@ class PlayerManager {
     }
     this._emitState();
     this.notify('lib:changed', this.store.snapshot());
+    this._partyEvent(error?'error':'exit',result);
     if (cur.stopping || !live || this.shuttingDown || (cur.requestId!=null && cur.requestId!==this.playRequestId)) return;
 
     if(error && (!cur.ep || ['ipc-timeout','ipc-disconnected','abnormal','unknown-exit'].includes(result.reason))) {
@@ -313,7 +328,7 @@ class PlayerManager {
     const eps = cur.ep.kind === 'part' ? (cur.series.mediaParts || []).filter(p=>p.layout === cur.ep.layout).sort((a,b)=>Franchise.partOrder(a)-Franchise.partOrder(b)) : cur.series.episodes;
     const i = eps.findIndex((e) => e.id === cur.ep.id);
     let target = null;
-    if (cur.nav === 'next' || (eof && this.store.data.settings.autoplayNext)) target = eps.slice(i + 1).find((e) => e.sources.length);
+    if (cur.nav === 'next' || (eof && this.store.data.settings.autoplayNext && (!this.allowPartyAutoplay||this.allowPartyAutoplay()))) target = eps.slice(i + 1).find((e) => e.sources.length);
     else if (cur.nav === 'prev') target = eps.slice(0, i).reverse().find((e) => e.sources.length);
     if (target) this.play(cur.series.id, target.id).catch((e) => this.notify('player:error', e.message));
   }
@@ -469,6 +484,7 @@ class PlayerManager {
       const decision=previous?.kind===kind && time>=previous.target && time<=previous.target+NEAR_SECONDS
         ? {ok:false,reason:'repeat-destination'} : decideSkip({episode:cur.ep,time,duration,kind});
       if(decision.ok){
+        cur.partyAction='skip';
         await cur.session.request(['seek',decision.target,'absolute+exact']);
         if(!this._current(cur))return false;
         cur.skipCooldown=Date.now()+1200;

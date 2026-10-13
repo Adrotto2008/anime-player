@@ -598,6 +598,16 @@ class CloudService {
     return { ...this.status(), user: this.user ? { id: this.user.id, email: this.user.email, email_confirmed_at: this.user.email_confirmed_at || null } : null };
   }
 
+  // Main-process service only. Never expose this result through renderer IPC.
+  async watchPartyCredentials(){
+    if(!this.user||this._authBlocked||this._authChanging||this._logoutPromise)return null;
+    const epoch=this._accountEpoch,id=this.user.id,{data,error}=await this.client.auth.getSession();
+    if(error)throw error;
+    if(epoch!==this._accountEpoch||this.user?.id!==id||data.session?.user.id!==id)throw Error('Sessione account cambiata');
+    if(!data.session?.access_token)throw Error('Accedi nuovamente all’account');
+    return {accessToken:data.session.access_token,userId:id};
+  }
+
   _requireClient() {
     if(this._authBlocked)throw Error('Contesto account bloccato: recupera i file prima di accedere.');
     if (!this.client) throw new Error(this.config.error || 'Supabase non configurato.');

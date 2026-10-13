@@ -45,6 +45,7 @@ jobs:
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y xvfb libfuse2t64 libgtk-3-0t64 libnss3 libasound2t64
       - run: npm ci
+      - run: npm ci --prefix watchparty-server
       - name: Download Electron binary for Linux checks
         if: runner.os == 'Linux'
         run: node scripts/ensure-electron.js
@@ -119,7 +120,7 @@ jobs:
           pattern: release-*
           path: release-assets
           merge-multiple: true
-      - name: Verify complete aggregate and publish draft only after upload
+      - name: Verify complete aggregate and prepare draft for final publication
         env:
           GH_TOKEN: ${{ github.token }}
           RELEASE_MATRIX: ${{ needs.plan.outputs.matrix }}
@@ -155,4 +156,5 @@ jobs:
             if(asset.digest && asset.digest!==digest)throw Error('Upload digest mismatch: '+name);
           }
           NODE
-          gh release edit "$GITHUB_REF_NAME" --draft=false --latest
+          # Final publication attaches the documented verification report and
+          # reuses these assets through anime-player-release-rapido.

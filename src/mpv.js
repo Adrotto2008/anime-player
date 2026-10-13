@@ -69,6 +69,7 @@ class MpvSession extends EventEmitter {
       this.send(['observe_property', 3, 'pause']);
       this.send(['observe_property', 4, 'track-list']);
       this.send(['observe_property', 5, 'speed']);
+      this.send(['observe_property', 6, 'paused-for-cache']);
       this.heartbeatTimer=setInterval(()=>{
         if(this.closed || this.requestedReason || !this.loaded || this.pendingCommandId)return;
         this.pendingCommandId=++this.nextCommandId;
@@ -112,6 +113,7 @@ class MpvSession extends EventEmitter {
       else if (m.name === 'pause') this.emit('pause', !!m.data);
       else if (m.name === 'track-list' && Array.isArray(m.data)) this.emit('tracks', m.data);
       else if (m.name === 'speed' && typeof m.data === 'number') this.emit('speed', m.data);
+      else if (m.name === 'paused-for-cache') this.emit('buffering', !!m.data);
     } else if (m.event === 'end-file') {
       this.endReason=m.reason;
       if (m.reason === 'eof') this.eof = true;
@@ -122,6 +124,7 @@ class MpvSession extends EventEmitter {
       else if (m.args[0] === 'ap-prev') this.emit('nav', 'prev');
       else if (m.args[0] === 'ap-skip-intro') this.emit('skip', 'intro');
       else if (m.args[0] === 'ap-skip-ending') this.emit('skip', 'ending');
+      else if (m.args[0] === 'ap-party-status') this.emit('party-status');
     }
   }
 

@@ -4,6 +4,7 @@ const api = window.animeApi; // il ponte si chiama animeApi: un `const api` acca
 const { setLanguage, t } = window.i18n;
 const state = { lib: { series: [], settings: {} }, presets: [], version: '', sync: { configured: false, connected: false }, profile: null, social: { friends: [], requests: [], requestProfiles: [], results: [], query: '', loading: false, loaded: false, searchTimer: null, searchRequestId: 0 }, view: { name: 'home' }, filter: '', progressFilter: 'all', sort: 'manual', organizationContext:null, player: { playing: false }, stats: null, ratingLoads: {}, additions: [], descriptionRequests: new Set() };
 let accountDialogClose=null,lastRecoveryNoticeId=null;
+let partyReady=false;
 let library=state.lib,chartIndices=new WeakMap(),chartMappings=new WeakMap();
 let updateView,updatePrompt;let startupUpdateShown=false,updatesReady=false;const updateNotifications=new Set();
 function receiveUpdate(payload){
@@ -304,6 +305,7 @@ function renderRail() {
     navBtn(t('stats'), 'stats', () => go({ name: 'stats' }), v === 'stats'),
     navBtn(state.lib.settings.language==='it'?'Versioni':'Versions', 'refresh', () => go({name:'versions'}), v==='versions'),
     navBtn(t('social'), 'social', () => go({ name: 'social' }), v === 'social'),
+    navBtn('Watch Party', 'social', () => go({ name: 'watchparty' }), v === 'watchparty'),
     h('div', { class: 'nav-label' }, t('navTools')),
     navBtn(t('openLink'), 'link', openLinkDialog, false),
     navBtn(t('shortcuts'), 'keyboard', () => go({ name: 'shortcuts' }), v === 'shortcuts'),
@@ -524,8 +526,9 @@ function render() {
     state.view.name === 'franchise' ? franchiseView(state.view.id) :
     state.view.name === 'series' && getSeries(state.view.id) ? seriesView(getSeries(state.view.id)) :
     state.view.name === 'ratings-chart' && getSeries(state.view.id) ? ratingsChartView(getSeries(state.view.id)) :
-    state.view.name === 'versions' ? versionsView() : state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
+    state.view.name === 'watchparty' ? partyUI.page() : state.view.name === 'versions' ? versionsView() : state.view.name === 'stats' ? statsView() : state.view.name === 'shortcuts' ? shortcutsView() : state.view.name === 'social' ? socialView() : homeView()
   );
+  const partyBanner=partyUI.banner();if(partyBanner)main.prepend(partyBanner);
   organizationSizes.disconnect();
   for(const grid of main.querySelectorAll('.organized-grid[data-sort-family="visual"]')){sizeOrganizationGrid(grid);organizationSizes.observe(grid);}
   if(focusedList && focusedSortId)document.querySelector(`[data-sort-list="${CSS.escape(focusedList)}"] > [data-sort-id="${CSS.escape(focusedSortId)}"] [data-sort-handle]`)?.focus({preventScroll:true});
@@ -1618,6 +1621,7 @@ function versionsView(){
 function shortcutsView() {
   const S=window.PlaybackShortcuts,draft={...S.effective(state.lib.settings.shortcuts)},status=h('p',{class:'muted small',role:'status'});
   const labels={next:'shortcutNext',previous:'shortcutPrevious',skipIntro:'shortcutIntro',skipEnding:'shortcutEnding'};
+  labels.partyStatus='shortcutPartyStatus';
   const rows=Object.keys(S.DEFAULTS).map(action=>{
     const input=h('input',{class:'input',readonly:true,value:S.display(draft[action])||t('shortcutDisabled'),'aria-label':t(labels[action]),'data-shortcut':action});
     let listening=false;
@@ -1685,6 +1689,7 @@ function openSetup(repair=false) {
 }
 
 /* ---------- avvio ---------- */
+const partyUI=globalThis.WatchPartyUI.create({api,h,toast,toastAction,refresh:()=>{if(!partyReady)return;const top=$('#main').scrollTop;render();$('#main').scrollTop=top;},go,language:()=>state.lib.settings.language,avatar:profileAvatar,openDialog});
 (async function init() {
   setupOrganization();
   api.on('series:ratingsProgress',payload=>{
@@ -1701,6 +1706,7 @@ function openSetup(repair=false) {
     notifySourceDiscovery(sourceDiscovery, getSeries(id)?.title);
   });
   api.on('updates:state',receiveUpdate);
+  api.on('watchparty:state',value=>partyUI.receive(value));
   api.on('player:state', (p) => { state.player = p; renderPlayer(); if(state.updates){state.updates.playing=p.playing;updateView?.update(state.updates);updatePrompt?.update(state.updates);receiveUpdate(state.updates);} });
   api.on('player:error', (m) => toast(m, 'error'));
   api.on('sync:state', (sync) => { state.sync = sync; renderRail(); });
@@ -1717,9 +1723,11 @@ function openSetup(repair=false) {
   state.presets = await api.invoke('presets:list');
   state.version = await api.invoke('app:version');
   state.player = await api.invoke('player:state');
+  partyUI.receive(await api.invoke('watchparty:state').catch(()=>({connection:'idle',invites:[],preferences:{sync:{}},telemetry:{}})));
   state.sync = await api.invoke('auth:state').catch(() => ({ configured: false, connected: false }));
   if (state.sync.connected) state.profile = await api.invoke('profile:mine').catch(() => null);
   const mpvStatus=await api.invoke('mpv:startup').catch(()=>null);
+  partyReady=true;
   render();
   const recovery=await api.invoke('auth:takeRecoveryNotice').catch(()=>null);
   if(recovery)receivePasswordRecovery(recovery);

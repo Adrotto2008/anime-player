@@ -8,10 +8,10 @@ function installShutdown(app, getServices) {
     event.preventDefault();
     if(finishing)return;
     finishing=true;
-    const {player,store,cloud,updates}=getServices();
+    const {player,store,cloud,updates,party}=getServices();
     if(player)player.shuttingDown=true;
     try {cloud?.stop();} catch(error) {console.warn('Chiusura sync:',redact(error.message));}
-    Promise.resolve().then(()=>player?.stop({reason:'shutdown'}))
+    Promise.resolve().then(()=>party?Promise.resolve(party.stop()).then(()=>player?.stop({reason:'shutdown'})):player?.stop({reason:'shutdown'}))
       .catch(error=>console.warn('Chiusura player:',redact(error.message)))
       .finally(()=>{
         // The final watch-session callback may have queued another sync after the first stop.

@@ -1,9 +1,18 @@
 # Anime Player
 
-Anime Player **v0.5.54** is a cross-platform Electron library for anime links. It stores the
+Anime Player **v0.5.55** is a cross-platform Electron library for anime links. It stores the
 links you add or discover through AnimeUnity and AnimeWorld, displays metadata from AniList and Kitsu, and opens videos
 with the external **mpv** player and **Anime4K** shaders. It does not download
 episodes. Automatic episode-link discovery tries AnimeUnity first, then AnimeWorld.
+
+## Watch Party — 0.5.55
+
+- Create public code rooms or private rooms with host approval and ten-minute friend invitations. Registered accounts are verified through Supabase; guests use temporary identities. The existing Cloudflare Worker coordinates rooms through SQLite Durable Objects and hibernatable WebSockets.
+- Host controls are the default. Hosts can grant shared play/pause, seeking, episode changes and opening/ending skips, moderate participants and revoke room bans. Abrupt disconnects reserve membership for 30 seconds, then a connected participant becomes host. The last departure closes the room.
+- Each client resolves its own source through the existing library and provider engine. Files and credential URLs are not transmitted. Missing or incompatible sources require manual selection. Individual pause, Resync, library indicators and mpv notifications are available; `Ctrl+Alt+W` shows RTT and drift and can be remapped.
+- Synchronization adjusts mpv speed for small drift and seeks beyond configurable thresholds. The 500 ms target depends on network, buffering and matching editions; it is not a guarantee for arbitrary sources.
+- Install Worker development dependencies with `npm ci --prefix watchparty-server` before `npm run check` or `npm run dist`. Release CI prepares a verified draft; final publication and its report reuse those packages.
+- See [Watch Party setup, protocol and verification](docs/watchparty.md). The Supabase schema is unchanged.
 
 ## Automatic source discovery — 0.5.54
 

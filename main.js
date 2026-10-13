@@ -21,7 +21,10 @@ const { discoverSeriesSources: discoverSources, createSourceDiscoveryQueue } = r
 
 // Source checkouts use a disposable local profile, never the installed app's profile.
 if(!app.isPackaged){
-  const profile=path.resolve(__dirname,'.isolated-user-data');
+  const requested=process.env.ANIME_PLAYER_TEST_PROFILE&&path.resolve(process.env.ANIME_PLAYER_TEST_PROFILE);
+  const testRoot=path.resolve(__dirname,'work')+path.sep;
+  if(requested&&!requested.startsWith(testRoot))throw Error('Il profilo di test deve essere dentro work/');
+  const profile=requested||path.resolve(__dirname,'.isolated-user-data');
   fs.mkdirSync(profile,{recursive:true});
   app.setPath('userData',profile);
   fs.mkdirSync(path.join(profile,'session'),{recursive:true});
@@ -29,7 +32,7 @@ if(!app.isPackaged){
 }
 if (!app.requestSingleInstanceLock()) { app.quit(); }
 
-let win; let store; let player; let cloud; let roomSubscription; let updates;
+let win; let store; let player; let cloud; let party; let updates;
 const PASSWORD_RESET_SCHEME='animeplayer';
 let queuedRecoveryLinks=[];
 let recoveryNotice=null;
@@ -66,6 +69,7 @@ function completeMpv(result,directory=store.data.settings.mpvInstallDirectory){
 const shaderDir = () => (app.isPackaged ? path.join(process.resourcesPath, 'shaders') : path.join(__dirname, 'shaders'));
 const send = (ch, payload) => {
   if(ch==='lib:changed' && ratings?.syncScope())payload=store.snapshot();
+  if(ch==='sync:state')party?.accountChanged(payload);
   if (win && !win.isDestroyed()) win.webContents.send(ch, payload);
 };
 
@@ -138,24 +142,23 @@ function register() {
   h('friends:respond', (requestId, status) => cloud.respondFriendRequest(requestId, status));
   h('friends:list', () => cloud.listFriends());
   h('friends:remove', (friendId) => cloud.removeFriend(friendId));
-  h('watchRooms:create', (params) => cloud.createWatchRoom(params));
-  h('watchRooms:join', (roomId) => cloud.joinWatchRoom(roomId));
-  h('watchRooms:subscribe', (roomId) => {
-    if (roomSubscription) roomSubscription.unsubscribe();
-    roomSubscription = cloud.subscribeWatchRoom(roomId, {
-      onPlayback: (payload) => send('watchRoom:playback', payload),
-      onPresence: (payload) => send('watchRoom:presence', payload),
-    });
-    return true;
-  });
-  h('watchRooms:broadcast', (type, details) => {
-    if (!roomSubscription) throw new Error('Non sei collegato a una watch room.');
-    return roomSubscription.sendPlayback(type, details);
-  });
-  h('watchRooms:unsubscribe', async () => {
-    if (roomSubscription) await roomSubscription.unsubscribe();
-    roomSubscription = null;
-    return true;
+  h('watchparty:state',()=>party.snapshot());
+  h('watchparty:create',input=>party.create(input));
+  h('watchparty:join',input=>party.join(input));
+  h('watchparty:leave',()=>party.leave());
+  h('watchparty:command',(action,data={})=>party.command(action,{paused:data.paused,position:data.position}));
+  h('watchparty:permissions',permissions=>party.permissions(permissions));
+  h('watchparty:moderate',(action,target)=>party.moderate(action,target));
+  h('watchparty:invite',userId=>party.invite(userId));
+  h('watchparty:acceptInvite',id=>party.acceptInvite(id));
+  h('watchparty:dismissInvite',id=>party.dismissInvite(id));
+  h('watchparty:resync',()=>party.playback.resync());
+  h('watchparty:pauseLocal',()=>party.playback.pauseLocal());
+  h('watchparty:configure',patch=>party.configure(patch));
+  h('watchparty:copyCode',()=>{if(party.code)require('electron').clipboard.writeText(party.code);return true;});
+  h('watchparty:source',async input=>{
+    if(input?.mode==='file'){const result=await dialog.showOpenDialog(win,{title:'Sorgente Watch Party',properties:['openFile'],filters:[{name:'Video',extensions:['mp4','mkv','webm','mov','avi']}]});if(result.canceled)return false;return party.playback.chooseSource(result.filePaths[0]);}
+    return party.playback.chooseSource(String(input?.url||''));
   });
   h('sync:run', () => cloud.sync());
   h('library:export', async () => {
@@ -472,7 +475,10 @@ app.whenReady().then(async () => {
     },
   });
   cloud = new CloudService({ store, userDataPath, safeStorage: require('electron').safeStorage, notify: send,
-    beforeLibrarySwitch: () => player.stop({reason:'account-change'}), env: app.isPackaged ? process.env : {}, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+    beforeLibrarySwitch: async () => {await party?.leave();await player.stop({reason:'account-change'});}, env: app.isPackaged ? process.env : {}, isPackaged: app.isPackaged, resourcesPath: process.resourcesPath });
+  let partyEndpoint;
+  if(!app.isPackaged&&process.env.ANIME_PLAYER_TEST_PROFILE&&process.env.ANIME_PLAYER_PARTY_TEST_URL){const url=new URL(process.env.ANIME_PLAYER_PARTY_TEST_URL);if(url.protocol!=='http:'||url.hostname!=='127.0.0.1'||url.username||url.password||url.pathname!=='/')throw Error('Endpoint di test non valido');partyEndpoint=url.origin;}
+  party=new (require('./src/watchparty').WatchPartyService)({player,store,cloud,notify:send,userDataPath,baseUrl:partyEndpoint});
   player.onWatchSession = (session) => cloud.recordWatchSession(session);
   updates=require('./src/updates').createUpdateService({app,profile:userDataPath,notify:state=>send('updates:state',state),
     isPlaying:()=>!!(player.cur || player.activeRequest || player.pendingLanguageFallback),save:()=>store.save(true,true,{cloud:true})});
@@ -482,7 +488,7 @@ app.whenReady().then(async () => {
   if(mpvStartup.ok)completeMpv(mpvStartup,mpvDevice.data.installDirectory);
   createWindow();
   app.setAsDefaultProtocolClient(PASSWORD_RESET_SCHEME);
-  cloud.start().then(()=>processPasswordRecoveryLinks()).catch((err) => console.warn('Avvio Supabase fallito:', err.message));
+  cloud.start().then(()=>{party.start();return processPasswordRecoveryLinks();}).catch((err) => console.warn('Avvio Supabase fallito:', err.message));
   setTimeout(() => refreshAiringStatuses().catch((err) => console.warn('Aggiornamento programmazione fallito:', err.message)), 1200);
 });
 
@@ -490,5 +496,6 @@ app.on('second-instance', (_event, commandLine) => {
   const url=commandLine.find(isPasswordRecoveryUrl);if(url)queuePasswordRecoveryUrl(url);
   if (win) { if (win.isMinimized()) win.restore(); win.focus(); }
 });
-require('./src/shutdown').installShutdown(app,()=>({cloud,store,player,updates}));
+require('./src/shutdown').installShutdown(app,()=>({cloud,store,player,updates,party}));
 app.on('window-all-closed', () => app.quit());
+if(typeof module!=='undefined')module.exports={getServices:()=>({win,player,party,store,cloud})};

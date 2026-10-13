@@ -1,6 +1,6 @@
 -- Bindings belong to this mpv instance only. No OS hooks or personal configuration writes.
 local utils = require 'mp.utils'
-local actions = {next='ap-next',previous='ap-prev',skipIntro='ap-skip-intro',skipEnding='ap-skip-ending'}
+local actions = {next='ap-next',previous='ap-prev',skipIntro='ap-skip-intro',skipEnding='ap-skip-ending',partyStatus='ap-party-status'}
 local owned = {}
 local presets_ready = false
 local function canonical(key)

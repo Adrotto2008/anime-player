@@ -1,4 +1,7 @@
 const { execFileSync, execSync } = require('child_process');
+for(const file of ['src/watchparty.js','src/watchparty-playback.js','src/watchparty-protocol.js','renderer/watchparty.js'])execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
+execFileSync(process.execPath,['--test','test/watchparty.js','test/watchparty-server.js'],{stdio:'inherit'});
+execFileSync(process.execPath,['watchparty-server/node_modules/typescript/bin/tsc','--noEmit','--project','watchparty-server/tsconfig.json'],{stdio:'inherit'});
 for(const file of ['src/source-engine.js',...require('fs').readdirSync('src/source-engine').filter(f=>f.endsWith('.mjs')).map(f=>'src/source-engine/'+f)])
   execFileSync(process.execPath,['--check',file],{stdio:'inherit'});
 execFileSync(process.execPath,['--test','test/source-engine.js'],{stdio:'inherit'});

@@ -1,7 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.PlaybackShortcuts=api;})(globalThis,function(){
   'use strict';
-  const DEFAULTS={next:'PGDWN',previous:'PGUP',skipIntro:'Ctrl+O',skipEnding:'Ctrl+E'};
-  const ACTIONS={next:'ap-next',previous:'ap-prev',skipIntro:'ap-skip-intro',skipEnding:'ap-skip-ending'};
+  const DEFAULTS={next:'PGDWN',previous:'PGUP',skipIntro:'Ctrl+O',skipEnding:'Ctrl+E',partyStatus:'Ctrl+Alt+w'};
+  const ACTIONS={next:'ap-next',previous:'ap-prev',skipIntro:'ap-skip-intro',skipEnding:'ap-skip-ending',partyStatus:'ap-party-status'};
   const aliases={PageDown:'PGDWN',PageUp:'PGUP',ArrowLeft:'LEFT',ArrowRight:'RIGHT',ArrowUp:'UP',ArrowDown:'DOWN',Enter:'ENTER',Escape:'ESC',Backspace:'BS',Delete:'DEL',Insert:'INS',' ':'SPACE',Tab:'TAB',Home:'HOME',End:'END'};
   const special=new Set(['PGDWN','PGUP','LEFT','RIGHT','UP','DOWN','ENTER','ESC','BS','DEL','INS','SPACE','TAB','HOME','END','PAUSE','PRINT',...Array.from({length:24},(_,i)=>'F'+(i+1))]);
   function normalize(raw){

@@ -33,7 +33,12 @@ test('source checkout selects only a local profile before any personal profile a
  const source=fs.readFileSync(path.join(__dirname,'../main.js'),'utf8');
  const start=source.indexOf('// Source checkouts'),end=source.indexOf('if (!app.requestSingleInstanceLock())',start);
  const selected=[],root=path.resolve('isolated-checkout');
- vm.runInNewContext(source.slice(start,end),{app:{isPackaged:false,setPath:(name,value)=>selected.push([name,value]),getPath:()=>{throw Error('personal profile forbidden')}},fs:{mkdirSync:()=>{}},path,__dirname:root});
+ vm.runInNewContext(source.slice(start,end),{app:{isPackaged:false,setPath:(name,value)=>selected.push([name,value]),getPath:()=>{throw Error('personal profile forbidden')}},fs:{mkdirSync:()=>{}},path,__dirname:root,process:{env:{}}});
  assert.deepEqual(selected.map(([name])=>name),['userData','sessionData']);
  for(const [,value] of selected)assert.ok(value.startsWith(path.join(root,'.isolated-user-data')));
+});
+test('explicit source test profiles stay inside work and packaged apps ignore test paths',()=>{
+ const source=fs.readFileSync(path.join(__dirname,'../main.js'),'utf8');const start=source.indexOf('// Source checkouts'),end=source.indexOf('if (!app.requestSingleInstanceLock())',start),root=path.resolve('isolated-checkout');
+ const run=(requested,packaged=false)=>{const selected=[];vm.runInNewContext(source.slice(start,end),{app:{isPackaged:packaged,setPath:(name,value)=>selected.push([name,value])},fs:{mkdirSync:()=>{}},path,__dirname:root,process:{env:{ANIME_PLAYER_TEST_PROFILE:requested}}});return selected;};
+ assert.equal(run(path.join(root,'work','fixture'))[0][1],path.join(root,'work','fixture'));assert.throws(()=>run(path.join(root,'work','..','personal')),/dentro work/);assert.deepEqual(run(path.resolve('personal'),true),[]);
 });

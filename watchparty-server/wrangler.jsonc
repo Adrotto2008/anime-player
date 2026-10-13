@@ -1,0 +1,17 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "watchparty-server",
+  "main": "src/index.ts",
+  "compatibility_date": "2026-10-06",
+  "migrations": [
+    { "tag": "v1", "new_sqlite_classes": ["MyDurableObject"] },
+    { "tag": "v2-watchparty", "new_sqlite_classes": ["InviteInbox"] }
+  ],
+  "durable_objects": { "bindings": [
+    { "class_name": "MyDurableObject", "name": "MY_DURABLE_OBJECT" },
+    { "class_name": "InviteInbox", "name": "INVITE_INBOX" }
+  ] },
+  "vars": { "ROOM_MAX_PARTICIPANTS": "16", "RECONNECT_GRACE_MS": "30000", "SUPABASE_URL": "https://gbdcdserzrujiuacefca.supabase.co" },
+  "observability": { "enabled": true, "head_sampling_rate": 0.1, "redact_query_string": true },
+  "upload_source_maps": true
+}

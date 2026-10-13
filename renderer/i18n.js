@@ -2,6 +2,7 @@
 
 const DICT = {
   en: {
+    shortcutPartyStatus:'Watch Party status',
     sortManual:'My order',homeSections:'Home sections',organizationSaved:'Layout saved.',
     organizationHelp:'Drag cards directly. Keyboard: Space or Enter to pick up, arrows to move, Ctrl + arrows to change section, Enter to save, Esc to cancel. Collections only change the layout.',
     dragLabel:title=>`Move ${title}`,dragPicked:title=>`${title} picked up. Use arrows to move or Esc to cancel.`,
@@ -187,6 +188,7 @@ const DICT = {
     playbackShortcuts:'Playback shortcuts',shortcutChange:'Change',shortcutDisable:'Disable',shortcutDisabled:'Disabled',shortcutReset:'Reset default',shortcutCapture:'Press your keys…',shortcutsApplied:'Saved and applied in the current mpv session.',shortcutsNextLaunch:'Saved. Applied at the next mpv launch.',shortcuts: 'Shortcuts', shortcutsHint: 'Press Change, then your keys (Escape cancels). Works in mpv, including fullscreen. Manual skips use known intervals or at most 2 seconds before them.', shortcutNext: 'Next episode', shortcutPrevious: 'Previous episode', shortcutIntro: 'Skip opening', shortcutEnding: 'Skip ending', shortcutUnset: 'e.g. CTRL+SHIFT+O', autoSkipOpening: 'Automatically skip opening when AniSkip finds it', autoSkipEnding: 'Automatically skip ending when AniSkip finds it',
   },
   it: {
+    shortcutPartyStatus:'Stato Watch Party',
     sortManual:'Il mio ordine',homeSections:'Sezioni della Home',organizationSaved:'Disposizione salvata.',
     organizationHelp:'Trascina direttamente le schede. Tastiera: Spazio o Invio per selezionare, frecce per spostare, Ctrl + frecce per cambiare sezione, Invio per salvare, Esc per annullare. Le raccolte cambiano solo la disposizione.',
     dragLabel:title=>`Sposta ${title}`,dragPicked:title=>`${title} selezionato. Usa le frecce per spostarlo o Esc per annullare.`,
