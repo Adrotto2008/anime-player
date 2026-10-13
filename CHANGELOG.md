@@ -2,9 +2,10 @@
 
 This file archives the project version notes, including GitHub comparison links where a release did not include a detailed summary. The README keeps only the two latest summaries.
 
-## macOS mpv IPC socket path — 0.5.57 (unreleased)
+## macOS mpv IPC socket path — 0.5.57
 
 - Shorten the mpv IPC socket path on macOS and fall back to `/tmp` when the temporary directory would exceed the system's Unix socket path limit. This addresses playback startup timeouts where mpv starts but Anime Player cannot connect to its control socket.
+- Universal macOS DMG and ZIP packages support Intel and Apple Silicon. The initial public Mac package is ad-hoc signed without Apple notarization; first launch may require Open Anyway in Privacy & Security.
 
 ## Watch Party resynchronization shortcuts — 0.5.56
 

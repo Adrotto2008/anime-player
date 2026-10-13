@@ -2,6 +2,16 @@ name: Verified release
 on:
   push:
     tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      include_macos:
+        description: Include a universal macOS package
+        type: boolean
+        default: true
+      allow_unsigned_macos:
+        description: Allow an ad-hoc signed macOS package without Apple notarization
+        type: boolean
+        default: false
 permissions:
   contents: read
 concurrency:
@@ -21,12 +31,14 @@ jobs:
         id: matrix
         env:
           MAC_ENABLED: ${{ vars.ENABLE_MAC_RELEASE }}
+          INCLUDE_MAC: ${{ inputs.include_macos }}
         run: |
           node - <<'NODE'
           const fs=require('fs'),v=require('./package.json').version;
-          if(process.env.GITHUB_REF_NAME!=='v'+v || v.includes('-'))throw Error('Tag must equal stable package version');
+          if(v.includes('-'))throw Error('Stable package version required');
+          if(process.env.GITHUB_EVENT_NAME!=='workflow_dispatch' && process.env.GITHUB_REF_NAME!=='v'+v)throw Error('Tag must equal stable package version');
           const include=[{os:'windows-latest',platform:'win32'},{os:'ubuntu-latest',platform:'linux'}];
-          if(process.env.MAC_ENABLED==='true')include.push({os:'macos-15-intel',platform:'darwin'});
+          if(process.env.MAC_ENABLED==='true' || process.env.INCLUDE_MAC==='true')include.push({os:'macos-15-intel',platform:'darwin'});
           fs.appendFileSync(process.env.GITHUB_OUTPUT,'value='+JSON.stringify({include})+'\n');
           NODE
   build:
@@ -75,7 +87,7 @@ jobs:
           CSC_LINK: ${{ secrets.WINDOWS_CSC_LINK }}
           CSC_KEY_PASSWORD: ${{ secrets.WINDOWS_CSC_KEY_PASSWORD }}
         run: npm run dist
-      - name: Signed and notarized macOS build
+      - name: Universal macOS build and verification
         if: runner.os == 'macOS'
         env:
           CSC_LINK: ${{ secrets.MAC_CSC_LINK }}
@@ -84,12 +96,25 @@ jobs:
           APPLE_APP_SPECIFIC_PASSWORD: ${{ secrets.APPLE_APP_SPECIFIC_PASSWORD }}
           APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
           CSC_IDENTITY_AUTO_DISCOVERY: 'true'
+          ALLOW_UNSIGNED_MAC: ${{ inputs.allow_unsigned_macos || vars.ALLOW_UNSIGNED_MAC_RELEASE }}
         shell: bash
         run: |
-          test -n "$CSC_LINK" && test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID"
-          npm run dist
-          codesign --verify --deep --strict 'dist/mac/Anime Player.app'
-          xcrun stapler validate 'dist/mac/Anime Player.app'
+          brew install mpv
+          export ANIME_PLAYER_TEST_MPV="$(command -v mpv)"
+          npm run check
+          node -e "require('./scripts/build-config').prepareBuildConfig({root:process.cwd(),configFile:process.env.SUPABASE_CONFIG_FILE})"
+          if [ -n "$CSC_LINK" ]; then
+            test -n "$APPLE_ID" && test -n "$APPLE_APP_SPECIFIC_PASSWORD" && test -n "$APPLE_TEAM_ID"
+            npx electron-builder --mac --universal --publish never
+          else
+            test "$ALLOW_UNSIGNED_MAC" = true
+            export CSC_IDENTITY_AUTO_DISCOVERY=false
+            npx electron-builder --mac --universal --publish never -c.mac.identity=-
+          fi
+          node scripts/release-verify.js dist darwin
+          lipo -archs 'dist/mac-universal/Anime Player.app/Contents/MacOS/Anime Player' | grep -q 'x86_64 arm64\|arm64 x86_64'
+          codesign --verify --deep --strict 'dist/mac-universal/Anime Player.app'
+          if [ -n "$CSC_LINK" ]; then xcrun stapler validate 'dist/mac-universal/Anime Player.app'; fi
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ matrix.platform }}
@@ -131,7 +156,13 @@ jobs:
           NODE
           node - <<'NODE'
           const fs=require('fs'),{execFileSync}=require('child_process'),crypto=require('crypto');
-          const api=`repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`,tag=process.env.GITHUB_REF_NAME;
+          const api=`repos/${process.env.GITHUB_REPOSITORY}/releases?per_page=100`,tag='v'+require('./package.json').version;
+          if(process.env.GITHUB_EVENT_NAME==='workflow_dispatch'){
+            const refs=JSON.parse(execFileSync('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/git/matching-refs/tags/${tag}`],{encoding:'utf8'}));
+            const ref=refs.find(r=>r.ref==='refs/tags/'+tag);
+            if(ref && ref.object.sha!==process.env.GITHUB_SHA)throw Error('Existing tag points to a different commit');
+            if(!ref)execFileSync('gh',['api',`repos/${process.env.GITHUB_REPOSITORY}/git/refs`,'-f','ref=refs/tags/'+tag,'-f','sha='+process.env.GITHUB_SHA],{stdio:'inherit'});
+          }
           const releases=()=>JSON.parse(execFileSync('gh',['api',api],{encoding:'utf8'}));
           let data=releases().find(r=>r.tag_name===tag);
           if(data && !data.draft)throw Error('Release is already public: '+tag);
