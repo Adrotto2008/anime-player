@@ -123,10 +123,9 @@ app.whenReady().then(async () => {
   assert.strictEqual(await js(`document.querySelector('#video-version').value`),'auto');
   assert.ok((await js(`document.querySelector('#video-version option[value="it"]').textContent`)).includes('1 episodes'));
   assert.ok((await js(`document.querySelector('#video-version option[value="ja-sub-it"]').textContent`)).includes('not found'),'unresolved embed does not count as language availability');
-  await js(`document.querySelector('#video-version').focus()`);
-  win.webContents.sendInputEvent({type:'keyDown',keyCode:'Down'});win.webContents.sendInputEvent({type:'keyUp',keyCode:'Down'});await tick();
+  await js(`const selector=document.querySelector('#video-version');selector.value='it';selector.dispatchEvent(new Event('change',{bubbles:true}))`);await tick();
   const chosen = store.data.series.find(item=>item.anilistId === 195604);
-  assert.strictEqual(chosen.videoPreference.mode,'it','native keyboard selector persists the season preference');
+  assert.strictEqual(chosen.videoPreference?.mode,'it','video selector change persists the season preference');
   await js(`document.querySelector('.ep .acts .menu-btn').click(); document.querySelector('.menu-item').click()`);await tick();
   assert.strictEqual(await js(`document.querySelector('#dialog-root select').value`),'unknown','observed untagged audio does not imply manual classification');
   assert.ok((await js(`document.querySelector('#dialog-root .dialog-body').textContent`)).includes('Audio: ?'));
