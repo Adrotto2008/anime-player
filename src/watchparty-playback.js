@@ -18,6 +18,7 @@ class PartyPlayback{
   }
   async event(type,data){
     const s=this.s;if(type==='status'){this.showStatus();return;}if(!s.room||s.connection!=='connected')return;
+    if(type==='resync'||type==='resync-all'){try{await (type==='resync'?this.resync():s.resyncAll());}catch(error){s.osd(error.message);}return;}
     if(type==='pause'&&this.expectedPause!==undefined&&data===this.expectedPause){this.expectedPause=undefined;return;}
     if(type==='seeked'&&Date.now()<(this.suppressSeekUntil||0))return;
     if(type==='error'&&!s.isHost()&&!this.detached){if(this.candidates.length)this.nextSource().catch(()=>{});else{this.needsSource=true;this.loadingKey=null;s.telemetry.state='source';s.publish();}return;}
@@ -29,7 +30,7 @@ class PartyPlayback{
         try{const content=await this.describe(cur);if(generation!==this.generation||s.player.cur!==cur||!s.room)return;this.described=cur;this.localContent=content;this.describing=null;
           if(s.room.playback?.content.key!==content.key){if(s.isHost()||s.room.permissions.content)await s.command('content',{content});}
         }catch{this.describing=null;s.error='Identità del contenuto non disponibile';s.publish();}
-      }else if(cur.partyContent)this.localContent=cur.partyContent;
+      }else if(cur.partyContent){this.localContent=cur.partyContent;if(type==='loaded'&&cur.session?.loaded)await this.apply();}
       else{this.detached=true;s.telemetry.state='source';s.osd('Sorgente locale non associata al contenuto condiviso');s.publish();}
     }
     if(Date.now()<this.ignoreUntil||this.loadingKey)return;
@@ -44,6 +45,7 @@ class PartyPlayback{
   }
   async accept(previous,message){
     const s=this.s,remote=s.room?.playback;if(!remote)return;
+    if(message.event==='resync-all'){await this.resync();return;}
     const becameHost=previous&&previous.hostId!==s.room.hostId&&s.isHost();
     if(s.isHost()){
       if(becameHost){this.detached=false;this.localContent=s.player.cur?.partyContent||this.localContent;if(this.localContent?.key!==remote.content.key)await this.load(remote.content);await this.apply(true);}
@@ -110,6 +112,7 @@ class PartyPlayback{
       const result=Protocol.correction({remote,local,serverNow:Date.now()+(s.clockOffset||0),now:Date.now(),lastSeek:this.lastSeek,config:s.preferences.sync});s.telemetry.drift=Number.isFinite(result.drift)?result.drift:null;
       if(result.reason==='version'){s.telemetry.state='version';this.needsSource=true;this.detached=true;s.osd('Montaggio o durata differenti');s.publish();return;}
       if(result.kind==='wait'){s.telemetry.state=result.reason;return;}
+      if(force&&result.kind==='rate'&&Math.abs(result.drift)>s.preferences.sync.deadband){result.kind='seek';result.speed=remote.speed||1;}
       const pause=!!(remote.paused||remote.buffering);
       if(cur.paused!==pause){this.expectedPause=pause;await cur.session.request(['set_property','pause',pause]);}
       if(['seek','seek-pause'].includes(result.kind)){this.suppressSeekUntil=Date.now()+1500;await cur.session.request(['seek',result.target,'absolute+exact']);this.lastSeek=Date.now();}
@@ -123,7 +126,16 @@ class PartyPlayback{
     const buffer=!!s.player.cur?.buffering;if(buffer!==this.lastBuffer){this.lastBuffer=buffer;s.send({type:'local-status',buffering:buffer,localPaused:this.detached});}
     s.publish();
   }
-  async resync(){this.resyncBusy=true;try{this.detached=false;this.s.send({type:'local-status',localPaused:false});if(!this.s.player.cur||this.needsSource){const content=this.s.room?.playback?.content;if(content)await this.load(content);}this.lastSeek=0;await this.apply(true);this.s.osd('Risincronizzazione');this.s.publish();}finally{this.resyncBusy=false;}}
+  async resync(){
+    if(this.resyncPending)return this.resyncPending;
+    if(this.s.connection!=='connected'||!this.s.room?.playback)throw Error('Nessun contenuto Watch Party connesso');
+    const epoch=this.s.epoch;this.resyncBusy=true;
+    this.resyncPending=(async()=>{this.detached=false;this.s.send({type:'local-status',localPaused:false});const content=this.s.room.playback.content;this.remoteKey=content.key;
+      if(!this.s.player.cur||this.needsSource||(this.s.player.cur.partyContent?.key||this.localContent?.key)!==content.key)await this.load(content);
+      if(this.s.epoch!==epoch||this.s.room?.playback?.content.key!==content.key||this.s.connection!=='connected')return;this.lastSeek=0;await this.apply(true);this.s.osd('Risincronizzazione');this.s.publish();
+    })();
+    try{return await this.resyncPending;}finally{this.resyncPending=null;this.resyncBusy=false;}
+  }
   async pauseLocal(){if(!this.s.player.cur)return;this.detached=true;this.expectedPause=true;await this.s.player.cur.session.request(['set_property','pause',true]);this.s.telemetry.state='local-pause';this.s.send({type:'local-status',localPaused:true});this.s.publish();}
   showStatus(){const t=this.s.telemetry;this.s.osd(`RTT ${t.rtt==null?'—':Math.round(t.rtt)+' ms'} · Δ ${t.drift==null?'—':Math.round(t.drift*1000)+' ms'} · ${t.state}${this.s.player.cur?.buffering?' · buffering':''}`);}
 }

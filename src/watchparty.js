@@ -91,6 +91,7 @@ class WatchPartyService{
   command(action,data={}){if(!Protocol.PERMISSIONS.includes(action))throw Error('Comando non valido');return this.rpc({type:'command',action,epoch:this.room?.playback?.epoch,...data});}
   permissions(permissions){return this.rpc({type:'permissions',permissions});}
   moderate(action,target){return this.rpc({type:'moderate',action,target});}
+  resyncAll(){if(!this.isHost())throw Error('Solo l’host può risincronizzare tutti');if(!this.room.playback)throw Error('Nessun contenuto condiviso');return this.rpc({type:'resync-all',epoch:this.room.playback.epoch});}
   async leave(){
     ++this.epoch;++this.socketEpoch;clearTimeout(this.reconnectTimer);this.stopTimers();this.rejectRequests();const ws=this.socket;this.socket=null;this.room=null;this.code=null;this.participantId=null;this.connection='idle';this.playback.reset();
     if(ws&&ws.readyState===1){ws.send(JSON.stringify({v:1,type:'leave'}));ws.close(1000,'Uscita');}else ws?.terminate();this.publish();

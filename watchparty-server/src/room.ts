@@ -87,6 +87,10 @@ export class RoomObject extends DurableObject<PartyEnv>{
       const host=c.actor.id===r.hostId;
       if(data.type==='ping'){this.send(ws,{type:'pong',id,clientTime:data.clientTime,serverTime:now});}
       else if(data.type==='resync'){this.send(ws,{type:'state',room:this.view(c.actor.id),serverTime:now});}
+      else if(data.type==='resync-all'){
+        this.host(c.actor);if(!r.playback||data.epoch!==r.playback.epoch)deny(409,'Contenuto non corrente');
+        this.broadcast('resync-all',{actorId:c.actor.id});
+      }
       else if(data.type==='local-status'){
         const m=r.members[c.actor.id];c.localState={localPaused:!!data.localPaused,buffering:!!data.buffering};Object.assign(m,c.localState);this.broadcast();
       }

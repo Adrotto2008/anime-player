@@ -3,6 +3,8 @@
 const DICT = {
   en: {
     shortcutPartyStatus:'Watch Party status',
+    shortcutPartyResync:'Watch Party: resync yourself',
+    shortcutPartyResyncAll:'Watch Party: resync everyone (host only)',
     sortManual:'My order',homeSections:'Home sections',organizationSaved:'Layout saved.',
     organizationHelp:'Drag cards directly. Keyboard: Space or Enter to pick up, arrows to move, Ctrl + arrows to change section, Enter to save, Esc to cancel. Collections only change the layout.',
     dragLabel:title=>`Move ${title}`,dragPicked:title=>`${title} picked up. Use arrows to move or Esc to cancel.`,
@@ -189,6 +191,8 @@ const DICT = {
   },
   it: {
     shortcutPartyStatus:'Stato Watch Party',
+    shortcutPartyResync:'Watch Party: risincronizza te stesso',
+    shortcutPartyResyncAll:'Watch Party: risincronizza tutti (solo host)',
     sortManual:'Il mio ordine',homeSections:'Sezioni della Home',organizationSaved:'Disposizione salvata.',
     organizationHelp:'Trascina direttamente le schede. Tastiera: Spazio o Invio per selezionare, frecce per spostare, Ctrl + frecce per cambiare sezione, Invio per salvare, Esc per annullare. Le raccolte cambiano solo la disposizione.',
     dragLabel:title=>`Sposta ${title}`,dragPicked:title=>`${title} selezionato. Usa le frecce per spostarlo o Esc per annullare.`,

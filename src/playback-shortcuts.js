@@ -1,7 +1,7 @@
 (function(root,factory){const api=factory();if(typeof module==='object'&&module.exports)module.exports=api;else root.PlaybackShortcuts=api;})(globalThis,function(){
   'use strict';
-  const DEFAULTS={next:'PGDWN',previous:'PGUP',skipIntro:'Ctrl+O',skipEnding:'Ctrl+E',partyStatus:'Ctrl+Alt+w'};
-  const ACTIONS={next:'ap-next',previous:'ap-prev',skipIntro:'ap-skip-intro',skipEnding:'ap-skip-ending',partyStatus:'ap-party-status'};
+  const DEFAULTS={next:'PGDWN',previous:'PGUP',skipIntro:'Ctrl+O',skipEnding:'Ctrl+E',partyStatus:'Ctrl+Alt+w',partyResync:'Ctrl+Alt+r',partyResyncAll:'Ctrl+Alt+R'};
+  const ACTIONS={next:'ap-next',previous:'ap-prev',skipIntro:'ap-skip-intro',skipEnding:'ap-skip-ending',partyStatus:'ap-party-status',partyResync:'ap-party-resync',partyResyncAll:'ap-party-resync-all'};
   const aliases={PageDown:'PGDWN',PageUp:'PGUP',ArrowLeft:'LEFT',ArrowRight:'RIGHT',ArrowUp:'UP',ArrowDown:'DOWN',Enter:'ENTER',Escape:'ESC',Backspace:'BS',Delete:'DEL',Insert:'INS',' ':'SPACE',Tab:'TAB',Home:'HOME',End:'END'};
   const special=new Set(['PGDWN','PGUP','LEFT','RIGHT','UP','DOWN','ENTER','ESC','BS','DEL','INS','SPACE','TAB','HOME','END','PAUSE','PRINT',...Array.from({length:24},(_,i)=>'F'+(i+1))]);
   function normalize(raw){
@@ -20,7 +20,15 @@
     if(event.isComposing||event.key==='Dead'||event.getModifierState?.('AltGraph'))throw Error('Combinazione non supportata / Unsupported shortcut');
     return normalize([event.ctrlKey&&'Ctrl',event.altKey&&'Alt',event.shiftKey&&'Shift',event.metaKey&&'Meta',aliases[event.key]||event.key].filter(Boolean).join('+'));
   }
-  function effective(raw){return {...DEFAULTS,...(raw||{})};}
+  function effective(raw){
+    const result={...DEFAULTS,...(raw||{})};
+    // An older custom binding keeps its key when a new default would collide.
+    for(const action of ['partyResync','partyResyncAll'])if(!Object.hasOwn(raw||{},action)){
+      const key=normalize(result[action]);
+      for(const other of Object.keys(ACTIONS))if(other!==action&&Object.hasOwn(raw||{},other))try{if(normalize(raw[other])===key)result[action]='';}catch{}
+    }
+    return result;
+  }
   function parse(raw){
     if(raw!=null && (typeof raw!=='object'||Array.isArray(raw)))throw Error('Preferenze scorciatoie non valide / Invalid shortcut preferences');
     const result={},seen=new Set();

@@ -35,8 +35,14 @@ test('real Worker: two guests, permissions, local pause, snapshots and room isol
   assert.equal((await member.command({type:'command',action:'playPause',epoch,paused:true})).status,403);
   await host.command({type:'snapshot',key:content.key,epoch,position:12,duration:100,speed:1,paused:false,buffering:false,sampleServerTime:Date.now()});
   await wait(()=>member.room.playback.position>=12);assert.equal((await member.command({type:'snapshot',key:content.key,epoch,position:30,duration:100,speed:1})).status,403);
+  assert.equal((await member.command({type:'resync-all',epoch})).status,403);
+  assert.equal((await host.command({type:'resync-all',epoch:'stale'})).status,409);
+  const anchor=structuredClone(host.room.playback);
+  await host.command({type:'resync-all',epoch});await wait(()=>member.messages.some(m=>m.event==='resync-all'));
+  assert.deepEqual(host.room.playback,anchor,'Global resync preserves the authoritative playback anchor');
   await member.command({type:'local-status',localPaused:true});assert.equal(host.room.playback.paused,false);
   const permissions={playPause:true,seek:true,content:false,skip:false};await host.command({type:'permissions',permissions});
+  assert.equal((await member.command({type:'resync-all',epoch})).status,403,'Shared seek permission cannot force all participants to resync');
   await member.command({type:'command',action:'seek',epoch,position:40});await wait(()=>host.room.playback.position>=40);
   assert.equal((await member.command({type:'moderate',action:'kick',target:host.room.hostId})).status,403);
   const separate=await create(await f.guest('Other'));assert.equal(separate.room.playback,null);await separate.leave();

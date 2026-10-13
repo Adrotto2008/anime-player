@@ -7,7 +7,7 @@ const accounts={a:'11111111-1111-4111-8111-111111111111',b:'22222222-2222-4222-8
 async function port(){const s=net.createServer();await new Promise(r=>s.listen(0,'127.0.0.1',r));const p=s.address().port;await new Promise(r=>s.close(r));return p;}
 async function wait(predicate,timeout=12000){const start=Date.now();while(true){const result=await predicate();if(result)return result;if(Date.now()-start>timeout)throw Error('Watch Party wait timed out');await delay(30);}}
 async function startWorker({grace=1000,realAuth=false}={}){
-  const root=path.resolve(__dirname,'..'),dir=path.join(root,'work','watchparty-0.5.55','test-'+crypto.randomUUID());fs.mkdirSync(dir,{recursive:true});
+  const root=path.resolve(__dirname,'..'),dir=path.join(root,'work','watchparty-'+require('../package.json').version,'test-'+crypto.randomUUID());fs.mkdirSync(dir,{recursive:true});
   const authCalls=[];
   const auth=http.createServer((req,res)=>{const token=(req.headers.authorization||'').replace('Bearer ',''),id=accounts[token];authCalls.push({path:req.url,token});res.setHeader('Content-Type','application/json');
     if(!id){res.writeHead(401);return res.end('{}');}

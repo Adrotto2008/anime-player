@@ -1,4 +1,4 @@
-# Watch Party (0.5.55)
+# Watch Party (0.5.56)
 
 ## Client
 
@@ -11,6 +11,8 @@ Playback uses each device's existing mpv configuration, provider discovery, sour
 For a missing source or incompatible duration, choose an equivalent URL/file manually. Matching durations alone cannot establish identical edits or timing. Individual pause leaves other clients playing; Resync restores the current room timeline. Small drift adjusts speed (default at most ±4%); drift beyond 1.25 seconds can seek, with a five-second cooldown. All thresholds have bounded settings. The shortcut `Ctrl+Alt+W` displays RTT, drift and sync state in mpv and is configurable on the existing shortcut page. Host buffering temporarily holds followers; follower buffering stays local.
 
 Closing mpv does not close a room. Explicit leave removes membership immediately; loss of the socket reserves it for 30 seconds. After that, one randomly selected connected participant becomes host if necessary. The last departure deletes room data. Bans and invites exist only for that room's lifetime.
+
+`Ctrl+Alt+R` resynchronizes your player, including an individually paused host. `Ctrl+Alt+Shift+R` asks the host's room to resynchronize every connected participant, including individually paused players. Only the host may request this; shared playback permissions do not grant this action. Both shortcuts work in mpv/fullscreen and can be changed or disabled on the existing Shortcuts page. The host also has a **Resync everyone** button. Explicit resynchronization seeks immediately when drift exceeds the deadband, while ordinary periodic correction retains gradual speed changes and the seek cooldown. Paused rooms remain paused. On source load, followers apply the latest room state immediately; real buffering can still hold playback briefly.
 
 ## Worker
 

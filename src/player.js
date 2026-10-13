@@ -201,6 +201,8 @@ class PlayerManager {
     session.on('speed',speed=>{const changed=cur.speed!==speed;cur.speed=speed;cur.lastAdvanceAt=Date.now();if(changed&&this.cur===cur)this._partyEvent('speed');});
     session.on('buffering',buffering=>{cur.buffering=buffering;if(this.cur===cur)this._partyEvent('buffering');});
     session.on('party-status',()=>this._partyEvent('status'));
+    session.on('party-resync',()=>this._partyEvent('resync'));
+    session.on('party-resync-all',()=>this._partyEvent('resync-all'));
     session.on('time', (t) => {
       if(this.cur!==cur || !Number.isFinite(t))return;
       if(!this._live(cur)) {session.quit('account-change');return;}

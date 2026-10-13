@@ -1,7 +1,7 @@
 'use strict';
 const fs=require('fs'),path=require('path'),assert=require('node:assert/strict');
 const {socket,wait,delay}=require('./watchparty-fixture'),{ENDPOINT}=require('../src/watchparty');
-const peers=[],cases=[],out=path.join(__dirname,'..','outputs','watchparty-0.5.55','worker-live.json');
+const peers=[],cases=[],out=path.join(__dirname,'..','outputs','watchparty-'+require('../package.json').version,'worker-live.json');
 async function post(route,data,auth){const r=await fetch(ENDPOINT+route,{method:'POST',headers:{'Content-Type':'application/json',...(auth?{Authorization:auth}:{})},body:JSON.stringify(data),signal:AbortSignal.timeout(10000)});return {status:r.status,...await r.json()};}
 (async()=>{try{
   const health=await (await fetch(ENDPOINT+'/health')).json();assert.deepEqual([health.ok,health.protocol,health.maxParticipants,health.accounts,health.guests],[true,1,16,true,true]);
@@ -11,6 +11,8 @@ async function post(route,data,auth){const r=await fetch(ENDPOINT+route,{method:
   await host.command({type:'command',action:'content',content:{key:'verification:055',kind:'custom',title:'Synthetic verification'}});await wait(()=>host.room.playback);const epoch=host.room.playback.epoch;
   await host.command({type:'snapshot',key:'verification:055',epoch,position:12,duration:100,speed:1,paused:true,buffering:false});await wait(()=>member.room.playback?.position===12);
   assert.equal((await member.command({type:'command',action:'playPause',paused:false,epoch})).status,403);cases.push('Host playback snapshot and denied guest shared command');
+  assert.equal((await member.command({type:'resync-all',epoch})).status,403);assert.equal((await host.command({type:'resync-all',epoch:'stale'})).status,409);
+  await host.command({type:'resync-all',epoch});await wait(()=>member.messages.some(m=>m.event==='resync-all'));assert.equal(member.room.playback.paused,true);cases.push('Deployed global resync reaches both clients, remains host-only and rejects stale epochs');
   await delay(20000);await member.command({type:'resync'});assert.equal(member.room.playback.position,12);assert.equal(member.room.participants.length,2);cases.push('State and sockets survive 20 seconds idle; hibernation API configured (runtime eviction not asserted)');
   const previousHost=host.room.hostId,disconnectedAt=Date.now();host.ws.terminate();await wait(()=>member.room.participants.some(p=>p.id===previousHost&&!p.connected),10000);await delay(1000);assert.equal(member.room.hostId,previousHost);
   await wait(()=>member.room.hostId!==previousHost,40000);const electionMs=Date.now()-disconnectedAt;assert.ok(electionMs>=29500);cases.push({case:'Production 30-second reconnect reservation and host election',electionMs});

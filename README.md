@@ -37,10 +37,10 @@ These screenshots use an isolated demo library. The library and watch progress a
 
 ## Download and install
 
-The current public release is **v0.5.55**. Open the [latest release page](https://github.com/Adrotto2008/anime-player/releases/latest) and download the package for your operating system:
+The current version is **v0.5.56**. Open the [latest release page](https://github.com/Adrotto2008/anime-player/releases/latest) and download the package for your operating system:
 
-- **Windows x64:** `AnimePlayer-Setup-0.5.55.exe` installs the app; `AnimePlayer-portable.exe` runs without an installer.
-- **Linux x86_64:** use `AnimePlayer-0.5.55-x86_64.AppImage` or `AnimePlayer-0.5.55-amd64.deb`.
+- **Windows x64:** `AnimePlayer-Setup-0.5.56.exe` installs the app; `AnimePlayer-portable.exe` runs without an installer.
+- **Linux x86_64:** use `AnimePlayer-0.5.56-x86_64.AppImage` or `AnimePlayer-0.5.56-amd64.deb`.
 - **macOS:** no macOS package is attached to the current release. Package availability can change, so check the release page for the latest assets.
 
 On Windows, run the installer or portable executable. On Linux, make the AppImage executable before launching it, or install the DEB package with your system's package installer. The installed app does not require Node.js.
@@ -83,13 +83,13 @@ Builds produce Windows portable and NSIS packages, macOS DMG/ZIP packages, or Li
 
 Only the two latest release summaries are kept here. The full history is in [CHANGELOG.md](CHANGELOG.md).
 
+### v0.5.56 — Watch Party resynchronization shortcuts
+
+Use `Ctrl+Alt+R` to resynchronize your own player and `Ctrl+Alt+Shift+R` to resynchronize everyone as the host. Both shortcuts are configurable in the Shortcuts page and work in mpv fullscreen. The host also has a Resync everyone button. Explicit resynchronization reattaches individually paused players and corrects their position immediately; ordinary drift correction stays gradual. Followers apply the current room state as soon as their source loads.
+
 ### v0.5.55 — Watch Party
 
 Create public or private rooms and watch together with synchronized mpv playback, host permissions, friend invitations, participant moderation, and recovery after disconnects. Each device resolves its own source; source URLs and credentials stay local.
-
-### v0.5.54 — More reliable source discovery
-
-Search checks more verified title aliases without weakening identity checks. Re:Zero's Memory Snow and The Frozen Bond resolve as separate works, preserving canonical episode identities and provider numbering.
 
 ## Credits
 

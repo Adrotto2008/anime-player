@@ -2,6 +2,13 @@
 
 This file archives the project version notes, including GitHub comparison links where a release did not include a detailed summary. The README keeps only the two latest summaries.
 
+## Watch Party resynchronization shortcuts — 0.5.56
+
+- `Ctrl+Alt+R` resynchronizes your own player; `Ctrl+Alt+Shift+R` resynchronizes every connected participant when requested by the host. Both can be remapped or disabled on the existing Shortcuts page, with live mpv binding checks.
+- The host has a Resync everyone button. This action is independently restricted to the host by the Worker and rejects stale content epochs; granting shared seek/playback permissions does not grant global resynchronization.
+- Explicit resynchronization reattaches individually paused players, including the host, and immediately seeks when drift exceeds the configured deadband. A room paused by the host remains paused. Periodic corrections retain the existing gradual speed adjustment and seek cooldown.
+- Followers apply the latest room state on source load. Brief real buffering can still occur; the change does not bypass source or edition checks.
+
 ## Watch Party — 0.5.55
 
 - Create public code rooms or private rooms with host approval and ten-minute friend invitations. Registered accounts are verified through Supabase; guests use temporary identities. The existing Cloudflare Worker coordinates rooms through SQLite Durable Objects and hibernatable WebSockets.

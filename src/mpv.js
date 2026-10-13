@@ -125,6 +125,8 @@ class MpvSession extends EventEmitter {
       else if (m.args[0] === 'ap-skip-intro') this.emit('skip', 'intro');
       else if (m.args[0] === 'ap-skip-ending') this.emit('skip', 'ending');
       else if (m.args[0] === 'ap-party-status') this.emit('party-status');
+      else if (m.args[0] === 'ap-party-resync') this.emit('party-resync');
+      else if (m.args[0] === 'ap-party-resync-all') this.emit('party-resync-all');
     }
   }
 

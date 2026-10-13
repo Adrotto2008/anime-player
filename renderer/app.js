@@ -1622,6 +1622,8 @@ function shortcutsView() {
   const S=window.PlaybackShortcuts,draft={...S.effective(state.lib.settings.shortcuts)},status=h('p',{class:'muted small',role:'status'});
   const labels={next:'shortcutNext',previous:'shortcutPrevious',skipIntro:'shortcutIntro',skipEnding:'shortcutEnding'};
   labels.partyStatus='shortcutPartyStatus';
+  labels.partyResync='shortcutPartyResync';
+  labels.partyResyncAll='shortcutPartyResyncAll';
   const rows=Object.keys(S.DEFAULTS).map(action=>{
     const input=h('input',{class:'input',readonly:true,value:S.display(draft[action])||t('shortcutDisabled'),'aria-label':t(labels[action]),'data-shortcut':action});
     let listening=false;

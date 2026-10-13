@@ -64,3 +64,26 @@ test('host resync waits for native correction and cannot overwrite canonical tim
   const playback=new PartyPlayback(s);playback.localContent={key:'unit'};const pending=playback.apply(true);const resync=playback.resync();playback.snapshot(true);assert.equal(messages.filter(m=>m.type==='snapshot').length,0);
   releasePause();await pending;await resync;assert.equal(cur.paused,false);assert.ok(cur.pos>=20);playback.snapshot(true);assert.ok(messages.find(m=>m.type==='snapshot').position>=20);
 });
+test('resync shortcuts are distinct, configurable and global resync remains host-only',async()=>{
+  const S=require('../src/playback-shortcuts');assert.equal(S.normalize('Ctrl+Alt+Shift+r'),S.DEFAULTS.partyResyncAll);assert.notEqual(S.DEFAULTS.partyResync,S.DEFAULTS.partyResyncAll);
+  assert.equal(S.validate({partyResync:''}).partyResync,'');assert.equal(S.validate({partyResync:'Ctrl+Alt+F11'}).partyResync,'Ctrl+Alt+F11');
+  assert.equal(S.validate({skipIntro:'Ctrl+Alt+r'}).partyResync,'');assert.equal(S.validate({skipEnding:'Ctrl+Alt+Shift+r'}).partyResyncAll,'');
+  assert.throws(()=>S.validate({skipIntro:'Ctrl+Alt+r',partyResync:'Ctrl+Alt+r'}),/duplicata/);
+  const {WatchPartyService}=require('../src/watchparty'),service=new WatchPartyService({player:{},store:{},cloud:{user:null}});let sent;
+  service.participantId='host';service.room={hostId:'other',playback:{epoch:'e'}};service.rpc=async packet=>{sent=packet;};assert.throws(()=>service.resyncAll(),/Solo l’host/);
+  service.room.hostId='host';await service.resyncAll();assert.deepEqual(sent,{type:'resync-all',epoch:'e'});service.room.playback=null;assert.throws(()=>service.resyncAll(),/Nessun contenuto/);await service.stop();
+});
+test('global resync reattaches a locally paused participant and seeks small drift immediately',async()=>{
+  const {PartyPlayback}=require('../src/watchparty-playback'),commands=[];
+  const cur={pos:19.2,dur:100,paused:true,speed:1,partyContent:{key:'unit'},session:{loaded:true,request:async command=>{commands.push(command);if(command[0]==='seek')cur.pos=command[1];else if(command[1]==='pause')cur.paused=command[2];else if(command[1]==='speed')cur.speed=command[2];}}};
+  const s={player:{cur},room:{playback:{content:{key:'unit'},position:20,duration:100,speed:1,paused:false,buffering:false,serverTime:Date.now()}},preferences:{sync:{...P.DEFAULT_SYNC}},connection:'connected',isHost:()=>false,telemetry:{},send:()=>{},publish:()=>{},osd:()=>{}};
+  const playback=new PartyPlayback(s);playback.localContent={key:'unit'};playback.detached=true;playback.lastSeek=Date.now();await playback.accept(null,{event:'resync-all'});
+  assert.equal(playback.detached,false);assert.equal(cur.paused,false);assert.ok(cur.pos>=20);assert.ok(commands.some(c=>c[0]==='seek'));
+  s.room.playback.paused=true;await playback.resync();assert.equal(cur.paused,true,'An authoritative paused room remains paused');
+});
+test('source-loaded applies the current room pause immediately during the startup event guard',async()=>{
+  const {PartyPlayback}=require('../src/watchparty-playback');let pauses=0;
+  const cur={pos:20,dur:100,paused:false,speed:1,partyContent:{key:'unit'},session:{loaded:true,request:async c=>{if(c[1]==='pause'){pauses++;cur.paused=c[2];}}}};
+  const s={player:{cur},room:{permissions:{content:false},playback:{content:{key:'unit'},position:20,duration:100,speed:1,paused:true,buffering:false,serverTime:Date.now()}},preferences:{sync:{...P.DEFAULT_SYNC}},connection:'connected',isHost:()=>false,telemetry:{},publish:()=>{}};
+  const playback=new PartyPlayback(s);playback.ignoreUntil=Date.now()+1500;await playback.event('loaded');assert.equal(pauses,1);assert.equal(cur.paused,true);
+});

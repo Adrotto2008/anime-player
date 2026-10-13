@@ -153,6 +153,7 @@ function register() {
   h('watchparty:acceptInvite',id=>party.acceptInvite(id));
   h('watchparty:dismissInvite',id=>party.dismissInvite(id));
   h('watchparty:resync',()=>party.playback.resync());
+  h('watchparty:resyncAll',()=>party.resyncAll());
   h('watchparty:pauseLocal',()=>party.playback.pauseLocal());
   h('watchparty:configure',patch=>party.configure(patch));
   h('watchparty:copyCode',()=>{if(party.code)require('electron').clipboard.writeText(party.code);return true;});
