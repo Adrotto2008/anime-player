@@ -75,7 +75,13 @@ app.whenReady().then(async()=>{
   const destination=await rect(select('library',animationOrder[2]));
   for(let i=1;i<=5;i++){mouse('mouseMove',ar.x+(destination.right-12-ar.x)*i/5,ar.y);await frames('04-drag-'+i,2);}
   mouse('mouseMove',ar.x+12,ar.y);await frames('05-reverse');
-  mouse('mouseMove',destination.right-12,destination.y);await tick(60);mouse('mouseUp',destination.right-12,destination.y);await frames('06-landing');await until(`!document.querySelector('.sort-ghost') && !document.querySelector('.sort-saving')`);
+  mouse('mouseMove',destination.right-12,destination.y);await tick(60);
+  // Observe the actual landing class before the native release. Encoding a
+  // screenshot on a hosted Mac can outlast this transient animation state.
+  await js(`(()=>{window.__landingSamples=[];window.__landingObserver=new MutationObserver(()=>{const landing=document.querySelector('.sort-landing');if(landing && window.__landingSamples.length<256)window.__landingSamples.push({time:performance.now(),state:{landing:Boolean(landing),ghost:landing.style.transform}});});window.__landingObserver.observe(document.body,{subtree:true,attributes:true,attributeFilter:['class']});})()`);
+  mouse('mouseUp',destination.right-12,destination.y);await frames('06-landing');await until(`!document.querySelector('.sort-ghost') && !document.querySelector('.sort-saving')`);
+  const landingSamples=await js(`(()=>{window.__landingObserver.disconnect();return window.__landingSamples;})()`);
+  trace.push(...landingSamples.map((sample,index)=>({name:'06-landing',index,time:sample.time,state:sample.state,inputObservation:'native release class mutation'})));
   const temporalDragWrites=store.revision-revisionBeforeMotion;assert.ok(temporalDragWrites===0 || temporalDragWrites===1,'temporal drag must commit at most once');assert.ok(trace.some(f=>f.name==='06-landing' && f.state.landing));
   const sawNeighborMotion=trace.some(f=>f.name.startsWith('04-drag') && f.state.neighbors.length);
   if(reducedMotion)assert.equal(sawNeighborMotion,false,'reduced-motion preference disables neighbor animation');
