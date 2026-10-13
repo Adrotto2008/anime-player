@@ -5,11 +5,22 @@ const fs=require('fs'),os=require('os'),path=require('path'),vm=require('vm');
 const {EventEmitter}=require('events');
 const {Store}=require('../src/store');
 const {PlayerManager}=require('../src/player');
+const {pipePath}=require('../src/mpv');
 const meta=require('../src/metadata');
 const {redact}=require('../src/source-state');
 const repo=path.join(__dirname,'..');
 const deferred=()=>{let resolve;const promise=new Promise(r=>resolve=r);return {promise,resolve};};
 const delay=ms=>new Promise(r=>setTimeout(r,ms));
+test('macOS mpv IPC socket stays within sockaddr_un path limit',()=>{
+  const longTmp='/var/folders/wv/f158k7qj4_96_lqsxjkx9d480000gn/T';
+  const id='12345678-1234-1234-1234-123456789abc';
+  const socket=pipePath({platform:'darwin',tempDir:longTmp,pid:12345,id});
+  assert.ok(Buffer.byteLength(socket)<104,`${Buffer.byteLength(socket)} bytes: ${socket}`);
+  assert.ok(socket.startsWith(longTmp));
+  const fallback=pipePath({platform:'darwin',tempDir:`/${'deep/'.repeat(30)}tmp`,pid:12345,id});
+  assert.ok(Buffer.byteLength(fallback)<104,`${Buffer.byteLength(fallback)} bytes: ${fallback}`);
+  assert.ok(fallback.startsWith('/tmp/'));
+});
 function fixture(t) {
   const dir=fs.mkdtempSync(path.join(os.tmpdir(),'anime-player-playback-'));
   const store=new Store(path.join(dir,'library.json'));

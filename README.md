@@ -47,6 +47,8 @@ On Windows, run the installer or portable executable. On Linux, make the AppImag
 
 **mpv is required for playback.** Anime Player includes Anime4K shaders and offers first-run setup to find or configure mpv. Supported Windows builds can help install the official mpv release; other platforms can follow the [mpv installation guide](https://mpv.io/installation/) and select the executable in Settings. You can browse the library without configuring mpv, but playback needs it.
 
+The unreleased source build 0.5.57 shortens the macOS mpv control socket path to prevent IPC connection timeouts on systems with long temporary-directory paths.
+
 ## Quick start
 
 1. Open **Add series** and search AniList, or add a title manually.

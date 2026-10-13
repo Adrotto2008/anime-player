@@ -2,6 +2,10 @@
 
 This file archives the project version notes, including GitHub comparison links where a release did not include a detailed summary. The README keeps only the two latest summaries.
 
+## macOS mpv IPC socket path — 0.5.57 (unreleased)
+
+- Shorten the mpv IPC socket path on macOS and fall back to `/tmp` when the temporary directory would exceed the system's Unix socket path limit. This addresses playback startup timeouts where mpv starts but Anime Player cannot connect to its control socket.
+
 ## Watch Party resynchronization shortcuts — 0.5.56
 
 - `Ctrl+Alt+R` resynchronizes your own player; `Ctrl+Alt+Shift+R` resynchronizes every connected participant when requested by the host. Both can be remapped or disabled on the existing Shortcuts page, with live mpv binding checks.

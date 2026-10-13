@@ -7,9 +7,15 @@ const {randomUUID}=require('crypto');
 const { EventEmitter } = require('events');
 const { redact } = require('./source-state');
 
-function pipePath() {
-  const name = `anime-player-mpv-${process.pid}-${randomUUID()}`;
-  return process.platform === 'win32' ? `\\\\.\\pipe\\${name}` : path.join(os.tmpdir(), name + '.sock');
+function pipePath({ platform=process.platform, tempDir=os.tmpdir(), pid=process.pid, id=randomUUID() }={}) {
+  if(platform==='win32')return `\\\\.\\pipe\\anime-player-mpv-${pid}-${id}`;
+  if(platform==='darwin'){
+    // macOS sockaddr_un.sun_path is only 104 bytes, including its terminator.
+    const basename=`ap-${pid}-${id.slice(0,16)}.sock`;
+    const candidate=path.posix.join(tempDir,basename);
+    return Buffer.byteLength(candidate)<104?candidate:path.posix.join('/tmp',basename);
+  }
+  return path.join(tempDir,`anime-player-mpv-${pid}-${id}.sock`);
 }
 
 class MpvSession extends EventEmitter {
